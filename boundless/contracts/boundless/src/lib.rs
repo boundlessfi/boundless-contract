@@ -1,23 +1,34 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, vec, Env, String, Vec};
+use crate::datatypes::DataKey;
+use datatypes::BoundlessError;
+use soroban_sdk::{contract, contractimpl, vec, Address, Env, String, Vec};
 
 #[contract]
-pub struct Contract;
+pub struct BoundlessContract;
 
-// This is a sample contract. Replace this placeholder with your own contract logic.
-// A corresponding test example is available in `test.rs`.
-//
-// For comprehensive examples, visit <https://github.com/stellar/soroban-examples>.
-// The repository includes use cases for the Stellar ecosystem, such as data storage on
-// the blockchain, token swaps, liquidity pools, and more.
-//
-// Refer to the official documentation:
-// <https://developers.stellar.org/docs/build/smart-contracts/overview>.
 #[contractimpl]
-impl Contract {
+impl BoundlessContract {
+    pub fn __construct(env: Env, admin: Address) -> Result<(), BoundlessError> {
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin);
+        env.storage().persistent().set(&DataKey::Admin, &admins);
+        Ok(())
+    }
     pub fn hello(env: Env, to: String) -> Vec<String> {
         vec![&env, String::from_str(&env, "Hello"), to]
     }
 }
 
+pub use logic::{
+    admin::*,
+    project::*,
+    voting::*,
+    milestone::*,
+};
+
+mod datatypes;
+mod interface;
+mod logic;
+
 mod test;
+mod tests;

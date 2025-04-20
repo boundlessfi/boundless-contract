@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, contracterror, Address, String, Vec};
+use soroban_sdk::{contracterror, contracttype, Address, String, Vec};
 
 // Constants
 pub(crate) const DAY_IN_LEDGERS: u32 = 17280; // Assuming 5 seconds per ledger
@@ -32,15 +32,10 @@ pub enum DataKey {
 pub enum BoundlessError {
     /// Contract has already been initialized
     AlreadyInitialized = 1,
-    /// Operation is not authorized
     Unauthorized = 2,
-    /// Project already exists
     AlreadyExists = 3,
-    /// Project does not exist
     NotFound = 4,
-    /// Invalid funding target (must be greater than 0)
     InvalidFundingTarget = 5,
-    /// Invalid milestone number
     InvalidMilestone = 6,
     /// Project is closed
     ProjectClosed = 7,
@@ -241,4 +236,4 @@ pub enum ContractDataKey {
 pub enum ProjectDataKey {
     Projects,
     Project(String),
-} 
+}
