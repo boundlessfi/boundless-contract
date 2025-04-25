@@ -111,7 +111,7 @@ jobs:
           echo "Executing: ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK [SECRET_KEY]"
           
           # Run the deploy and upgrade script with upgrade command by default
-          ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK $STELLAR_SECRET_KEY
+          ./deploy_and_upgrade.sh upgrade $STELLAR_NETWORK $STELLAR_SECRET_KEY
           
           # Check if the contract ID file was created
           if [ -f .stellar/contract_id_${STELLAR_NETWORK}.txt ]; then
