@@ -34,6 +34,45 @@ jobs:
       - name: Setup Rust and Stellar
         uses: ./.github/actions/setup-rust-stellar
 
+      - name: Verify secrets
+        run: |
+          echo "Verifying secrets..."
+          if [ -n "${{ secrets.STELLAR_SECRET_KEY }}" ]; then
+            # Show first and last 4 characters of the secret key
+            SECRET_KEY="${{ secrets.STELLAR_SECRET_KEY }}"
+            FIRST_CHARS=${SECRET_KEY:0:4}
+            LAST_CHARS=${SECRET_KEY: -4}
+            echo "STELLAR_SECRET_KEY is set (length: ${#SECRET_KEY})"
+            echo "First 4 chars: $FIRST_CHARS"
+            echo "Last 4 chars: $LAST_CHARS"
+          else
+            echo "STELLAR_SECRET_KEY is not set!"
+          fi
+          
+          if [ -n "${{ secrets.SOROBAN_SECRET_KEY }}" ]; then
+            # Show first and last 4 characters of the secret key
+            SECRET_KEY="${{ secrets.SOROBAN_SECRET_KEY }}"
+            FIRST_CHARS=${SECRET_KEY:0:4}
+            LAST_CHARS=${SECRET_KEY: -4}
+            echo "SOROBAN_SECRET_KEY is set (length: ${#SECRET_KEY})"
+            echo "First 4 chars: $FIRST_CHARS"
+            echo "Last 4 chars: $LAST_CHARS"
+          else
+            echo "SOROBAN_SECRET_KEY is not set!"
+          fi
+          
+          if [ -n "${{ secrets.CONTRACT_ID }}" ]; then
+            # Show first and last 4 characters of the contract ID
+            CONTRACT_ID="${{ secrets.CONTRACT_ID }}"
+            FIRST_CHARS=${CONTRACT_ID:0:4}
+            LAST_CHARS=${CONTRACT_ID: -4}
+            echo "CONTRACT_ID is set (length: ${#CONTRACT_ID})"
+            echo "First 4 chars: $FIRST_CHARS"
+            echo "Last 4 chars: $LAST_CHARS"
+          else
+            echo "CONTRACT_ID is not set!"
+          fi
+
       - name: Deploy/Upgrade contract
         env:
           STELLAR_NETWORK: ${{ github.event.inputs.network || 'testnet' }}
@@ -55,6 +94,9 @@ jobs:
             echo "Using contract ID from GitHub secrets"
             echo $CONTRACT_ID > .stellar/contract_id_${STELLAR_NETWORK}.txt
           fi
+          
+          # Log the command that will be executed (without the actual secret)
+          echo "Executing: ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK [SECRET_KEY]"
           
           # Run the deploy and upgrade script with upgrade command by default
           ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK $STELLAR_SECRET_KEY
