@@ -1,5 +1,4 @@
-name: "Verify Build"
-
+name: Verify Build
 on:
   push:
     branches:
@@ -15,41 +14,23 @@ on:
       - '.github/workflows/verify-build.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  actions: read
-  id-token: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Checkout your repository using git
+        uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+      - name: Setup Rust and Stellar
+        uses: ./.github/actions/setup-rust-stellar
 
-      - name: Build contract
-        run: cargo build --target wasm32-unknown-unknown --release
+      - name: Build contracts
+        run: cd contracts/boundless && make build
 
-      - name: Verify Wasm file
-        run: |
-          if [ ! -f target/wasm32-unknown-unknown/release/boundless.wasm ]; then
-            echo "Error: Wasm file not found"
-            exit 1
-          fi
-          echo "Wasm file found and verified"
+      - name: Run tests
+        run: cargo test --release
 
   rustfmt:
     needs: build
     if: success()
     uses: ./.github/workflows/rustfmt.yml
-    with:
-      permissions: |
-        contents: read
-        actions: read
-        id-token: write
