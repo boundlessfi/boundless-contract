@@ -18,7 +18,7 @@ jobs:
         uses: ./.github/actions/setup-rust-stellar
 
       - name: Build contracts
-        run: make build
+        run: cd contracts/boundless && make build
 
       - name: Run tests
         run: cargo test --release
