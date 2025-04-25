@@ -14,6 +14,11 @@ on:
       - '.github/workflows/verify-build.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,3 +39,8 @@ jobs:
     needs: build
     if: success()
     uses: ./.github/workflows/rustfmt.yml
+    with:
+      permissions: |
+        contents: read
+        actions: read
+        id-token: write
