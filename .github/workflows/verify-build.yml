@@ -23,13 +23,6 @@ jobs:
       - name: Run tests
         run: cargo test --release
 
-  trigger-rustfmt:
+  rustfmt:
     needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger rustfmt workflow
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: trigger-rustfmt
-          client-payload: '{"ref": "${{ github.ref }}"}'
+    uses: ./.github/workflows/rustfmt.yml
