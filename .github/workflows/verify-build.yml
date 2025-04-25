@@ -39,8 +39,3 @@ jobs:
     needs: build
     if: success()
     uses: ./.github/workflows/rustfmt.yml
-    with:
-      permissions: |
-        contents: read
-        actions: read
-        id-token: write

@@ -35,8 +35,3 @@ jobs:
   deploy:
     needs: rustfmt
     uses: ./.github/workflows/contract-deploy.yml
-    with:
-      permissions: |
-        contents: read
-        actions: read
-        id-token: write
