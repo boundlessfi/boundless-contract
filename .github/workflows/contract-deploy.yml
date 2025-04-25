@@ -42,25 +42,67 @@ jobs:
           STELLAR_ACCOUNT: ${{ github.event.inputs.account || 'alice' }}
           STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
           SOROBAN_SECRET_KEY: ${{ secrets.SOROBAN_SECRET_KEY }}
+          CONTRACT_ID: ${{ secrets.CONTRACT_ID }}
         run: |
           echo "Deploying/Upgrading contract on $STELLAR_NETWORK using account $STELLAR_SECRET_KEY"
           
           # Make the script executable
           chmod +x ./deploy_and_upgrade.sh
           
+          # Create .stellar directory if it doesn't exist
+          mkdir -p .stellar
+          
+          # If CONTRACT_ID secret is available, save it to the file
+          if [ -n "$CONTRACT_ID" ]; then
+            echo "Using contract ID from GitHub secrets"
+            echo $CONTRACT_ID > .stellar/contract_id_${STELLAR_NETWORK}.txt
+          fi
+          
           # Run the deploy and upgrade script with upgrade command by default
           ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK $STELLAR_SECRET_KEY
           
-          # Get the contract ID
-          CONTRACT_ID=$(stellar contract list --source $STELLAR_SECRET_KEY --network $STELLAR_NETWORK | grep "boundless" | awk '{print $1}')
-          
-          if [ -n "$CONTRACT_ID" ]; then
-            echo "Contract successfully deployed/upgraded with ID: $CONTRACT_ID"
-            echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
+          # Check if the contract ID file was created
+          if [ -f .stellar/contract_id_${STELLAR_NETWORK}.txt ]; then
+            NEW_CONTRACT_ID=$(cat .stellar/contract_id_${STELLAR_NETWORK}.txt)
+            echo "Contract ID from file: $NEW_CONTRACT_ID"
+            echo "CONTRACT_ID=$NEW_CONTRACT_ID" >> $GITHUB_ENV
+            
+            # Update the GitHub secret with the new contract ID
+            echo "Updating CONTRACT_ID secret..."
+            # Note: This requires a separate step with appropriate permissions
           else
-            echo "Failed to get contract ID after deployment/upgrade"
+            echo "Contract ID file not found. Deployment may have failed."
             exit 1
           fi
+
+      - name: Update CONTRACT_ID secret
+        if: success() && env.CONTRACT_ID != ''
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Read the contract ID from the file
+            const network = '${{ github.event.inputs.network || 'testnet' }}';
+            const contractIdFile = path.join(process.cwd(), '.stellar', `contract_id_${network}.txt`);
+            
+            if (fs.existsSync(contractIdFile)) {
+              const contractId = fs.readFileSync(contractIdFile, 'utf8').trim();
+              
+              // Update the repository secret
+              await github.rest.actions.createOrUpdateRepoSecret({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                secret_name: 'CONTRACT_ID',
+                encrypted_value: contractId
+              });
+              
+              console.log(`Updated CONTRACT_ID secret with: ${contractId}`);
+            } else {
+              console.log('Contract ID file not found. Skipping secret update.');
+            }
 
       - name: Notify on success
         if: success()
