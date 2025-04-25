@@ -4,9 +4,9 @@ use soroban_sdk::contract;
 
 pub use logic::*;
 
-mod logic;
 mod datatypes;
 mod interface;
+mod logic;
 
 #[contract]
 pub struct BoundlessContract;
