@@ -41,16 +41,16 @@ jobs:
           STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
           SOROBAN_SECRET_KEY: ${{ secrets.SOROBAN_SECRET_KEY }}
         run: |
-          echo "Deploying/Upgrading contract on $STELLAR_NETWORK using account $STELLAR_ACCOUNT"
+          echo "Deploying/Upgrading contract on $STELLAR_NETWORK using account $STELLAR_SECRET_KEY"
           
           # Make the script executable
           chmod +x ./deploy_and_upgrade.sh
           
           # Run the deploy and upgrade script with upgrade command by default
-          ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK $STELLAR_ACCOUNT
+          ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK $STELLAR_SECRET_KEY
           
           # Get the contract ID
-          CONTRACT_ID=$(stellar contract list --source $STELLAR_ACCOUNT --network $STELLAR_NETWORK | grep "boundless" | awk '{print $1}')
+          CONTRACT_ID=$(stellar contract list --source $STELLAR_SECRET_KEY --network $STELLAR_NETWORK | grep "boundless" | awk '{print $1}')
           
           if [ -n "$CONTRACT_ID" ]; then
             echo "Contract successfully deployed/upgraded with ID: $CONTRACT_ID"
