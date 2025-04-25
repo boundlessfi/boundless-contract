@@ -1,0 +1,68 @@
+name: Contract Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contract-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Network to deploy to (testnet/mainnet)'
+        required: true
+        default: 'testnet'
+        type: choice
+        options:
+          - testnet
+          - mainnet
+      account:
+        description: 'Account to deploy from'
+        required: true
+        default: 'alice'
+        type: string
+  workflow_call:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust and Stellar
+        uses: ./.github/actions/setup-rust-stellar
+
+      - name: Deploy/Upgrade contract
+        env:
+          STELLAR_NETWORK: ${{ github.event.inputs.network || 'testnet' }}
+          STELLAR_ACCOUNT: ${{ github.event.inputs.account || 'alice' }}
+          STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
+          SOROBAN_SECRET_KEY: ${{ secrets.SOROBAN_SECRET_KEY }}
+        run: |
+          echo "Deploying/Upgrading contract on $STELLAR_NETWORK using account $STELLAR_ACCOUNT"
+          
+          # Make the script executable
+          chmod +x ./deploy_and_upgrade.sh
+          
+          # Run the deploy and upgrade script with upgrade command by default
+          ./deploy_and_upgrade.sh upgrade $STELLAR_NETWORK $STELLAR_ACCOUNT
+          
+          # Get the contract ID
+          CONTRACT_ID=$(stellar contract list --source $STELLAR_ACCOUNT --network $STELLAR_NETWORK | grep "boundless" | awk '{print $1}')
+          
+          if [ -n "$CONTRACT_ID" ]; then
+            echo "Contract successfully deployed/upgraded with ID: $CONTRACT_ID"
+            echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
+          else
+            echo "Failed to get contract ID after deployment/upgrade"
+            exit 1
+          fi
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "Contract deployment/upgrade completed successfully!"
+          echo "Contract ID: $CONTRACT_ID"
+          echo "Network: $STELLAR_NETWORK" 

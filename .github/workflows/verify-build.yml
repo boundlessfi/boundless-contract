@@ -1,0 +1,28 @@
+name: Verify Build
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository using git
+        uses: actions/checkout@v4
+
+      - name: Setup Rust and Stellar
+        uses: ./.github/actions/setup-rust-stellar
+
+      - name: Build contracts
+        run: make build
+
+      - name: Run tests
+        run: cargo test --release
+
+  rustfmt:
+    needs: build
+    uses: ./.github/workflows/rustfmt.yml
