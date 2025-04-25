@@ -24,6 +24,11 @@ on:
         type: string
   workflow_call:
 
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
