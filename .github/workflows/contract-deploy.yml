@@ -47,7 +47,7 @@ jobs:
           chmod +x ./deploy_and_upgrade.sh
           
           # Run the deploy and upgrade script with upgrade command by default
-          ./deploy_and_upgrade.sh upgrade $STELLAR_NETWORK $STELLAR_ACCOUNT
+          ./deploy_and_upgrade.sh deploy $STELLAR_NETWORK $STELLAR_ACCOUNT
           
           # Get the contract ID
           CONTRACT_ID=$(stellar contract list --source $STELLAR_ACCOUNT --network $STELLAR_NETWORK | grep "boundless" | awk '{print $1}')
