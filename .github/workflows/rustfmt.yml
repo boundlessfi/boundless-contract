@@ -8,6 +8,13 @@ on:
     branches:
       - main
   workflow_call:
+    secrets:
+      STELLAR_SECRET_KEY:
+        required: true
+      SOROBAN_SECRET_KEY:
+        required: true
+      CONTRACT_ID:
+        required: false
 
 permissions:
   contents: read
@@ -35,3 +42,7 @@ jobs:
   deploy:
     needs: rustfmt
     uses: ./.github/workflows/contract-deploy.yml
+    secrets:
+      STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
+      SOROBAN_SECRET_KEY: ${{ secrets.SOROBAN_SECRET_KEY }}
+      CONTRACT_ID: ${{ secrets.CONTRACT_ID }}

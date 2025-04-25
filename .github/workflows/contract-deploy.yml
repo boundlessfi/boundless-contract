@@ -23,6 +23,13 @@ on:
         default: 'alice'
         type: string
   workflow_call:
+    secrets:
+      STELLAR_SECRET_KEY:
+        required: true
+      SOROBAN_SECRET_KEY:
+        required: true
+      CONTRACT_ID:
+        required: false
 
 permissions:
   contents: read
@@ -75,7 +82,7 @@ jobs:
             echo "First 4 chars: $FIRST_CHARS"
             echo "Last 4 chars: $LAST_CHARS"
           else
-            echo "CONTRACT_ID is not set!"
+            echo "CONTRACT_ID is not set (this is normal for first deployment)"
           fi
 
       - name: Deploy/Upgrade contract

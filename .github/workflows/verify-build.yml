@@ -39,3 +39,7 @@ jobs:
     needs: build
     if: success()
     uses: ./.github/workflows/rustfmt.yml
+    secrets:
+      STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
+      SOROBAN_SECRET_KEY: ${{ secrets.SOROBAN_SECRET_KEY }}
+      CONTRACT_ID: ${{ secrets.CONTRACT_ID }}
