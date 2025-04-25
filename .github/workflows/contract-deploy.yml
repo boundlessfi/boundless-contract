@@ -66,47 +66,19 @@ jobs:
             NEW_CONTRACT_ID=$(cat .stellar/contract_id_${STELLAR_NETWORK}.txt)
             echo "Contract ID from file: $NEW_CONTRACT_ID"
             echo "CONTRACT_ID=$NEW_CONTRACT_ID" >> $GITHUB_ENV
-            
-            # Update the GitHub secret with the new contract ID
-            echo "Updating CONTRACT_ID secret..."
-            # Note: This requires a separate step with appropriate permissions
           else
             echo "Contract ID file not found. Deployment may have failed."
             exit 1
           fi
-
-      - name: Update CONTRACT_ID secret
-        if: success() && env.CONTRACT_ID != ''
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            
-            // Read the contract ID from the file
-            const network = '${{ github.event.inputs.network || 'testnet' }}';
-            const contractIdFile = path.join(process.cwd(), '.stellar', `contract_id_${network}.txt`);
-            
-            if (fs.existsSync(contractIdFile)) {
-              const contractId = fs.readFileSync(contractIdFile, 'utf8').trim();
-              
-              // Update the repository secret
-              await github.rest.actions.createOrUpdateRepoSecret({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                secret_name: 'CONTRACT_ID',
-                encrypted_value: contractId
-              });
-              
-              console.log(`Updated CONTRACT_ID secret with: ${contractId}`);
-            } else {
-              console.log('Contract ID file not found. Skipping secret update.');
-            }
 
       - name: Notify on success
         if: success()
         run: |
           echo "Contract deployment/upgrade completed successfully!"
           echo "Contract ID: $CONTRACT_ID"
-          echo "Network: $STELLAR_NETWORK" 
+          echo "Network: $STELLAR_NETWORK"
+          echo ""
+          echo "IMPORTANT: Please update the CONTRACT_ID secret in your GitHub repository settings with the value above."
+          echo "You can do this by going to: Settings > Secrets and variables > Actions > New repository secret"
+          echo "Name: CONTRACT_ID"
+          echo "Value: $CONTRACT_ID" 
