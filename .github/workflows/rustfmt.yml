@@ -7,6 +7,8 @@ on:
   pull_request:
     branches:
       - main
+  repository_dispatch:
+    types: [trigger-rustfmt]
   workflow_call:
 
 jobs:
@@ -27,6 +29,13 @@ jobs:
       - name: Run rustfmt
         run: cargo fmt -- --check
 
-  deploy:
+  trigger-deploy:
     needs: rustfmt
-    uses: ./.github/workflows/contract-deploy.yml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger contract deploy workflow
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: trigger-deploy
+          client-payload: '{"ref": "${{ github.ref }}"}'

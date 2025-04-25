@@ -22,6 +22,8 @@ on:
         required: true
         default: 'alice'
         type: string
+  repository_dispatch:
+    types: [trigger-deploy]
   workflow_call:
 
 jobs:
