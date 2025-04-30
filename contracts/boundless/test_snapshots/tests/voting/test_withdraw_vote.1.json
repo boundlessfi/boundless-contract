@@ -37,6 +37,7 @@
       ]
     ],
     [],
+    [],
     []
   ],
   "ledger": {
@@ -123,7 +124,7 @@
                         "symbol": "funding_deadline"
                       },
                       "val": {
-                        "u64": 518400
+                        "u64": 0
                       }
                     },
                     {
@@ -211,7 +212,7 @@
                         "symbol": "status"
                       },
                       "val": {
-                        "u32": 1
+                        "u32": 2
                       }
                     },
                     {
@@ -235,18 +236,7 @@
                         "symbol": "votes"
                       },
                       "val": {
-                        "vec": [
-                          {
-                            "vec": [
-                              {
-                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                              },
-                              {
-                                "i32": 1
-                              }
-                            ]
-                          }
-                        ]
+                        "vec": []
                       }
                     },
                     {
