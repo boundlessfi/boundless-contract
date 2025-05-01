@@ -7,6 +7,7 @@ pub use logic::*;
 mod datatypes;
 mod interface;
 mod logic;
+mod tests;
 
 #[contract]
 pub struct BoundlessContract;
