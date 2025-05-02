@@ -35,7 +35,17 @@ impl VotingOperations for BoundlessContract {
             return Err(BoundlessError::InvalidOperation);
         }
 
-        if project.votes.iter().any(|vote| vote.0 == voter) {
+        let mut already_voted = false;
+        let mut i = 0;
+        while i < project.votes.len() {
+            if project.votes.get_unchecked(i).0 == voter {
+                already_voted = true;
+                break;
+            }
+            i += 1;
+        }
+
+        if already_voted {
             return Err(BoundlessError::AlreadyVoted);
         }
 
@@ -78,12 +88,19 @@ impl VotingOperations for BoundlessContract {
             return Err(BoundlessError::InvalidOperation);
         }
 
-        if !project.votes.iter().any(|vote| vote.0 == voter) {
-            return Err(BoundlessError::NotVoted);
+        let mut already_voted = false;
+        let mut i = 0;
+        while i < project.votes.len() {
+            if project.votes.get_unchecked(i).0 == voter {
+                already_voted = true;
+                project.votes.remove(i);
+                break;
+            }
+            i += 1;
         }
 
-        if let Some(index) = project.votes.iter().position(|vote| vote.0 == voter) {
-            project.votes.remove(index as u32);
+        if !already_voted {
+            return Err(BoundlessError::NotVoted);
         }
 
         env.storage()
@@ -107,7 +124,17 @@ impl VotingOperations for BoundlessContract {
             .get(&DataKey::Project(project_id.clone()))
             .ok_or(BoundlessError::NotFound)?;
 
-        Ok(project.votes.iter().any(|vote| vote.0 == voter))
+        let mut already_voted = false;
+        let mut i = 0;
+        while i < project.votes.len() {
+            if project.votes.get_unchecked(i).0 == voter {
+                already_voted = true;
+                break;
+            }
+            i += 1;
+        }
+
+        Ok(already_voted)
     }
     fn get_vote(env: Env, project_id: String, voter: Address) -> Result<i32, BoundlessError> {
         let project: Project = env
@@ -115,11 +142,16 @@ impl VotingOperations for BoundlessContract {
             .persistent()
             .get(&DataKey::Project(project_id.clone()))
             .ok_or(BoundlessError::NotFound)?;
-        for vote in project.votes {
+
+        let mut i = 0;
+        while i < project.votes.len() {
+            let vote = project.votes.get_unchecked(i);
             if vote.0 == voter {
                 return Ok(vote.1);
             }
+            i += 1;
         }
-        return Err(BoundlessError::NotVoted);
+
+        Err(BoundlessError::AlreadyVoted)
     }
 }
