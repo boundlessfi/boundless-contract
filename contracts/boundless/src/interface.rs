@@ -1,9 +1,6 @@
-use soroban_sdk::{contract, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{Address, BytesN, Env, String, Vec};
 
 use crate::datatypes::{BoundlessError, Milestone, MilestoneStatus, Project, ProjectStatus};
-
-#[contract]
-pub struct BoundlessContract;
 
 pub trait ContractManagement {
     fn initialize(env: Env, admin: Address) -> Result<(), BoundlessError>;
@@ -103,4 +100,9 @@ pub trait FundingOperations {
         project_id: String,
         backer: Address,
     ) -> Result<u64, BoundlessError>;
+    fn whitelist_token_contract(
+        env: Env,
+        admin: Address,
+        token_contract: Address,
+    ) -> Result<(), BoundlessError>;
 }
