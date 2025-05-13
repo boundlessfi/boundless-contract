@@ -103,6 +103,7 @@ pub trait FundingOperations {
     fn whitelist_token_contract(
         env: Env,
         admin: Address,
+        project_id: String,
         token_contract: Address,
     ) -> Result<(), BoundlessError>;
 }

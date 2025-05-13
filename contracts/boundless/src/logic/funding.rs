@@ -47,7 +47,7 @@ impl FundingOperations for BoundlessContract {
         let whitelisted_tokens: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&DataKey::WhitelistedTokens)
+            .get(&DataKey::WhitelistedTokens(project_id.clone()))
             .unwrap_or(Vec::new(&env));
         if !whitelisted_tokens.contains(&token_contract) {
             return Err(BoundlessError::InvalidTokenContract);
@@ -61,22 +61,31 @@ impl FundingOperations for BoundlessContract {
 
         // Update the backers list
         let mut found = false;
-        for mut backer_entry in project.backers.iter() {
-            if backer_entry.0 == funder {
-                backer_entry.1 += amount_u64;
+        let mut updated_backers = Vec::new(&env);
+
+        for (backer_address, backer_amount, token) in project.backers.iter() {
+            if backer_address == funder && token == token_contract {
+                updated_backers.push_back((
+                    backer_address.clone(),
+                    backer_amount + amount_u64,
+                    token.clone(),
+                ));
                 found = true;
-                break;
+            } else {
+                updated_backers.push_back((backer_address.clone(), backer_amount, token.clone()));
             }
         }
 
         if !found {
-            project.backers.push_back((funder.clone(), amount_u64));
+            updated_backers.push_back((funder.clone(), amount_u64, token_contract.clone()));
         }
+        project.backers = updated_backers;
 
         // Store the backer contribution
         let backer_contribution = BackerContribution {
             backer: funder.clone(),
             amount: amount_u64,
+            token: token_contract.clone(),
             timestamp: current_time,
         };
 
@@ -120,6 +129,10 @@ impl FundingOperations for BoundlessContract {
             return Err(BoundlessError::InvalidOperation);
         }
 
+        if project.backers.is_empty() {
+            return Err(BoundlessError::NoBackerContributions);
+        }
+
         if project.refund_processed {
             return Err(BoundlessError::RefundAlreadyProcessed);
         }
@@ -127,7 +140,7 @@ impl FundingOperations for BoundlessContract {
         let whitelisted_tokens: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&DataKey::WhitelistedTokens)
+            .get(&DataKey::WhitelistedTokens(project_id.clone()))
             .unwrap_or(Vec::new(&env));
 
         if !whitelisted_tokens.contains(&token_contract) {
@@ -137,7 +150,7 @@ impl FundingOperations for BoundlessContract {
         let mut refunded_tokens: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&DataKey::RefundedTokens)
+            .get(&DataKey::RefundedTokens(project_id.clone()))
             .unwrap_or(Vec::new(&env));
 
         if refunded_tokens.contains(&token_contract) {
@@ -146,30 +159,53 @@ impl FundingOperations for BoundlessContract {
 
         let contract_address = env.current_contract_address();
         let token_client = TokenClient::new(&env, &token_contract);
-
         let balance = token_client.balance(&contract_address);
-        if balance < project.total_funded as i128 {
+
+        // Check if the contract has enough balance to refund
+        let mut refund_amount = 0_u64;
+        let backer_contributions: Vec<BackerContribution> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Backers(project_id.clone()))
+            .unwrap_or(Vec::new(&env));
+        for backer_contribution in backer_contributions.iter() {
+            if backer_contribution.token == token_contract {
+                refund_amount += backer_contribution.amount;
+            }
+        }
+
+        if balance < refund_amount as i128 {
             return Err(BoundlessError::InsufficientFunds);
         }
 
         // Process refunds for each backer
-        for (backer, amount) in project.backers.iter() {
-            let amount_i128 = amount as i128;
-            match token_client.try_transfer(&contract_address, &backer, &amount_i128) {
+        for backer_contribution in backer_contributions.iter() {
+            let (backer, amount, token, _) = (
+                backer_contribution.backer.clone(),
+                backer_contribution.amount as i128,
+                backer_contribution.token.clone(),
+                backer_contribution.timestamp,
+            );
+
+            if token != token_contract {
+                continue;
+            }
+
+            match token_client.try_transfer(&contract_address, &backer, &amount) {
                 Ok(_) => {
                     env.events().publish(
                         ("project", "refund"),
                         RefundProcessedEvent {
                             project_id: project_id.clone(),
                             backer: backer.clone(),
-                            amount,
+                            amount: amount as u64,
                         },
                     );
                 }
                 Err(_e) => {
                     env.events().publish(
                         ("project", "refund_failed"),
-                        (project_id.clone(), backer.clone(), amount),
+                        (project_id.clone(), backer.clone(), amount as u64),
                     );
                 }
             }
@@ -177,9 +213,10 @@ impl FundingOperations for BoundlessContract {
 
         refunded_tokens.push_back(token_contract);
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::RefundedTokens, &refunded_tokens);
+        env.storage().persistent().set(
+            &DataKey::RefundedTokens(project_id.clone()),
+            &refunded_tokens,
+        );
 
         if refunded_tokens.len() == whitelisted_tokens.len() {
             project.refund_processed = true;
@@ -213,7 +250,7 @@ impl FundingOperations for BoundlessContract {
             .get(&DataKey::Project(project_id.clone()))
             .ok_or(BoundlessError::NotFound)?;
 
-        for (addr, amount) in project.backers.iter() {
+        for (addr, amount, _) in project.backers.iter() {
             if addr == backer {
                 return Ok(amount);
             }
@@ -225,6 +262,7 @@ impl FundingOperations for BoundlessContract {
     fn whitelist_token_contract(
         env: Env,
         admin: Address,
+        project_id: String,
         token_contract: Address,
     ) -> Result<(), BoundlessError> {
         admin.require_auth();
@@ -242,7 +280,7 @@ impl FundingOperations for BoundlessContract {
         let mut whitelisted_tokens: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&DataKey::WhitelistedTokens)
+            .get(&DataKey::WhitelistedTokens(project_id.clone()))
             .unwrap_or(Vec::new(&env));
 
         if whitelisted_tokens.contains(&token_contract) {
@@ -250,9 +288,10 @@ impl FundingOperations for BoundlessContract {
         }
 
         whitelisted_tokens.push_back(token_contract);
-        env.storage()
-            .persistent()
-            .set(&DataKey::WhitelistedTokens, &whitelisted_tokens);
+        env.storage().persistent().set(
+            &DataKey::WhitelistedTokens(project_id.clone()),
+            &whitelisted_tokens,
+        );
 
         Ok(())
     }

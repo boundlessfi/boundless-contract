@@ -24,8 +24,8 @@ pub enum DataKey {
     Backers(String),
     Votes(String),
     Milestones(String),
-    WhitelistedTokens,
-    RefundedTokens,
+    WhitelistedTokens(String),
+    RefundedTokens(String),
 }
 
 #[contracterror]
@@ -74,6 +74,8 @@ pub enum BoundlessError {
     AlreadyWhitelisted = 20,
     /// Token contract has not been whitelisted
     InvalidTokenContract = 21,
+    /// No backers found for the project
+    NoBackerContributions = 22,
 }
 
 /// Enum representing the current status of a project
@@ -193,6 +195,8 @@ pub struct BackerContribution {
     pub backer: Address,
     /// Amount contributed
     pub amount: u64,
+    /// Token contract address
+    pub token: Address,
     /// Timestamp of contribution
     pub timestamp: u64,
 }
@@ -227,7 +231,7 @@ pub struct Project {
     /// Total amount funded so far
     pub total_funded: u64,
     /// List of backers and their contributions
-    pub backers: Vec<(Address, u64)>,
+    pub backers: Vec<(Address, u64, Address)>,
     /// List of votes cast on project
     pub votes: Vec<(Address, i32)>,
     /// Flag indicating if project has been validated
