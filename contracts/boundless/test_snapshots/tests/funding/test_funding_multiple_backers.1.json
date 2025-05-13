@@ -202,7 +202,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 200000
+                    "lo": 250000
                   }
                 },
                 {
@@ -230,7 +230,7 @@
                     {
                       "i128": {
                         "hi": 0,
-                        "lo": 200000
+                        "lo": 250000
                       }
                     }
                   ]
@@ -242,6 +242,8 @@
         }
       ]
     ],
+    [],
+    [],
     [],
     []
   ],
@@ -534,7 +536,7 @@
                             "symbol": "amount"
                           },
                           "val": {
-                            "u64": 200000
+                            "u64": 250000
                           }
                         },
                         {
@@ -673,7 +675,7 @@
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                               },
                               {
-                                "u64": 200000
+                                "u64": 250000
                               },
                               {
                                 "address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
@@ -808,7 +810,7 @@
                         "symbol": "total_funded"
                       },
                       "val": {
-                        "u64": 400000
+                        "u64": 450000
                       }
                     },
                     {
@@ -1107,7 +1109,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 400000
+                          "lo": 450000
                         }
                       }
                     },
@@ -1253,7 +1255,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 800000
+                          "lo": 750000
                         }
                       }
                     },

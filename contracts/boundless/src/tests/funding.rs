@@ -8,7 +8,7 @@ use crate::{
     BoundlessContract, BoundlessContractClient,
 };
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Events, Ledger},
     token::{StellarAssetClient, TokenClient},
     Address, Env, String, Vec,
 };
@@ -109,6 +109,28 @@ fn test_successful_funding() {
         contract_balance_after,
         contract_balance_before + funding_amount as i128
     );
+
+ let events = env.events().all();
+    // log!(&env, "Captured events: {:?}", events);
+    // assert_eq!(events.len(), 1, "Expected one initialization event");
+    // assert_eq!(
+    //     events,
+    //     vec![
+    //         &env,
+    //         (
+    //             governance_id.clone(),
+    //             (symbol_short!("govern"), symbol_short!("init")).into_val(&env),
+    //             (
+    //                 admin.clone(),
+    //                 token.clone(),
+    //                 referral.clone(),
+    //                 auction.clone()
+    //             )
+    //                 .into_val(&env)
+    //         ),
+    //     ],
+    //     "Initialization event mismatch"
+    // );
 }
 
 #[test]
@@ -416,6 +438,7 @@ fn test_fund_same_backer_multiple_tokens() {
 
     // Fund project with multiple backers using different tokens
     let funding_amount = 250000_i128;
+    let funding_total = funding_amount * 2;
 
     client.fund_project(&project_id, &funding_amount, &user, &token_client1.address);
     client.fund_project(&project_id, &funding_amount, &user, &token_client2.address);
@@ -476,7 +499,7 @@ fn test_funding_multiple_backers() {
     });
 
     let funding_amount1 = 200000_i128;
-    let funding_amount2 = 200000_i128;
+    let funding_amount2 = 250000_i128;
     client.fund_project(&project_id, &funding_amount1, &user, &token.address);
     client.fund_project(&project_id, &funding_amount2, &backer, &token.address);
 
@@ -506,6 +529,11 @@ fn test_funding_multiple_backers() {
         assert_eq!(backers.get(0).unwrap().amount, funding_amount1 as u64);
         assert_eq!(backers.get(1).unwrap().amount, funding_amount2 as u64);
     });
+
+    let user_contribution = client.get_backer_contribution(&project_id, &user);
+    let backer_contribution = client.get_backer_contribution(&project_id, &backer);
+    assert_eq!(user_contribution, funding_amount1 as u64);
+    assert_eq!(backer_contribution, funding_amount2 as u64);
 }
 
 #[test]
@@ -635,7 +663,7 @@ fn test_refund_scenario() {
 
 #[test]
 fn test_refund_invalid_project_id() {
-    let (env, contract_id, _, token, _, _) = setup_test_env();
+    let (env, contract_id, _, token, admin, user) = setup_test_env();
     let client = BoundlessContractClient::new(&env, &contract_id);
 
     let project_id = String::from_str(&env, "nonexistent-project");
