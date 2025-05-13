@@ -124,7 +124,7 @@
                         "symbol": "funding_deadline"
                       },
                       "val": {
-                        "u64": 0
+                        "u64": 518400
                       }
                     },
                     {
