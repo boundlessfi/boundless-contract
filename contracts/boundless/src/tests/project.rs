@@ -34,12 +34,6 @@ fn test_create_project() {
     assert_eq!(project.funding_target, funding_target);
     assert_eq!(project.milestone_count, milestone_count);
     assert_eq!(project.status, ProjectStatus::Voting);
-    // client.create_project(project_id.clone(), creator, metadata_uri, funding_target, milestone_count));
-
-    // let project = client.get_project(project_id.clone()).unwrap();
-    // assert_eq!(project.project_id, project_id);
-    // assert_eq!(project.creator, creator);
-    // assert_eq!(project.metadata_uri, metadata_uri);
 }
 
 #[test]

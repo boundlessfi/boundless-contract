@@ -1,9 +1,6 @@
 use crate::{
-    datatypes::{
-        BoundlessError, DataKey, Milestone, MilestoneStatus, Project, ProjectStatus,
-        VOTING_PERIOD_LEDGERS,
-    },
-    interface::{MilestoneOperations, ProjectManagement, VotingOperations},
+    datatypes::{BoundlessError, DataKey, Milestone, MilestoneStatus, Project, ProjectStatus},
+    interface::MilestoneOperations,
     BoundlessContract, BoundlessContractArgs, BoundlessContractClient,
 };
 use soroban_sdk::{contractimpl, symbol_short, Address, Env, String, Vec};

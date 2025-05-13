@@ -1,9 +1,9 @@
 use crate::{
-    datatypes::{BoundlessError, DataKey, Project, ProjectStatus, VOTING_PERIOD_LEDGERS},
-    interface::{ProjectManagement, VotingOperations},
+    datatypes::{BoundlessError, DataKey, Project, ProjectStatus},
+    interface::VotingOperations,
     BoundlessContract, BoundlessContractArgs, BoundlessContractClient,
 };
-use soroban_sdk::{contractimpl, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contractimpl, symbol_short, Address, Env, String};
 
 #[contractimpl]
 impl VotingOperations for BoundlessContract {
