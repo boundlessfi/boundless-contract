@@ -110,7 +110,7 @@ fn test_successful_funding() {
         contract_balance_before + funding_amount as i128
     );
 
- let events = env.events().all();
+    let events = env.events().all();
     // log!(&env, "Captured events: {:?}", events);
     // assert_eq!(events.len(), 1, "Expected one initialization event");
     // assert_eq!(
