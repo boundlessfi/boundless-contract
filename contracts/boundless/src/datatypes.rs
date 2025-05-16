@@ -24,6 +24,8 @@ pub enum DataKey {
     Backers(String),
     Votes(String),
     Milestones(String),
+    WhitelistedTokens(String),
+    RefundedTokens(String),
 }
 
 #[contracterror]
@@ -32,10 +34,15 @@ pub enum DataKey {
 pub enum BoundlessError {
     /// Contract has already been initialized
     AlreadyInitialized = 1,
+    /// Invalid user authorization for action
     Unauthorized = 2,
+    /// Project with the given ID already exists
     AlreadyExists = 3,
+    /// Project with the given ID does not exist
     NotFound = 4,
+    /// Invalid funding target amount
     InvalidFundingTarget = 5,
+    /// Invalid milestone count
     InvalidMilestone = 6,
     /// Project is closed
     ProjectClosed = 7,
@@ -63,6 +70,12 @@ pub enum BoundlessError {
     InvalidOperation = 18,
     /// Internal error
     InternalError = 19,
+    /// Token contract has already been whitelisted
+    AlreadyWhitelisted = 20,
+    /// Token contract has not been whitelisted
+    InvalidTokenContract = 21,
+    /// No backers found for the project
+    NoBackerContributions = 22,
 }
 
 /// Enum representing the current status of a project
@@ -182,6 +195,8 @@ pub struct BackerContribution {
     pub backer: Address,
     /// Amount contributed
     pub amount: u64,
+    /// Token contract address
+    pub token: Address,
     /// Timestamp of contribution
     pub timestamp: u64,
 }
@@ -201,23 +216,41 @@ pub struct Vote {
 #[derive(Clone)]
 #[contracttype]
 pub struct Project {
+    /// Unique identifier for the project
     pub project_id: String,
+    /// Project creator's address
     pub creator: Address,
+    /// Project metadata external URI
     pub metadata_uri: String,
+    /// Funding target amount
     pub funding_target: u64,
+    /// Total number of milestones
     pub milestone_count: u32,
+    /// Current milestone number (0-based index)
     pub current_milestone: u32,
+    /// Total amount funded so far
     pub total_funded: u64,
-    pub backers: Vec<(Address, u64)>,
+    /// List of backers and their contributions
+    pub backers: Vec<(Address, u64, Address)>,
+    /// List of votes cast on project
     pub votes: Vec<(Address, i32)>,
+    /// Flag indicating if project has been validated
     pub validated: bool,
+    /// Flag indicating if project was successful
     pub is_successful: bool,
+    /// Flag indicating if project has been closed
     pub is_closed: bool,
+    /// Timestamp when the project was created
     pub created_at: u64,
+    /// List of milestone approvals (milestone number and approval status)
     pub milestone_approvals: Vec<(u32, bool)>,
+    /// List of milestone releases (milestone number and release timestamp)
     pub milestone_releases: Vec<(u32, u64)>,
+    /// Flag indicating if all refunds have been processed
     pub refund_processed: bool,
+    /// Timestamp when project funding period ends
     pub funding_deadline: u64,
+    /// Timestamp when project voting period ends
     pub voting_deadline: u64,
     /// Current status of the project
     pub status: ProjectStatus,

@@ -1,5 +1,8 @@
 use crate::{
-    datatypes::{BoundlessError, DataKey, Project, ProjectStatus, VOTING_PERIOD_LEDGERS},
+    datatypes::{
+        BoundlessError, DataKey, Project, ProjectStatus, FUNDING_PERIOD_LEDGERS,
+        VOTING_PERIOD_LEDGERS,
+    },
     interface::ProjectManagement,
     BoundlessContract, BoundlessContractArgs, BoundlessContractClient,
 };
@@ -31,6 +34,7 @@ impl ProjectManagement for BoundlessContract {
         creator.require_auth();
 
         let current_time = env.ledger().timestamp();
+        let funding_deadline = current_time + FUNDING_PERIOD_LEDGERS as u64; // 14 days
         let voting_deadline = current_time + VOTING_PERIOD_LEDGERS as u64; // 14 days
 
         let project = Project {
@@ -51,7 +55,7 @@ impl ProjectManagement for BoundlessContract {
             milestone_releases: Vec::new(&env),
             refund_processed: false,
             voting_deadline,
-            funding_deadline: 0,
+            funding_deadline,
             milestones: Vec::new(&env),
             status: ProjectStatus::Voting,
         };

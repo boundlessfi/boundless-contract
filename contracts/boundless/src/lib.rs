@@ -2,14 +2,13 @@
 
 use soroban_sdk::contract;
 
-pub use logic::*;
-
 mod datatypes;
 mod interface;
 mod logic;
-mod tests;
+
+pub use logic::*;
 
 #[contract]
 pub struct BoundlessContract;
 
-// mod tests;
+mod tests;

@@ -27,7 +27,7 @@ fn test_initialize() {
 }
 
 #[test]
-#[should_panic()]
+#[should_panic]
 fn test_initialize_already_initialized() {
     let env = Env::default();
     env.mock_all_auths();
@@ -38,7 +38,7 @@ fn test_initialize_already_initialized() {
     let contract = BoundlessContractClient::new(&env, &contract_id);
     contract.initialize(&admin);
 
-    let err = contract.initialize(&admin);
+    let _err = contract.initialize(&admin);
 }
 
 // #[test]
