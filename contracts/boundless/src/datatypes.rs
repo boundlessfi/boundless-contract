@@ -76,6 +76,10 @@ pub enum BoundlessError {
     InvalidTokenContract = 21,
     /// No backers found for the project
     NoBackerContributions = 22,
+    /// Transfer failed
+    TransferFailed = 23,
+    /// Balance check failed
+    BalanceCheckFailed = 24,
 }
 
 /// Enum representing the current status of a project

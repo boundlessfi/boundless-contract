@@ -54,7 +54,10 @@ impl FundingOperations for BoundlessContract {
         }
 
         let token_client = TokenClient::new(&env, &token_contract);
-        token_client.transfer(&funder, &env.current_contract_address(), &amount);
+        token_client
+            .try_transfer(&funder, &env.current_contract_address(), &amount)
+            .map_err(|_| BoundlessError::TransferFailed)?
+            .map_err(|_| BoundlessError::TransferFailed)?;
 
         let amount_u64 = amount as u64;
         project.total_funded += amount_u64;
@@ -63,7 +66,9 @@ impl FundingOperations for BoundlessContract {
         let mut found = false;
         let mut updated_backers = Vec::new(&env);
 
-        for (backer_address, backer_amount, token) in project.backers.iter() {
+        let mut i = 0;
+        while i < project.backers.len() {
+            let (backer_address, backer_amount, token) = project.backers.get_unchecked(i);
             if backer_address == funder && token == token_contract {
                 updated_backers.push_back((
                     backer_address.clone(),
@@ -74,6 +79,7 @@ impl FundingOperations for BoundlessContract {
             } else {
                 updated_backers.push_back((backer_address.clone(), backer_amount, token.clone()));
             }
+            i += 1;
         }
 
         if !found {
@@ -159,7 +165,10 @@ impl FundingOperations for BoundlessContract {
 
         let contract_address = env.current_contract_address();
         let token_client = TokenClient::new(&env, &token_contract);
-        let balance = token_client.balance(&contract_address);
+        let balance = token_client
+            .try_balance(&contract_address)
+            .map_err(|_| BoundlessError::BalanceCheckFailed)?
+            .map_err(|_| BoundlessError::BalanceCheckFailed)?;
 
         // Check if the contract has enough balance to refund
         let mut refund_amount = 0_u64;
@@ -168,10 +177,13 @@ impl FundingOperations for BoundlessContract {
             .persistent()
             .get(&DataKey::Backers(project_id.clone()))
             .unwrap_or(Vec::new(&env));
-        for backer_contribution in backer_contributions.iter() {
+        let mut i = 0;
+        while i < backer_contributions.len() {
+            let backer_contribution = backer_contributions.get_unchecked(i);
             if backer_contribution.token == token_contract {
                 refund_amount += backer_contribution.amount;
             }
+            i += 1;
         }
 
         if balance < refund_amount as i128 {
@@ -179,7 +191,9 @@ impl FundingOperations for BoundlessContract {
         }
 
         // Process refunds for each backer
-        for backer_contribution in backer_contributions.iter() {
+        let mut i = 0;
+        while i < backer_contributions.len() {
+            let backer_contribution = backer_contributions.get_unchecked(i);
             let (backer, amount, token, _) = (
                 backer_contribution.backer.clone(),
                 backer_contribution.amount as i128,
@@ -188,6 +202,7 @@ impl FundingOperations for BoundlessContract {
             );
 
             if token != token_contract {
+                i += 1;
                 continue;
             }
 
@@ -209,6 +224,7 @@ impl FundingOperations for BoundlessContract {
                     );
                 }
             }
+            i += 1;
         }
 
         refunded_tokens.push_back(token_contract);
@@ -250,10 +266,13 @@ impl FundingOperations for BoundlessContract {
             .get(&DataKey::Project(project_id.clone()))
             .ok_or(BoundlessError::NotFound)?;
 
-        for (addr, amount, _) in project.backers.iter() {
+        let mut i = 0;
+        while i < project.backers.len() {
+            let (addr, amount, _) = project.backers.get_unchecked(i);
             if addr == backer {
                 return Ok(amount);
             }
+            i += 1;
         }
 
         Ok(0)
