@@ -7,9 +7,7 @@ use soroban_sdk::{
 };
 extern crate std;
 mod boundless {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32-unknown-unknown/release/boundless.wasm"
-    );
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/boundless.wasm");
 }
 #[test]
 fn test_initialize() {
@@ -41,39 +39,39 @@ fn test_initialize_already_initialized() {
     let _err = contract.initialize(&admin);
 }
 
-// #[test]
-// fn test_upgrade() {
-//     let env = Env::default();
-//     env.mock_all_auths();
+#[test]
+fn test_upgrade() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-//     let admin = Address::generate(&env);
-//     let contract_id = env.register(BoundlessContract, ());
+    let admin = Address::generate(&env);
+    let contract_id = env.register(BoundlessContract, ());
 
-//     let contract = BoundlessContractClient::new(&env, &contract_id);
-//     contract.initialize(&admin);
-//     // assert_eq!(1, contract.get_version());
-//     let wasm = boundless::WASM;
-//     let was_hash: BytesN<32> = env.deployer().upload_contract_wasm(boundless::WASM);
-//     let upgrade_result = contract.upgrade(&was_hash);
+    let contract = BoundlessContractClient::new(&env, &contract_id);
+    contract.initialize(&admin);
+    // assert_eq!(1, contract.get_version());
+    let wasm = boundless::WASM;
+    let was_hash: BytesN<32> = env.deployer().upload_contract_wasm(boundless::WASM);
+    let upgrade_result = contract.upgrade(&was_hash);
 
-//     assert_eq!(contract.get_version(), 2);
-// }
+    assert_eq!(contract.get_version(), 2);
+}
 
-// #[test]
-// #[should_panic()]
-// fn test_upgrade_not_admin() {
-//     let env = Env::default();
-//     // env.mock_auths();
+#[test]
+#[should_panic()]
+fn test_upgrade_not_admin() {
+    let env = Env::default();
+    // env.mock_auths();
 
-//     let admin = Address::generate(&env);
-//     let contract_id = env.register(BoundlessContract, ());
+    let admin = Address::generate(&env);
+    let contract_id = env.register(BoundlessContract, ());
 
-//     let contract = BoundlessContractClient::new(&env, &contract_id);
-//     contract.initialize(&admin);
+    let contract = BoundlessContractClient::new(&env, &contract_id);
+    contract.initialize(&admin);
 
-//     let not_admin = Address::generate(&env);
-//     let was_hash: BytesN<32> = env.deployer().upload_contract_wasm(boundless::WASM);
+    let not_admin = Address::generate(&env);
+    let was_hash: BytesN<32> = env.deployer().upload_contract_wasm(boundless::WASM);
 
-//     let err = contract.upgrade(&was_hash);
-//     // assert_eq!(err, BoundlessError::NotAuthorized);
-// }
+    let err = contract.upgrade(&was_hash);
+    // assert_eq!(err, BoundlessError::NotAuthorized);
+}

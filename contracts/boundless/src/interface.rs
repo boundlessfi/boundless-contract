@@ -1,6 +1,6 @@
-use soroban_sdk::{Address, BytesN, Env, String, Vec};
+use soroban_sdk::{Address, BytesN, Env, Symbol, Vec};
 
-use crate::datatypes::{BoundlessError, Milestone, MilestoneStatus, Project, ProjectStatus};
+use crate::datatypes::{BoundlessError, EntityType, Milestone, MilestoneStatus};
 
 pub trait ContractManagement {
     fn initialize(env: Env, admin: Address) -> Result<(), BoundlessError>;
@@ -9,101 +9,211 @@ pub trait ContractManagement {
     fn get_version(e: &Env) -> u32;
 }
 
-pub trait ProjectManagement {
-    fn create_project(
+pub trait CampaignManagement {
+    fn create_campaign(
         env: Env,
-        project_id: String,
-        creator: Address,
-        metadata_uri: String,
-        funding_target: u64,
-        milestone_count: u32,
-    ) -> Result<(), BoundlessError>;
-    fn get_project(env: Env, project_id: String) -> Result<Project, BoundlessError>;
-    fn update_project_metadata(
+        owner: Address,
+        title: Symbol,
+        description: Symbol,
+        goal: i128,
+    ) -> Result<u64, BoundlessError>;
+    fn fund_campaign(
         env: Env,
-        project_id: String,
-        creator: Address,
-        new_metadata_uri: String,
+        campaign_id: u64,
+        backer: Address,
+        amount: i128,
     ) -> Result<(), BoundlessError>;
-    fn update_project_milestone_count(
+    fn release_funds(env: Env, campaign_id: u64, milestone_id: u64) -> Result<(), BoundlessError>;
+    fn get_campaign(
         env: Env,
-        project_id: String,
-        creator: Address,
-        new_milestone_count: u32,
-    ) -> Result<(), BoundlessError>;
-    fn modify_milestone(
+        campaign_id: u64,
+    ) -> Result<crate::datatypes::Campaign, BoundlessError>;
+
+    // Lifecycle management
+    fn complete_campaign(env: Env, campaign_id: u64, admin: Address) -> Result<(), BoundlessError>;
+    fn cancel_campaign(env: Env, campaign_id: u64, admin: Address) -> Result<(), BoundlessError>;
+
+    // Status and participant management
+    fn update_campaign_status(
         env: Env,
-        project_id: String,
-        caller: Address,
-        new_milestone_count: u32,
+        campaign_id: u64,
+        status: crate::datatypes::Status,
+        admin: Address,
     ) -> Result<(), BoundlessError>;
-    fn close_project(env: Env, project_id: String, creator: Address) -> Result<(), BoundlessError>;
-    fn get_project_status(env: Env, project_id: String) -> Result<ProjectStatus, BoundlessError>;
-    fn list_projects(env: Env) -> Result<Vec<String>, BoundlessError>;
-    fn get_project_stats(env: Env, project_id: String) -> Result<(u64, u64, u32), BoundlessError>;
+    fn get_campaign_backers(
+        env: Env,
+        campaign_id: u64,
+    ) -> Result<Vec<crate::datatypes::Backer>, BoundlessError>;
 }
 
-pub trait VotingOperations {
-    fn vote_project(
+pub trait GrantManagement {
+    fn create_grant(
         env: Env,
-        project_id: String,
-        voter: Address,
-        vote_value: i32,
+        sponsor: Address,
+        title: Symbol,
+        description: Symbol,
+        pool: i128,
+        winners: u32,
+    ) -> Result<u64, BoundlessError>;
+    fn apply_to_grant(env: Env, grant_id: u64, project: Symbol) -> Result<(), BoundlessError>;
+    fn get_grant(env: Env, grant_id: u64) -> Result<crate::datatypes::Grant, BoundlessError>;
+
+    // Lifecycle management
+    fn complete_grant(env: Env, grant_id: u64, admin: Address) -> Result<(), BoundlessError>;
+    fn cancel_grant(env: Env, grant_id: u64, admin: Address) -> Result<(), BoundlessError>;
+
+    // Winner selection and management
+    fn select_grant_winners(
+        env: Env,
+        grant_id: u64,
+        winners: Vec<Address>,
+        admin: Address,
     ) -> Result<(), BoundlessError>;
-    fn withdraw_vote(env: Env, project_id: String, voter: Address) -> Result<(), BoundlessError>;
-    fn has_voted(env: Env, project_id: String, voter: Address) -> Result<bool, BoundlessError>;
-    fn get_vote(env: Env, project_id: String, voter: Address) -> Result<i32, BoundlessError>;
+    fn get_grant_applications(env: Env, grant_id: u64) -> Result<Vec<Symbol>, BoundlessError>;
+    fn get_grant_winners(env: Env, grant_id: u64) -> Result<Vec<Address>, BoundlessError>;
+
+    // Status management
+    fn update_grant_status(
+        env: Env,
+        grant_id: u64,
+        status: crate::datatypes::Status,
+        admin: Address,
+    ) -> Result<(), BoundlessError>;
 }
 
-pub trait MilestoneOperations {
+pub trait HackathonManagement {
+    // Creation and basic operations
+    fn create_hackathon(
+        env: Env,
+        organizer: Address,
+        title: Symbol,
+        description: Symbol,
+        theme: Symbol,
+        prize_pool: i128,
+    ) -> Result<u64, BoundlessError>;
+    fn submit_hackathon_entry(
+        env: Env,
+        hackathon_id: u64,
+        project: Symbol,
+    ) -> Result<(), BoundlessError>;
+    fn get_hackathon(
+        env: Env,
+        hackathon_id: u64,
+    ) -> Result<crate::datatypes::Hackathon, BoundlessError>;
+
+    // Lifecycle management
+    fn complete_hackathon(
+        env: Env,
+        hackathon_id: u64,
+        admin: Address,
+    ) -> Result<(), BoundlessError>;
+    fn cancel_hackathon(env: Env, hackathon_id: u64, admin: Address) -> Result<(), BoundlessError>;
+
+    // Judging and winner selection
+    fn judge_hackathon_entry(
+        env: Env,
+        hackathon_id: u64,
+        project: Symbol,
+        score: u32,
+        judge: Address,
+    ) -> Result<(), BoundlessError>;
+    fn select_hackathon_winners(
+        env: Env,
+        hackathon_id: u64,
+        winners: Vec<Address>,
+        admin: Address,
+    ) -> Result<(), BoundlessError>;
+    fn get_hackathon_entries(env: Env, hackathon_id: u64) -> Result<Vec<Symbol>, BoundlessError>;
+    fn get_hackathon_winners(env: Env, hackathon_id: u64) -> Result<Vec<Address>, BoundlessError>;
+
+    // Status management
+    fn update_hackathon_status(
+        env: Env,
+        hackathon_id: u64,
+        status: crate::datatypes::Status,
+        admin: Address,
+    ) -> Result<(), BoundlessError>;
+
+    // Judge management
+    fn add_hackathon_judge(
+        env: Env,
+        hackathon_id: u64,
+        judge: Address,
+        name: Symbol,
+        admin: Address,
+    ) -> Result<(), BoundlessError>;
+    fn remove_hackathon_judge(
+        env: Env,
+        hackathon_id: u64,
+        judge: Address,
+        admin: Address,
+    ) -> Result<(), BoundlessError>;
+    fn get_hackathon_judges(
+        env: Env,
+        hackathon_id: u64,
+    ) -> Result<Vec<crate::datatypes::Judge>, BoundlessError>;
+}
+
+pub trait MilestoneManagement {
+    // Generic milestone operations that work with any entity type
     fn release_milestone(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-        admin: Address,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+    ) -> Result<(), BoundlessError>;
+    fn update_milestone(
+        env: Env,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        status: MilestoneStatus,
     ) -> Result<(), BoundlessError>;
     fn approve_milestone(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-        admin: Address,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        approver: Address,
     ) -> Result<(), BoundlessError>;
     fn reject_milestone(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-        admin: Address,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        rejector: Address,
     ) -> Result<(), BoundlessError>;
-    fn get_milestone_status(
+    fn raise_dispute(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-    ) -> Result<MilestoneStatus, BoundlessError>;
-    fn get_project_milestones(
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        reason: Symbol,
+    ) -> Result<(), BoundlessError>;
+
+    // Milestone creation for different entity types
+    fn create_milestone(
         env: Env,
-        project_id: String,
+        entity_id: u64,
+        entity_type: EntityType,
+        description: Symbol,
+        amount: i128,
+    ) -> Result<u64, BoundlessError>;
+
+    // Milestone queries
+    fn get_milestone(
+        env: Env,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+    ) -> Result<Milestone, BoundlessError>;
+    fn get_entity_milestones(
+        env: Env,
+        entity_id: u64,
+        entity_type: EntityType,
     ) -> Result<Vec<Milestone>, BoundlessError>;
 }
 
-pub trait FundingOperations {
-    fn fund_project(
-        env: Env,
-        project_id: String,
-        amount: i128,
-        funder: Address,
-        token_contract: Address,
-    ) -> Result<(), BoundlessError>;
-    fn refund(env: Env, project_id: String, token_contract: Address) -> Result<(), BoundlessError>;
-    fn get_project_funding(env: Env, project_id: String) -> Result<(u64, u64), BoundlessError>;
-    fn get_backer_contribution(
-        env: Env,
-        project_id: String,
-        backer: Address,
-    ) -> Result<u64, BoundlessError>;
-    fn whitelist_token_contract(
-        env: Env,
-        admin: Address,
-        project_id: String,
-        token_contract: Address,
-    ) -> Result<(), BoundlessError>;
+pub trait EscrowManagement {
+    fn link_escrow(env: Env, campaign_id: u64, escrow_id: Symbol);
 }
