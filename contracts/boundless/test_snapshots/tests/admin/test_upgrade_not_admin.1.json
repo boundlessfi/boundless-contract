@@ -1,31 +1,12 @@
 {
   "generators": {
-    "address": 2,
+    "address": 3,
     "nonce": 0,
     "mux_id": 0
   },
   "auth": [
     [],
     [],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-              "function_name": "upgrade",
-              "args": [
-                {
-                  "bytes": "65029c5584fda78cce9994d85cacf5f1e02e5a3f5c002c7b324ebb83bc00a112"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
     []
   ],
   "ledger": {
@@ -38,39 +19,6 @@
     "min_temp_entry_ttl": 16,
     "max_entry_ttl": 6312000,
     "ledger_entries": [
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": "801925984706572462"
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": "801925984706572462"
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          6311999
-        ]
-      ],
       [
         {
           "contract_data": {
@@ -179,7 +127,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 2
+                  "u32": 1
                 }
               }
             },
@@ -208,7 +156,7 @@
                 "val": {
                   "contract_instance": {
                     "executable": {
-                      "wasm": "65029c5584fda78cce9994d85cacf5f1e02e5a3f5c002c7b324ebb83bc00a112"
+                      "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     },
                     "storage": null
                   }

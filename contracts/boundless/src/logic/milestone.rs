@@ -1,193 +1,134 @@
 use crate::{
-    datatypes::{BoundlessError, DataKey, Milestone, MilestoneStatus, Project, ProjectStatus},
-    interface::MilestoneOperations,
+    datatypes::{BoundlessError, EntityType, Milestone, MilestoneStatus},
+    interface::MilestoneManagement,
     BoundlessContract, BoundlessContractArgs, BoundlessContractClient,
 };
-use soroban_sdk::{contractimpl, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
 
 #[contractimpl]
-impl MilestoneOperations for BoundlessContract {
+impl MilestoneManagement for BoundlessContract {
     fn release_milestone(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-        admin: Address,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
     ) -> Result<(), BoundlessError> {
-        admin.require_auth();
-        let admin_address: Address = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Admin)
-            .ok_or(BoundlessError::NotFound)?;
-        if admin_address != admin {
-            return Err(BoundlessError::Unauthorized);
-        }
-        let mut project: Project = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Project(project_id.clone()))
-            .ok_or(BoundlessError::NotFound)?;
-        if project.status == ProjectStatus::Voting || project.status == ProjectStatus::Funding {
-            return Err(BoundlessError::InvalidOperation);
-        }
-        if project.creator == admin {
-            return Err(BoundlessError::InvalidOperation);
-        }
-        if project.milestones.len() <= milestone_number {
-            return Err(BoundlessError::InvalidOperation);
-        }
-
-        let milestone = project.milestones.get_unchecked(milestone_number);
-        if milestone.status != MilestoneStatus::Pending {
-            return Err(BoundlessError::InvalidOperation);
-        }
-
-        // Create a new milestone with updated status
-        let updated_milestone = Milestone {
-            status: MilestoneStatus::Released,
-            ..milestone
-        };
-
-        // Replace the milestone in the vector
-        project.milestones.set(milestone_number, updated_milestone);
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::Project(project_id.clone()), &project);
-        env.events().publish(
-            (
-                DataKey::Project(project_id.clone()),
-                symbol_short!("released"),
-            ),
-            milestone_number,
-        );
+        // TODO: release milestone logic
+        // - Get entity (campaign/grant/hackathon) from storage
+        // - Find milestone by milestone_id
+        // - Validate milestone can be released
+        // - Update milestone status to Released
+        // - Store updated entity
+        // - Emit release event
         Ok(())
     }
+
+    fn update_milestone(
+        env: Env,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        status: MilestoneStatus,
+    ) -> Result<(), BoundlessError> {
+        // TODO: update milestone logic
+        // - Get entity from storage
+        // - Find milestone by milestone_id
+        // - Update milestone status
+        // - Store updated entity
+        // - Emit update event
+        Ok(())
+    }
+
     fn approve_milestone(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-        admin: Address,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        approver: Address,
     ) -> Result<(), BoundlessError> {
-        admin.require_auth();
-        let mut project: Project = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Project(project_id.clone()))
-            .ok_or(BoundlessError::NotFound)?;
-        if project.status == ProjectStatus::Voting || project.status == ProjectStatus::Funding {
-            return Err(BoundlessError::InvalidOperation);
-        }
-        if project.creator == admin {
-            return Err(BoundlessError::InvalidOperation);
-        }
-        if project.milestones.len() <= milestone_number {
-            return Err(BoundlessError::InvalidOperation);
-        }
-
-        let milestone = project.milestones.get_unchecked(milestone_number);
-        if milestone.status != MilestoneStatus::Released {
-            return Err(BoundlessError::InvalidOperation);
-        }
-
-        // Create a new milestone with updated status
-        let updated_milestone = Milestone {
-            status: MilestoneStatus::Approved,
-            ..milestone
-        };
-
-        // Replace the milestone in the vector
-        project.milestones.set(milestone_number, updated_milestone);
-
-        // Add to approvals
-        project
-            .milestone_approvals
-            .push_back((milestone_number, true));
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::Project(project_id.clone()), &project);
-        env.events().publish(
-            (
-                DataKey::Project(project_id.clone()),
-                symbol_short!("approved"),
-            ),
-            milestone_number,
-        );
+        // TODO: approve milestone logic
+        // - Verify approver authorization
+        // - Get entity from storage
+        // - Find milestone by milestone_id
+        // - Validate milestone can be approved
+        // - Update milestone status to Approved
+        // - Store updated entity
+        // - Emit approval event
         Ok(())
     }
+
     fn reject_milestone(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-        admin: Address,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        rejector: Address,
     ) -> Result<(), BoundlessError> {
-        admin.require_auth();
-        let mut project: Project = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Project(project_id.clone()))
-            .ok_or(BoundlessError::NotFound)?;
-        if project.status == ProjectStatus::Voting || project.status == ProjectStatus::Funding {
-            return Err(BoundlessError::InvalidOperation);
-        }
-        if project.creator == admin {
-            return Err(BoundlessError::InvalidOperation);
-        }
-        if project.milestones.len() <= milestone_number {
-            return Err(BoundlessError::InvalidOperation);
-        }
-
-        let milestone = project.milestones.get_unchecked(milestone_number);
-        if milestone.status != MilestoneStatus::Released {
-            return Err(BoundlessError::InvalidOperation);
-        }
-
-        // Create a new milestone with updated status
-        let updated_milestone = Milestone {
-            status: MilestoneStatus::Rejected,
-            ..milestone
-        };
-
-        // Replace the milestone in the vector
-        project.milestones.set(milestone_number, updated_milestone);
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::Project(project_id.clone()), &project);
-        env.events().publish(
-            (
-                DataKey::Project(project_id.clone()),
-                symbol_short!("rejected"),
-            ),
-            milestone_number,
-        );
+        // TODO: reject milestone logic
+        // - Verify rejector authorization
+        // - Get entity from storage
+        // - Find milestone by milestone_id
+        // - Validate milestone can be rejected
+        // - Update milestone status to Rejected
+        // - Store updated entity
+        // - Emit rejection event
         Ok(())
     }
-    fn get_milestone_status(
+
+    fn raise_dispute(
         env: Env,
-        project_id: String,
-        milestone_number: u32,
-    ) -> Result<MilestoneStatus, BoundlessError> {
-        let project: Project = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Project(project_id.clone()))
-            .ok_or(BoundlessError::NotFound)?;
-        if project.milestones.len() <= milestone_number {
-            return Err(BoundlessError::InvalidOperation);
-        }
-        Ok(project.milestones.get_unchecked(milestone_number).status)
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+        reason: Symbol,
+    ) -> Result<(), BoundlessError> {
+        // TODO: raise dispute logic
+        // - Get entity from storage
+        // - Find milestone by milestone_id
+        // - Create dispute record
+        // - Store dispute information
+        // - Emit dispute event
+        Ok(())
     }
-    fn get_project_milestones(
+
+    fn create_milestone(
         env: Env,
-        project_id: String,
+        entity_id: u64,
+        entity_type: EntityType,
+        description: Symbol,
+        amount: i128,
+    ) -> Result<u64, BoundlessError> {
+        // TODO: create milestone logic
+        // - Get entity from storage
+        // - Generate unique milestone ID
+        // - Create Milestone struct
+        // - Add to entity's milestones list
+        // - Store updated entity
+        // - Return milestone ID
+        Ok(0) // Placeholder
+    }
+
+    fn get_milestone(
+        env: Env,
+        entity_id: u64,
+        entity_type: EntityType,
+        milestone_id: u64,
+    ) -> Result<Milestone, BoundlessError> {
+        // TODO: get milestone logic
+        // - Get entity from storage
+        // - Find milestone by milestone_id
+        // - Return milestone struct
+        Err(BoundlessError::MilestoneNotFound) // Placeholder
+    }
+
+    fn get_entity_milestones(
+        env: Env,
+        entity_id: u64,
+        entity_type: EntityType,
     ) -> Result<Vec<Milestone>, BoundlessError> {
-        let project: Project = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Project(project_id.clone()))
-            .ok_or(BoundlessError::NotFound)?;
-        Ok(project.milestones)
+        // TODO: get entity milestones logic
+        // - Get entity from storage
+        // - Return milestones list
+        Ok(Vec::new(&env)) // Placeholder
     }
 }

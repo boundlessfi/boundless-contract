@@ -1,5 +1,5 @@
 pub mod admin;
-pub mod funding;
+pub mod campaign;
+pub mod grant;
+pub mod hackathon;
 pub mod milestone;
-pub mod project;
-pub mod voting;
