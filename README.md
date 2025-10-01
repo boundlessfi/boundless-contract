@@ -97,7 +97,7 @@ The project uses Soroban SDK for smart contract development. The main contract i
 
 ### Building Contracts
 ```bash
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32v1-none --release
 ```
 
 ### Testing
