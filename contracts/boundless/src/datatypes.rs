@@ -18,8 +18,8 @@ pub enum DataKey {
     HackathonEntries(u64),
     HackathonJudges(u64),
     // Escrow linking
-    CampaignEscrow(u64),  // Links campaign to escrow contract
-    EscrowValidation(Address),  // Validates escrow contracts
+    CampaignEscrow(u64),       // Links campaign to escrow contract
+    EscrowValidation(Address), // Validates escrow contracts
 }
 
 // Campaign/Grant/Hackathon Status
@@ -60,7 +60,7 @@ pub struct Campaign {
     pub title: Symbol,
     pub description: Symbol,
     pub funding_goal: i128,
-    pub escrow_contract_id: Address,  // Trustless Work escrow contract ID
+    pub escrow_contract_id: Address, // Trustless Work escrow contract ID
     pub milestones: Vec<Milestone>,
     pub backers: Vec<Backer>,
     pub status: Status,
