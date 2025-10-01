@@ -12,6 +12,9 @@ runs:
         toolchain: stable
         targets: wasm32v1-none
 
+    - name: Add wasm32v1-none target
+      run: rustup target add wasm32v1-none
+      shell: bash
 
     - name: Install Stellar CLI
       run: |
