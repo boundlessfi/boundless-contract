@@ -1,4 +1,4 @@
-use crate::datatypes::{Backer, BoundlessError, Campaign, Status};
+use crate::datatypes::{Backer, BoundlessError, Campaign, Milestone, Status};
 use crate::interface::CampaignManagement;
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
@@ -12,7 +12,10 @@ impl CampaignManagement for BoundlessContract {
         title: Symbol,
         description: Symbol,
         goal: i128,
+        escrow_contract_id: Address,
+        milestones: Vec<Milestone>,
     ) -> Result<u64, BoundlessError> {
+        owner.require_auth();
         // TODO: campaign creation logic
         // - Generate unique campaign ID
         // - Create Campaign struct with Status::Active
@@ -27,6 +30,7 @@ impl CampaignManagement for BoundlessContract {
         backer: Address,
         amount: i128,
     ) -> Result<(), BoundlessError> {
+        backer.require_auth();
         // TODO: campaign funding logic
         // - Get campaign from storage
         // - Add backer to backers list

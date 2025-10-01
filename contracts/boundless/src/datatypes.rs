@@ -17,6 +17,9 @@ pub enum DataKey {
     GrantApplications(u64),
     HackathonEntries(u64),
     HackathonJudges(u64),
+    // Escrow linking
+    CampaignEscrow(u64),  // Links campaign to escrow contract
+    EscrowValidation(Address),  // Validates escrow contracts
 }
 
 // Campaign/Grant/Hackathon Status
@@ -57,7 +60,7 @@ pub struct Campaign {
     pub title: Symbol,
     pub description: Symbol,
     pub funding_goal: i128,
-    pub escrow_id: Symbol,
+    pub escrow_contract_id: Address,  // Trustless Work escrow contract ID
     pub milestones: Vec<Milestone>,
     pub backers: Vec<Backer>,
     pub status: Status,
@@ -172,4 +175,10 @@ pub enum BoundlessError {
     InvalidOperation = 11,
     /// Already initialized
     AlreadyInitialized = 12,
+    /// Escrow contract validation failed
+    InvalidEscrowContract = 13,
+    /// Escrow contract already linked
+    EscrowAlreadyLinked = 14,
+    /// Escrow contract not found
+    EscrowNotFound = 15,
 }
