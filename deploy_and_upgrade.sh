@@ -34,7 +34,7 @@ deploy_contract() {
     # Deploy the contract
     echo "Deploying contract..."
     CONTRACT_ID=$(stellar contract deploy \
-        --wasm target/wasm32-unknown-unknown/release/boundless.wasm \
+        --wasm target/wasm32v1-none/release/boundless.wasm \
         --source $SOURCE_ACCOUNT \
         --network $NETWORK)
     
@@ -98,7 +98,7 @@ upgrade_contract() {
     echo "Installing new WASM..."
     WASM_HASH=$(stellar contract upload \
         --source-account $SOURCE_ACCOUNT \
-        --wasm target/wasm32-unknown-unknown/release/boundless.wasm \
+        --wasm target/wasm32v1-none/release/boundless.wasm \
         --network $NETWORK)
     
     if [ $? -ne 0 ]; then
