@@ -16,6 +16,8 @@ pub trait CampaignManagement {
         title: Symbol,
         description: Symbol,
         goal: i128,
+        escrow_contract_id: Address,  // Trustless Work escrow contract ID
+        milestones: Vec<crate::datatypes::Milestone>, // Milestone data
     ) -> Result<u64, BoundlessError>;
     fn fund_campaign(
         env: Env,
@@ -215,5 +217,7 @@ pub trait MilestoneManagement {
 }
 
 pub trait EscrowManagement {
-    fn link_escrow(env: Env, campaign_id: u64, escrow_id: Symbol);
+    fn link_escrow(env: Env, campaign_id: u64, escrow_contract_id: Address) -> Result<(), BoundlessError>;
+    fn get_escrow_contract(env: Env, campaign_id: u64) -> Result<Address, BoundlessError>;
+    fn validate_escrow_contract(env: Env, escrow_contract_id: Address) -> Result<bool, BoundlessError>;
 }
