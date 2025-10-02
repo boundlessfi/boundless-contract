@@ -189,3 +189,9 @@ pub struct CampaignCancelled {
     pub admin: Address,
 }
 
+#[contractevent]
+pub struct CampaignStatusUpdated {
+    pub campaign_id: u64,
+    pub status: Status,
+    pub admin: Address,
+}
