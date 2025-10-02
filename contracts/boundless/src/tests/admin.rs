@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::{datatypes::BoundlessError, BoundlessContract, BoundlessContractClient};
+use crate::{BoundlessContract, BoundlessContractClient};
 use soroban_sdk::{
     testutils::{Address as _, MockAuth, MockAuthInvoke},
     Address, BytesN, Env,
