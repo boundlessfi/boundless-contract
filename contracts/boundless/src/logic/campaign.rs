@@ -1,5 +1,5 @@
 use crate::datatypes::{Backer, BoundlessError, Campaign, Milestone, Status};
-use crate::interface::CampaignManagement;
+use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
 
@@ -66,12 +66,32 @@ impl CampaignManagement for BoundlessContract {
     }
 
     fn cancel_campaign(env: Env, campaign_id: u64, admin: Address) -> Result<(), BoundlessError> {
-        // TODO: cancel campaign logic
-        // - Verify admin authorization
-        // - Get campaign from storage
-        // - Update status to Failed
-        // - Store updated campaign
-        // - Emit cancellation event
+        admin.require_auth();
+        let contract_admin = <BoundlessContract as ContractManagement>::get_admin(&env);
+        if admin != contract_admin {
+            return Err(BoundlessError::Unauthorized);
+        }
+
+        let campaign_key = crate::datatypes::DataKey::Campaign(campaign_id);
+        let mut campaign: Campaign = env
+            .storage()
+            .persistent()
+            .get(&campaign_key)
+            .ok_or(BoundlessError::CampaignNotFound)?;
+
+        match campaign.status {
+            Status::Completed => return Err(BoundlessError::InvalidOperation),
+            Status::Failed => return Err(BoundlessError::InvalidOperation),
+            _ => {} 
+        }
+
+        campaign.status = Status::Failed;
+        env.storage().persistent().set(&campaign_key, &campaign);
+        env.events().publish(
+            (Symbol::new(&env, "campaign"), Symbol::new(&env, "stop")),
+            (campaign_id, admin),
+        );
+
         Ok(())
     }
 
