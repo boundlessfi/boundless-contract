@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contracttype, contractevent, Address, Symbol, Vec};
+use soroban_sdk::{contracterror, contractevent, contracttype, Address, Symbol, Vec};
 
 #[contracttype]
 pub enum DataKey {
@@ -194,4 +194,12 @@ pub struct CampaignStatusUpdated {
     pub campaign_id: u64,
     pub status: Status,
     pub admin: Address,
+}
+
+#[contractevent]
+pub struct FundsReleased {
+    pub campaign_id: u64,
+    pub milestone_id: u64,
+    pub amount: i128,
+    pub releaser: Address,
 }

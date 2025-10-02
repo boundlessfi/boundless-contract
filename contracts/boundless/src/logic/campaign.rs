@@ -1,4 +1,7 @@
-use crate::datatypes::{Backer, BoundlessError, Campaign, Milestone, Status, CampaignCancelled, CampaignStatusUpdated};
+use crate::datatypes::{
+    Backer, BoundlessError, Campaign, CampaignCancelled, CampaignStatusUpdated, FundsReleased,
+    Milestone, MilestoneStatus, Status,
+};
 use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
@@ -40,11 +43,78 @@ impl CampaignManagement for BoundlessContract {
     }
 
     fn release_funds(env: Env, campaign_id: u64, milestone_id: u64) -> Result<(), BoundlessError> {
-        // TODO: campaign funds release logic
-        // - Get campaign and milestone
-        // - Validate milestone can be released
-        // - Update milestone status
-        // - Emit release event
+        // Get the campaign from storage
+        let campaign_key = crate::datatypes::DataKey::Campaign(campaign_id);
+        let mut campaign: Campaign = env
+            .storage()
+            .persistent()
+            .get(&campaign_key)
+            .ok_or(BoundlessError::CampaignNotFound)?;
+
+        // Validate campaign status allows fund release
+        match campaign.status {
+            Status::Failed => return Err(BoundlessError::InvalidOperation),
+            Status::Completed => return Err(BoundlessError::InvalidOperation),
+            _ => {} // Allow release for Pending and Active campaigns
+        }
+
+        // Find the milestone in the campaign's milestones list
+        let mut milestone_found = false;
+        let mut milestone_amount = 0i128;
+
+        for milestone in campaign.milestones.iter() {
+            if milestone.id == milestone_id {
+                milestone_found = true;
+                milestone_amount = milestone.amount;
+
+                // Validate milestone status allows release
+                match milestone.status {
+                    MilestoneStatus::Approved => {
+                        // Milestone can be released
+                    }
+                    MilestoneStatus::Released => {
+                        return Err(BoundlessError::InvalidOperation); // Already released
+                    }
+                    MilestoneStatus::Rejected => {
+                        return Err(BoundlessError::InvalidOperation); // Cannot release rejected milestone
+                    }
+                    MilestoneStatus::Pending => {
+                        return Err(BoundlessError::InvalidOperation); // Must be approved first
+                    }
+                }
+                break;
+            }
+        }
+
+        if !milestone_found {
+            return Err(BoundlessError::MilestoneNotFound);
+        }
+
+        // Update the milestone status to Released
+        let mut updated_milestones = Vec::new(&env);
+        for milestone in campaign.milestones.iter() {
+            if milestone.id == milestone_id {
+                let mut updated_milestone = milestone.clone();
+                updated_milestone.status = MilestoneStatus::Released;
+                updated_milestones.push_back(updated_milestone);
+            } else {
+                updated_milestones.push_back(milestone.clone());
+            }
+        }
+        campaign.milestones = updated_milestones;
+
+        // Store the updated campaign
+        env.storage().persistent().set(&campaign_key, &campaign);
+
+        // Emit the release event
+        FundsReleased {
+            campaign_id,
+            milestone_id,
+            amount: milestone_amount,
+            releaser: env.current_contract_address(),
+        }
+        .publish(&env);
+
         Ok(())
     }
 
@@ -82,7 +152,7 @@ impl CampaignManagement for BoundlessContract {
         match campaign.status {
             Status::Completed => return Err(BoundlessError::InvalidOperation),
             Status::Failed => return Err(BoundlessError::InvalidOperation),
-            _ => {} 
+            _ => {}
         }
 
         campaign.status = Status::Failed;
@@ -91,16 +161,12 @@ impl CampaignManagement for BoundlessContract {
         //     (Symbol::new(&env, "campaign"), Symbol::new(&env, "stop")),
         //     (campaign_id, admin),
         // );
-        CampaignCancelled {
-            campaign_id,
-            admin,
-        }
-        .publish(&env);
+        CampaignCancelled { campaign_id, admin }.publish(&env);
 
         Ok(())
     }
 
-  fn update_campaign_status(
+    fn update_campaign_status(
         env: Env,
         campaign_id: u64,
         status: Status,

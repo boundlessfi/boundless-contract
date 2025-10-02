@@ -1,17 +1,16 @@
 #![cfg(test)]
 
 use crate::{
-    datatypes::{Campaign, Status},
+    datatypes::{Campaign, EntityType, Milestone, MilestoneStatus, Status},
     BoundlessContract, BoundlessContractClient,
 };
-use soroban_sdk::{
-    testutils::Address as _,
-    Address, Env, Symbol, Vec,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
 
 extern crate std;
 mod boundless {
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/boundless.wasm");
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32-unknown-unknown/release/boundless.wasm"
+    );
 }
 
 #[test]
@@ -22,9 +21,9 @@ fn test_cancel_campaign_success() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
-    
+
     let campaign_id = 1u64;
     let owner: Address = Address::generate(&env);
     let title = Symbol::new(&env, "TestCampaign");
@@ -33,7 +32,7 @@ fn test_cancel_campaign_success() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -50,9 +49,9 @@ fn test_cancel_campaign_success() {
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&campaign_key, &campaign);
     });
-    
+
     contract.cancel_campaign(&campaign_id, &admin);
-    
+
     let updated_campaign: Campaign = env.as_contract(&contract_id, || {
         env.storage().persistent().get(&campaign_key).unwrap()
     });
@@ -69,7 +68,7 @@ fn test_cancel_campaign_unauthorized() {
     let unauthorized_user = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
 
     let campaign_id = 1u64;
@@ -80,7 +79,7 @@ fn test_cancel_campaign_unauthorized() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -108,7 +107,7 @@ fn test_cancel_campaign_not_found() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
     contract.cancel_campaign(&999u64, &admin);
 }
@@ -122,7 +121,7 @@ fn test_cancel_campaign_already_completed() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
 
     let campaign_id = 1u64;
@@ -133,7 +132,7 @@ fn test_cancel_campaign_already_completed() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -160,7 +159,7 @@ fn test_cancel_campaign_already_failed() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
 
     let campaign_id = 1u64;
@@ -171,7 +170,7 @@ fn test_cancel_campaign_already_failed() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -197,7 +196,7 @@ fn test_cancel_campaign_pending_status() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
 
     let campaign_id = 1u64;
@@ -208,7 +207,7 @@ fn test_cancel_campaign_pending_status() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -225,9 +224,9 @@ fn test_cancel_campaign_pending_status() {
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&campaign_key, &campaign);
     });
-    
+
     contract.cancel_campaign(&campaign_id, &admin);
-    
+
     let updated_campaign: Campaign = env.as_contract(&contract_id, || {
         env.storage().persistent().get(&campaign_key).unwrap()
     });

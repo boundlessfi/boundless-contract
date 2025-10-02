@@ -4,14 +4,13 @@ use crate::{
     datatypes::{Campaign, Status},
     BoundlessContract, BoundlessContractClient,
 };
-use soroban_sdk::{
-    testutils::Address as _,
-    Address, Env, Symbol, Vec,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
 
 extern crate std;
 mod boundless {
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/boundless.wasm");
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32-unknown-unknown/release/boundless.wasm"
+    );
 }
 
 #[test]
@@ -22,9 +21,9 @@ fn test_update_campaign_status_success() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
-    
+
     let campaign_id = 1u64;
     let owner = Address::generate(&env);
     let title = Symbol::new(&env, "TestCampaign");
@@ -33,7 +32,7 @@ fn test_update_campaign_status_success() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -50,10 +49,10 @@ fn test_update_campaign_status_success() {
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&campaign_key, &campaign);
     });
-    
+
     // Update status to Completed
     contract.update_campaign_status(&campaign_id, &Status::Completed, &admin);
-    
+
     let updated_campaign: Campaign = env.as_contract(&contract_id, || {
         env.storage().persistent().get(&campaign_key).unwrap()
     });
@@ -70,7 +69,7 @@ fn test_update_campaign_status_unauthorized() {
     let unauthorized_user = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
 
     let campaign_id = 1u64;
@@ -81,7 +80,7 @@ fn test_update_campaign_status_unauthorized() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -111,7 +110,7 @@ fn test_update_campaign_status_not_found() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
 
     let campaign_id = 999u64; // Non-existent campaign
@@ -127,9 +126,9 @@ fn test_update_campaign_status_to_failed() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
-    
+
     let campaign_id = 1u64;
     let owner = Address::generate(&env);
     let title = Symbol::new(&env, "TestCampaign");
@@ -138,7 +137,7 @@ fn test_update_campaign_status_to_failed() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -155,10 +154,10 @@ fn test_update_campaign_status_to_failed() {
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&campaign_key, &campaign);
     });
-    
+
     // Update status to Failed
     contract.update_campaign_status(&campaign_id, &Status::Failed, &admin);
-    
+
     let updated_campaign: Campaign = env.as_contract(&contract_id, || {
         env.storage().persistent().get(&campaign_key).unwrap()
     });
@@ -173,9 +172,9 @@ fn test_update_campaign_status_to_pending() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
-    
+
     let campaign_id = 1u64;
     let owner = Address::generate(&env);
     let title = Symbol::new(&env, "TestCampaign");
@@ -184,7 +183,7 @@ fn test_update_campaign_status_to_pending() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -201,10 +200,10 @@ fn test_update_campaign_status_to_pending() {
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&campaign_key, &campaign);
     });
-    
+
     // Update status to Pending
     contract.update_campaign_status(&campaign_id, &Status::Pending, &admin);
-    
+
     let updated_campaign: Campaign = env.as_contract(&contract_id, || {
         env.storage().persistent().get(&campaign_key).unwrap()
     });
