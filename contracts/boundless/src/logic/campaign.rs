@@ -95,18 +95,32 @@ impl CampaignManagement for BoundlessContract {
         Ok(())
     }
 
-    fn update_campaign_status(
+  fn update_campaign_status(
         env: Env,
         campaign_id: u64,
         status: Status,
         admin: Address,
     ) -> Result<(), BoundlessError> {
-        // TODO: update campaign status logic
-        // - Verify admin authorization
-        // - Get campaign from storage
-        // - Update status
-        // - Store updated campaign
-        // - Emit status update event
+        admin.require_auth();
+        let contract_admin = <BoundlessContract as ContractManagement>::get_admin(&env);
+        if admin != contract_admin {
+            return Err(BoundlessError::Unauthorized);
+        }
+
+        let campaign_key = crate::datatypes::DataKey::Campaign(campaign_id);
+        let mut campaign: Campaign = env
+            .storage()
+            .persistent()
+            .get(&campaign_key)
+            .ok_or(BoundlessError::CampaignNotFound)?;
+
+        campaign.status = status.clone();
+        env.storage().persistent().set(&campaign_key, &campaign);
+        env.events().publish(
+            (Symbol::new(&env, "campaign"), Symbol::new(&env, "status_update")),
+            (campaign_id, status, admin),
+        );
+
         Ok(())
     }
 
