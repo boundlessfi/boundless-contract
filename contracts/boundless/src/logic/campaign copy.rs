@@ -1,7 +1,4 @@
-use crate::datatypes::{
-    Backer, BoundlessError, Campaign, Milestone, Status,
-    DataKey, CampaignCancelled, CampaignStatusUpdated,
-};
+use crate::datatypes::{Backer, BoundlessError, Campaign, Milestone, Status, CampaignCancelled};
 use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
@@ -19,40 +16,12 @@ impl CampaignManagement for BoundlessContract {
         milestones: Vec<Milestone>,
     ) -> Result<u64, BoundlessError> {
         owner.require_auth();
-        
-        // Generate unique campaign ID using current timestamp and a counter
-        let current_campaigns: u64 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Campaigns)
-            .unwrap_or(0);
-        
-        let campaign_id = current_campaigns + 1;
-        
-        // Create Campaign struct with Status::Active and empty backers
-        let campaign = Campaign {
-            id: campaign_id,
-            owner: owner.clone(),
-            title,
-            description,
-            funding_goal: goal,
-            escrow_contract_id,
-            milestones,
-            backers: Vec::new(&env),
-            status: Status::Active,
-        };
-        
-        // Store the campaign in persistent storage
-        env.storage()
-            .persistent()
-            .set(&DataKey::Campaign(campaign_id), &campaign);
-        
-        // Update the campaigns counter
-        env.storage()
-            .persistent()
-            .set(&DataKey::Campaigns, &campaign_id);
-        
-        Ok(campaign_id)
+        // TODO: campaign creation logic
+        // - Generate unique campaign ID
+        // - Create Campaign struct with Status::Active
+        // - Store in persistent storage
+        // - Return campaign ID
+        Ok(0) // Placeholder
     }
 
     fn fund_campaign(
@@ -80,11 +49,10 @@ impl CampaignManagement for BoundlessContract {
     }
 
     fn get_campaign(env: Env, campaign_id: u64) -> Result<Campaign, BoundlessError> {
-        // Retrieve campaign from storage
-        env.storage()
-            .persistent()
-            .get(&DataKey::Campaign(campaign_id))
-            .ok_or(BoundlessError::CampaignNotFound)
+        // TODO: get campaign logic
+        // - Retrieve campaign from storage
+        // - Return campaign struct
+        Err(BoundlessError::CampaignNotFound) // Placeholder
     }
 
     fn complete_campaign(env: Env, campaign_id: u64, admin: Address) -> Result<(), BoundlessError> {
@@ -119,10 +87,6 @@ impl CampaignManagement for BoundlessContract {
 
         campaign.status = Status::Failed;
         env.storage().persistent().set(&campaign_key, &campaign);
-        // env.events().publish(
-        //     (Symbol::new(&env, "campaign"), Symbol::new(&env, "stop")),
-        //     (campaign_id, admin),
-        // );
         CampaignCancelled {
             campaign_id,
             admin,
@@ -132,38 +96,18 @@ impl CampaignManagement for BoundlessContract {
         Ok(())
     }
 
-  fn update_campaign_status(
+    fn update_campaign_status(
         env: Env,
         campaign_id: u64,
         status: Status,
         admin: Address,
     ) -> Result<(), BoundlessError> {
-        admin.require_auth();
-        let contract_admin = <BoundlessContract as ContractManagement>::get_admin(&env);
-        if admin != contract_admin {
-            return Err(BoundlessError::Unauthorized);
-        }
-
-        let campaign_key = crate::datatypes::DataKey::Campaign(campaign_id);
-        let mut campaign: Campaign = env
-            .storage()
-            .persistent()
-            .get(&campaign_key)
-            .ok_or(BoundlessError::CampaignNotFound)?;
-
-        campaign.status = status.clone();
-        env.storage().persistent().set(&campaign_key, &campaign);
-        // env.events().publish(
-        //     (Symbol::new(&env, "campaign"), Symbol::new(&env, "status_update")),
-        //     (campaign_id, status, admin),
-        // );
-        CampaignStatusUpdated {
-            campaign_id,
-            status,
-            admin,
-        }
-        .publish(&env);
-
+        // TODO: update campaign status logic
+        // - Verify admin authorization
+        // - Get campaign from storage
+        // - Update status
+        // - Store updated campaign
+        // - Emit status update event
         Ok(())
     }
 

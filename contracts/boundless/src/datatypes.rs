@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contracttype, Address, Symbol, Vec};
+use soroban_sdk::{contracterror, contracttype, contractevent, Address, Symbol, Vec};
 
 #[contracttype]
 pub enum DataKey {
@@ -181,4 +181,17 @@ pub enum BoundlessError {
     EscrowAlreadyLinked = 14,
     /// Escrow contract not found
     EscrowNotFound = 15,
+}
+// Events
+#[contractevent]
+pub struct CampaignCancelled {
+    pub campaign_id: u64,
+    pub admin: Address,
+}
+
+#[contractevent]
+pub struct CampaignStatusUpdated {
+    pub campaign_id: u64,
+    pub status: Status,
+    pub admin: Address,
 }
