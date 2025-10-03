@@ -1,4 +1,4 @@
-use crate::datatypes::{Backer, BoundlessError, Campaign, Milestone, Status};
+use crate::datatypes::{Backer, BoundlessError, Campaign, DataKey, Milestone, Status};
 use crate::interface::CampaignManagement;
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
@@ -16,12 +16,40 @@ impl CampaignManagement for BoundlessContract {
         milestones: Vec<Milestone>,
     ) -> Result<u64, BoundlessError> {
         owner.require_auth();
-        // TODO: campaign creation logic
-        // - Generate unique campaign ID
-        // - Create Campaign struct with Status::Active
-        // - Store in persistent storage
-        // - Return campaign ID
-        Ok(0) // Placeholder
+        
+        // Generate unique campaign ID using current timestamp and a counter
+        let current_campaigns: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Campaigns)
+            .unwrap_or(0);
+        
+        let campaign_id = current_campaigns + 1;
+        
+        // Create Campaign struct with Status::Active and empty backers
+        let campaign = Campaign {
+            id: campaign_id,
+            owner: owner.clone(),
+            title,
+            description,
+            funding_goal: goal,
+            escrow_contract_id,
+            milestones,
+            backers: Vec::new(&env),
+            status: Status::Active,
+        };
+        
+        // Store the campaign in persistent storage
+        env.storage()
+            .persistent()
+            .set(&DataKey::Campaign(campaign_id), &campaign);
+        
+        // Update the campaigns counter
+        env.storage()
+            .persistent()
+            .set(&DataKey::Campaigns, &campaign_id);
+        
+        Ok(campaign_id)
     }
 
     fn fund_campaign(
@@ -49,10 +77,11 @@ impl CampaignManagement for BoundlessContract {
     }
 
     fn get_campaign(env: Env, campaign_id: u64) -> Result<Campaign, BoundlessError> {
-        // TODO: get campaign logic
-        // - Retrieve campaign from storage
-        // - Return campaign struct
-        Err(BoundlessError::CampaignNotFound) // Placeholder
+        // Retrieve campaign from storage
+        env.storage()
+            .persistent()
+            .get(&DataKey::Campaign(campaign_id))
+            .ok_or(BoundlessError::CampaignNotFound)
     }
 
     fn complete_campaign(env: Env, campaign_id: u64, admin: Address) -> Result<(), BoundlessError> {
