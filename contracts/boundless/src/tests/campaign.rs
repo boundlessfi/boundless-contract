@@ -5,13 +5,71 @@ use crate::{
     BoundlessContract, BoundlessContractClient,
 };
 use soroban_sdk::{
-    testutils::Address as _,
-    Address, Env, Symbol, Vec,
+    log, testutils::Address as _, Address, Env, Symbol, Vec
 };
 
-extern crate std;
-mod boundless {
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/boundless.wasm");
+// extern crate std;
+// mod boundless {
+//     soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/boundless.wasm");
+// }
+
+#[test]
+fn test_get_campaign_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(BoundlessContract, ());
+    let contract = BoundlessContractClient::new(&env, &contract_id);
+    
+    contract.initialize(&admin);
+    
+    let campaign_id = 1u64;
+    let owner: Address = Address::generate(&env);
+    let title = Symbol::new(&env, "TestCampaign");
+    let description = Symbol::new(&env, "TestDescription");
+    let funding_goal = 1000i128;
+    let escrow_contract_id = Address::generate(&env);
+    let milestones = Vec::new(&env);
+    let backers = Vec::new(&env);
+    
+    let campaign = Campaign {
+        id: campaign_id,
+        owner: owner.clone(),
+        title: title.clone(),
+        description: description.clone(),
+        funding_goal,
+        escrow_contract_id: escrow_contract_id.clone(),
+        milestones,
+        backers,
+        status: Status::Active,
+    };
+
+    let campaign_key = crate::datatypes::DataKey::Campaign(campaign_id);
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&campaign_key, &campaign);
+    });
+    
+    let campaign = contract.get_campaign(&campaign_id);
+    assert_eq!(campaign.funding_goal, funding_goal);
+    assert_eq!(campaign.title, title);
+    assert_eq!(campaign.status, Status::Active);
+}
+
+#[test]
+#[should_panic]
+fn test_get_campaign_fail() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(BoundlessContract, ());
+    let contract = BoundlessContractClient::new(&env, &contract_id);
+    
+    contract.initialize(&admin);
+    
+    let campaign_id = 1u64;
+    let _ = contract.get_campaign(&campaign_id);
 }
 
 #[test]
