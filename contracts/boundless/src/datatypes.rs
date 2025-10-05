@@ -190,6 +190,13 @@ pub struct CampaignCancelled {
 }
 
 #[contractevent]
+pub struct CampaignFunded {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
 pub struct CampaignStatusUpdated {
     pub campaign_id: u64,
     pub status: Status,

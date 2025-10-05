@@ -1,6 +1,6 @@
 use crate::datatypes::{
-    Backer, BoundlessError, Campaign, CampaignCancelled, CampaignStatusUpdated, FundsReleased,
-    Milestone, MilestoneStatus, Status,
+    Backer, BoundlessError, Campaign, CampaignCancelled, CampaignFunded, CampaignStatusUpdated,
+    FundsReleased, Milestone, MilestoneStatus, Status,
 };
 use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
@@ -34,11 +34,32 @@ impl CampaignManagement for BoundlessContract {
         amount: i128,
     ) -> Result<(), BoundlessError> {
         backer.require_auth();
-        // TODO: campaign funding logic
-        // - Get campaign from storage
-        // - Add backer to backers list
-        // - Update campaign in storage
-        // - Emit funding event
+
+        if amount <= 0 {
+            return Err(BoundlessError::InvalidOperation);
+        }
+
+        let campaign_key = crate::datatypes::DataKey::Campaign(campaign_id);
+        let mut campaign: Campaign = env
+            .storage()
+            .persistent()
+            .get(&campaign_key)
+            .ok_or(BoundlessError::CampaignNotFound)?;
+
+        campaign.backers.push_back(Backer {
+            wallet: backer.clone(),
+            amount,
+        });
+
+        env.storage().persistent().set(&campaign_key, &campaign);
+
+        CampaignFunded {
+            campaign_id,
+            backer,
+            amount,
+        }
+        .publish(&env);
+
         Ok(())
     }
 
