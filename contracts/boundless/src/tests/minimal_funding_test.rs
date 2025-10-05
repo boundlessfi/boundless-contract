@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::{
-    datatypes::{Campaign, Status, DataKey},
+    datatypes::{Campaign, DataKey, Status},
     BoundlessContract, BoundlessContractClient,
 };
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
@@ -51,7 +51,10 @@ fn test_fund_campaign_success() {
 
     assert_eq!(updated_campaign.backers.len(), 1);
     assert_eq!(updated_campaign.backers.get(0).unwrap().wallet, backer);
-    assert_eq!(updated_campaign.backers.get(0).unwrap().amount, funding_amount);
+    assert_eq!(
+        updated_campaign.backers.get(0).unwrap().amount,
+        funding_amount
+    );
 }
 
 #[test]
@@ -102,4 +105,3 @@ fn test_fund_campaign_multiple_backers() {
 
     assert_eq!(updated_campaign.backers.len(), 3);
 }
-
