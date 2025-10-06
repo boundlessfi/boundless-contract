@@ -181,6 +181,10 @@ pub enum BoundlessError {
     EscrowAlreadyLinked = 14,
     /// Escrow contract not found
     EscrowNotFound = 15,
+    /// Campaign not found
+    CampaignAlreadyCompleted = 16,
+    /// Operation not allowed in current campaign state
+    InvalidCampaignState = 17,
 }
 // Events
 #[contractevent]
@@ -201,4 +205,11 @@ pub struct CampaignStatusUpdated {
     pub campaign_id: u64,
     pub status: Status,
     pub admin: Address,
+}
+
+#[contractevent]
+pub struct CampaignCompleted {
+    pub campaign_id: u64,
+    pub completed_by: Address,
+    pub completed_at: u64,
 }
