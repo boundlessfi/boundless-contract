@@ -1,7 +1,8 @@
 use crate::datatypes::{
     Backer, BoundlessError, Campaign, CampaignCancelled, CampaignFunded, CampaignStatusUpdated,
-    Milestone, Status,
+    Milestone, Status, DataKey
 };
+use crate::helper::{emit_campaign_completed_event, is_platform_admin};
 use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
@@ -80,12 +81,41 @@ impl CampaignManagement for BoundlessContract {
     }
 
     fn complete_campaign(env: Env, campaign_id: u64, admin: Address) -> Result<(), BoundlessError> {
-        // TODO: complete campaign logic
-        // - Verify admin authorization
-        // - Get campaign from storage
-        // - Update status to Completed
-        // - Store updated campaign
-        // - Emit completion event
+        // Verify admin authorization
+        admin.require_auth();
+
+        // Get campaign from storage
+        let mut campaign: Campaign = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Campaign(campaign_id))
+            .ok_or(BoundlessError::CampaignNotFound)?;
+
+        // Check campaign status
+        match campaign.status {
+            Status::Completed => return Err(BoundlessError::CampaignAlreadyCompleted),
+            Status::Pending | Status::Active => {
+                // Proceed for active campaigns
+            },
+            _ => return Err(BoundlessError::InvalidCampaignState),
+        }
+
+        // Verify admin has permission
+        if campaign.owner != admin && !is_platform_admin(&env, &admin)? {
+            return Err(BoundlessError::Unauthorized);
+        }
+
+        // Update status to Completed
+        campaign.status = Status::Completed;
+
+        // Store updated campaign
+        env.storage()
+            .persistent()
+            .set(&DataKey::Campaign(campaign_id), &campaign);
+
+        // Emit completion event
+        emit_campaign_completed_event(&env, campaign_id, admin);
+
         Ok(())
     }
 
