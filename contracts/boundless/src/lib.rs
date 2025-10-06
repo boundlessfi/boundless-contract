@@ -5,6 +5,7 @@ use soroban_sdk::contract;
 mod datatypes;
 mod interface;
 mod logic;
+mod helper;
 
 pub use logic::*;
 
