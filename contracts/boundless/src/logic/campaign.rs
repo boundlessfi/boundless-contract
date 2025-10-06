@@ -1,4 +1,7 @@
-use crate::datatypes::{Backer, BoundlessError, Campaign, Milestone, Status, CampaignCancelled, CampaignStatusUpdated, DataKey};
+use crate::datatypes::{
+    Backer, BoundlessError, Campaign, CampaignCancelled, CampaignFunded, CampaignStatusUpdated,
+    Milestone, Status, DataKey
+};
 use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
@@ -31,11 +34,32 @@ impl CampaignManagement for BoundlessContract {
         amount: i128,
     ) -> Result<(), BoundlessError> {
         backer.require_auth();
-        // TODO: campaign funding logic
-        // - Get campaign from storage
-        // - Add backer to backers list
-        // - Update campaign in storage
-        // - Emit funding event
+
+        if amount <= 0 {
+            return Err(BoundlessError::InvalidOperation);
+        }
+
+        let campaign_key = crate::datatypes::DataKey::Campaign(campaign_id);
+        let mut campaign: Campaign = env
+            .storage()
+            .persistent()
+            .get(&campaign_key)
+            .ok_or(BoundlessError::CampaignNotFound)?;
+
+        campaign.backers.push_back(Backer {
+            wallet: backer.clone(),
+            amount,
+        });
+
+        env.storage().persistent().set(&campaign_key, &campaign);
+
+        CampaignFunded {
+            campaign_id,
+            backer,
+            amount,
+        }
+        .publish(&env);
+
         Ok(())
     }
 
@@ -85,7 +109,7 @@ impl CampaignManagement for BoundlessContract {
         match campaign.status {
             Status::Completed => return Err(BoundlessError::InvalidOperation),
             Status::Failed => return Err(BoundlessError::InvalidOperation),
-            _ => {} 
+            _ => {}
         }
 
         campaign.status = Status::Failed;
@@ -94,16 +118,12 @@ impl CampaignManagement for BoundlessContract {
         //     (Symbol::new(&env, "campaign"), Symbol::new(&env, "stop")),
         //     (campaign_id, admin),
         // );
-        CampaignCancelled {
-            campaign_id,
-            admin,
-        }
-        .publish(&env);
+        CampaignCancelled { campaign_id, admin }.publish(&env);
 
         Ok(())
     }
 
-  fn update_campaign_status(
+    fn update_campaign_status(
         env: Env,
         campaign_id: u64,
         status: Status,
