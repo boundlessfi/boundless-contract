@@ -1,6 +1,6 @@
 use crate::datatypes::{
     Backer, BoundlessError, Campaign, CampaignCancelled, CampaignFunded, CampaignStatusUpdated,
-    FundsReleased, Milestone, MilestoneStatus, Status,
+    FundsReleased, Milestone, MilestoneStatus, Status, DataKey
 };
 use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};
@@ -140,10 +140,13 @@ impl CampaignManagement for BoundlessContract {
     }
 
     fn get_campaign(env: Env, campaign_id: u64) -> Result<Campaign, BoundlessError> {
-        // TODO: get campaign logic
-        // - Retrieve campaign from storage
-        // - Return campaign struct
-        Err(BoundlessError::CampaignNotFound) // Placeholder
+        let campaign_data_key = DataKey::Campaign(campaign_id);
+        let campaign: Campaign = env
+            .storage()
+            .persistent()
+            .get(&campaign_data_key)
+            .ok_or(BoundlessError::CampaignNotFound)?;
+        Ok(campaign)
     }
 
     fn complete_campaign(env: Env, campaign_id: u64, admin: Address) -> Result<(), BoundlessError> {
