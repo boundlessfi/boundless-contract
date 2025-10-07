@@ -9,7 +9,7 @@ use soroban_sdk::{log, testutils::Address as _, Address, Env, Symbol, Vec};
 extern crate std;
 mod boundless {
     soroban_sdk::contractimport!(
-        file = "../../target/wasm32-unknown-unknown/release/boundless.wasm"
+        file = "../../target/wasm32v1-none/release/boundless.wasm"
     );
 }
 
@@ -21,9 +21,9 @@ fn test_get_campaign_success() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
-    
+
     let campaign_id = 1u64;
     let owner: Address = Address::generate(&env);
     let title = Symbol::new(&env, "TestCampaign");
@@ -32,7 +32,7 @@ fn test_get_campaign_success() {
     let escrow_contract_id = Address::generate(&env);
     let milestones = Vec::new(&env);
     let backers = Vec::new(&env);
-    
+
     let campaign = Campaign {
         id: campaign_id,
         owner: owner.clone(),
@@ -49,7 +49,7 @@ fn test_get_campaign_success() {
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&campaign_key, &campaign);
     });
-    
+
     let campaign = contract.get_campaign(&campaign_id);
     assert_eq!(campaign.funding_goal, funding_goal);
     assert_eq!(campaign.title, title);
@@ -65,9 +65,9 @@ fn test_get_campaign_fail() {
     let admin = Address::generate(&env);
     let contract_id = env.register(BoundlessContract, ());
     let contract = BoundlessContractClient::new(&env, &contract_id);
-    
+
     contract.initialize(&admin);
-    
+
     let campaign_id = 1u64;
     let _ = contract.get_campaign(&campaign_id);
 }

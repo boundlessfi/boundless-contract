@@ -1,6 +1,6 @@
 use crate::datatypes::{
     Backer, BoundlessError, Campaign, CampaignCancelled, CampaignFunded, CampaignStatusUpdated,
-    FundsReleased, Milestone, MilestoneStatus, Status, DataKey
+    DataKey, FundsReleased, Milestone, MilestoneStatus, Status,
 };
 use crate::interface::{CampaignManagement, ContractManagement};
 use crate::{BoundlessContract, BoundlessContractArgs, BoundlessContractClient};

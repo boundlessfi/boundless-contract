@@ -8,7 +8,7 @@ use soroban_sdk::{
 extern crate std;
 mod boundless {
     soroban_sdk::contractimport!(
-        file = "../../target/wasm32-unknown-unknown/release/boundless.wasm"
+        file = "../../target/wasm32v1-none/release/boundless.wasm"
     );
 }
 #[test]
