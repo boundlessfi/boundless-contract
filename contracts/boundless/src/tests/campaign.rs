@@ -8,9 +8,7 @@ use soroban_sdk::{log, testutils::Address as _, Address, Env, Symbol, Vec};
 
 extern crate std;
 mod boundless {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/boundless.wasm"
-    );
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/boundless.wasm");
 }
 
 #[test]
