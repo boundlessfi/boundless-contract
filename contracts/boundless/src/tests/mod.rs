@@ -1,5 +1,9 @@
 #![cfg(test)]
 
+// pub mod admin;
+pub mod campaign;
+// pub mod milestone;
+// pub mod campaign_update_status;
 // Temporarily disable problematic test files
 // pub mod admin;
 // pub mod campaign;
