@@ -1,0 +1,12 @@
+// boundless-events: test entry. Per-area test modules are mounted here.
+//
+// Tests are stubbed at the module level so that adding a new test file is a
+// one-line change. Full test coverage matrix is documented in the
+// boundless-platform-contract-prd.md Section 15.
+
+#![cfg(test)]
+
+mod admin;
+mod common;
+mod contributions;
+mod cross_contract;

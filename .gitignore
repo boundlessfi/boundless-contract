@@ -4,3 +4,7 @@ target
 # Local settings
 .soroban
 .stellar
+
+# Deployment secrets and per-network deployment records
+.env.deploy
+deployments/

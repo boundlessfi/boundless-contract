@@ -1,13 +1,11 @@
 name: Contract Deployment
 
+# DISABLED: this workflow targets the old single-contract model.
+# Re-enable after the two-contract deploy script lands (events + profile with
+# the cross-contract binding sequence per boundless-credits-reputation-prd.md
+# Section 13.1).
+
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'contracts/**'
-      - '.github/workflows/contract-deploy.yml'
   workflow_dispatch:
     inputs:
       network:

@@ -31,8 +31,23 @@ jobs:
       - name: Setup Rust and Stellar
         uses: ./.github/actions/setup-rust-stellar
 
-      - name: Build contracts
-        run: cd contracts/boundless && make build
+      - name: Build events contract
+        run: cd contracts/events && make build
+
+      - name: Build profile contract
+        run: cd contracts/profile && make build
+
+      - name: Check WASM sizes (64 KB ceiling)
+        run: |
+          for f in target/wasm32v1-none/release/*.wasm; do
+            size=$(stat -c%s "$f")
+            name=$(basename "$f")
+            echo "$name: $size bytes"
+            if [ "$size" -gt 65536 ]; then
+              echo "::error::$name exceeds 64 KB ceiling ($size bytes)"
+              exit 1
+            fi
+          done
 
       - name: Run tests
         run: cargo test --release
