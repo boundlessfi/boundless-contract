@@ -11,6 +11,7 @@ use soroban_sdk::{contract, contractimpl, contractmeta, Address, BytesN, Env, St
 
 mod admin;
 mod bounty;
+mod crowdfunding;
 mod errors;
 mod escrow;
 mod event_ops;

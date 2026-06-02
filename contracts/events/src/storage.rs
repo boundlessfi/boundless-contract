@@ -251,6 +251,29 @@ pub fn mark_milestone_claimed(env: &Env, id: u64, recipient: &Address, milestone
 }
 
 // ============================================================
+// CROWDFUNDING MILESTONES CLAIMED (persistent)
+//
+// Crowdfunding's claim_milestone uses dynamic math:
+//   amount = remaining_escrow / (total_milestones - claimed_so_far)
+//
+// We need a counter so each call sees how many milestones have already
+// been paid. The key is event-scoped (not recipient-scoped) because
+// crowdfunding has exactly one recipient per event by construction.
+// ============================================================
+pub fn get_crowdfunding_milestones_claimed(env: &Env, id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::CrowdfundingMilestonesClaimed(id))
+        .unwrap_or(0_u32)
+}
+
+pub fn set_crowdfunding_milestones_claimed(env: &Env, id: u64, count: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::CrowdfundingMilestonesClaimed(id), &count);
+}
+
+// ============================================================
 // IDEMPOTENCY (temporary; auto-TTL)
 // ============================================================
 pub fn is_op_seen(env: &Env, op_id: &BytesN<32>) -> bool {

@@ -1,9 +1,11 @@
-// boundless-events: grant-specific behavior.
+// boundless-events: grant-specific behavior + shared milestone-claim entry.
 //
-// Spec: boundless-platform-contract-prd.md Sections 6.4, 7.
+// Spec: boundless-platform-contract-prd.md Sections 6.4, 7;
+//       boundless-crowdfunding-prd.md (in progress).
 //
 // Grants use ReleaseKind::Multi(n) and release per-milestone via
-// claim_milestone.
+// claim_milestone. Crowdfunding reuses the same entry point but takes a
+// different math path (dynamic, see comment in claim_milestone).
 
 use soroban_sdk::{Address, BytesN, Env, Symbol};
 
@@ -14,7 +16,7 @@ use crate::events as evt;
 use crate::idempotency::{self, tag};
 use crate::profile_client;
 use crate::storage;
-use crate::types::{EventRecord, EventStatus, ReleaseKind, Winner};
+use crate::types::{EventRecord, EventStatus, Pillar, ReleaseKind, Winner};
 
 pub fn validate_create(
     _env: &Env,
@@ -32,15 +34,33 @@ pub fn validate_create(
 // ============================================================
 //
 // Per-(recipient, milestone) idempotency via DataKey::MilestoneClaimed.
-// Amount per milestone for a recipient at position p:
 //
-//   amount = total_budget * distribution[p] / 100 / total_milestones
+// Math depends on pillar:
+//
+//   Grant (fixed):
+//     amount = total_budget * distribution[position] / 100 / total_milestones
+//
+//   Crowdfunding (dynamic):
+//     amount = remaining_escrow / (total_milestones - already_claimed_count)
+//
+//   The Crowdfunding path divides whatever escrow is actually present at
+//   release time evenly across the remaining milestones. The last milestone
+//   picks up any rounding remainder, so the total paid equals what was
+//   raised exactly.
 //
 // Each call: token release + bootstrap (idempotent) + earn_credits +
 // bump_reputation + register_earnings. Marks the event Completed when the
 // last milestone for the last recipient drains remaining_escrow.
 //
-// Spec: boundless-platform-contract-prd.md Section 6.4, 8.
+// Auth: event.owner for grants (organization-controlled); for crowdfunding
+// the owner is the builder, so the off-chain layer routes claim_milestone
+// through an admin-signed transaction where the admin signs on the builder's
+// behalf only after milestone validation. The on-chain check is identical:
+// require_auth on event.owner. Operationally that means the builder's
+// abstracted-wallet key is used to sign, gated by admin approval upstream.
+//
+// Spec: boundless-platform-contract-prd.md Section 6.4, 8;
+//       boundless-crowdfunding-prd.md (in progress).
 pub fn claim_milestone(
     env: &Env,
     event_id: u64,
@@ -74,7 +94,8 @@ pub fn claim_milestone(
     }
 
     // Locate the recipient in the recorded winners (the milestone=None entry
-    // written by select_winners). Without that anchor there is nothing to pay.
+    // written by select_winners or, for Crowdfunding, by create_event). Without
+    // that anchor there is nothing to pay.
     let winners = storage::get_winners(env, event_id);
     let mut winner_position: Option<u32> = None;
     for w in winners.iter() {
@@ -85,12 +106,32 @@ pub fn claim_milestone(
     }
     let position = winner_position.ok_or(Error::NoSubmissions)?;
 
-    let percent = event
-        .winner_distribution
-        .get(position)
-        .ok_or(Error::InvalidWinnerPosition)? as i128;
-    let total_share = event.total_budget.saturating_mul(percent) / 100_i128;
-    let amount = total_share / (total_milestones as i128);
+    let is_crowdfunding = matches!(event.pillar, Pillar::Crowdfunding);
+    let amount: i128 = if is_crowdfunding {
+        // Dynamic payout: split whatever's left evenly across remaining
+        // milestones. The last milestone takes the rounding remainder.
+        let claimed_count = storage::get_crowdfunding_milestones_claimed(env, event_id);
+        let remaining_milestones = total_milestones.saturating_sub(claimed_count);
+        if remaining_milestones == 0 {
+            return Err(Error::InvalidMilestone);
+        }
+        if event.remaining_escrow <= 0 {
+            return Err(Error::InsufficientEscrow);
+        }
+        if remaining_milestones == 1 {
+            // Final milestone: drain remainder so no dust is stranded.
+            event.remaining_escrow
+        } else {
+            event.remaining_escrow / (remaining_milestones as i128)
+        }
+    } else {
+        let percent = event
+            .winner_distribution
+            .get(position)
+            .ok_or(Error::InvalidWinnerPosition)? as i128;
+        let total_share = event.total_budget.saturating_mul(percent) / 100_i128;
+        total_share / (total_milestones as i128)
+    };
     if amount <= 0 {
         return Err(Error::InvalidDistribution);
     }
@@ -102,6 +143,11 @@ pub fn claim_milestone(
     escrow::release(env, &event.token, &recipient, amount);
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     storage::mark_milestone_claimed(env, event_id, &recipient, milestone);
+    if is_crowdfunding {
+        // Bump the claimed-count divisor for the next milestone's dynamic math.
+        let claimed = storage::get_crowdfunding_milestones_claimed(env, event_id);
+        storage::set_crowdfunding_milestones_claimed(env, event_id, claimed.saturating_add(1));
+    }
 
     // Cross-contract profile mutations. Each call gets a unique child op_id.
     let profile = profile_client::client(env);

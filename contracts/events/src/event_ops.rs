@@ -6,6 +6,7 @@ use soroban_sdk::{Address, BytesN, Env, String, Symbol, Vec};
 
 use crate::admin;
 use crate::bounty;
+use crate::crowdfunding;
 use crate::errors::Error;
 use crate::escrow;
 use crate::events as evt;
@@ -83,6 +84,13 @@ pub fn create_event(
         return Err(Error::InvalidPillar);
     }
 
+    // Crowdfunding starts at zero escrow; the field's role flips: total_budget
+    // becomes the funding goal, and remaining_escrow grows only through
+    // community add_funds calls. Every other pillar deposits the owner's
+    // total_budget into escrow at create time.
+    let is_crowdfunding = matches!(params.pillar, Pillar::Crowdfunding);
+    let initial_escrow: i128 = if is_crowdfunding { 0 } else { params.total_budget };
+
     // Pillar-specific validation. EventRecord is partially constructed here
     // so the per-pillar validator can inspect release_kind + deadline.
     let provisional = EventRecord {
@@ -91,7 +99,7 @@ pub fn create_event(
         owner: params.owner.clone(),
         token: params.token.clone(),
         total_budget: params.total_budget,
-        remaining_escrow: params.total_budget,
+        remaining_escrow: initial_escrow,
         release_kind: params.release_kind.clone(),
         status: EventStatus::Active,
         content_uri: params.content_uri.clone(),
@@ -105,10 +113,15 @@ pub fn create_event(
         Pillar::Hackathon => hackathon::validate_create(env, &provisional, &params.owner)?,
         Pillar::Bounty => bounty::validate_create(env, &provisional, &params.owner)?,
         Pillar::Grant => grant::validate_create(env, &provisional, &params.owner)?,
+        Pillar::Crowdfunding => crowdfunding::validate_create(env, &provisional, &params.owner)?,
     }
 
     // Deposit funds: pull total_budget + fee from owner, forward fee atomically.
-    escrow::deposit_with_fee(env, &params.token, &params.owner, params.total_budget);
+    // Crowdfunding skips this: the campaign starts with zero escrow and is
+    // funded entirely through community add_funds.
+    if !is_crowdfunding {
+        escrow::deposit_with_fee(env, &params.token, &params.owner, params.total_budget);
+    }
 
     // Assign id and persist.
     let id = idempotency::next_event_id(env);
@@ -117,6 +130,23 @@ pub fn create_event(
         ..provisional
     };
     storage::set_event(env, id, &record);
+
+    // Crowdfunding: pre-seat the builder as the sole winner at position 1.
+    // This skips select_winners entirely: the recipient is fixed at create
+    // time so claim_milestone can resolve the payout target without any
+    // intermediate organizer-curation step. milestone=None matches the
+    // anchor-record convention used by select_winners for Multi(n) releases.
+    if is_crowdfunding {
+        let mut winners: soroban_sdk::Vec<Winner> = soroban_sdk::Vec::new(env);
+        winners.push_back(Winner {
+            recipient: params.owner.clone(),
+            position: 1,
+            amount: 0,
+            milestone: None,
+            paid_at: None,
+        });
+        storage::set_winners(env, id, &winners);
+    }
 
     evt::EventCreated {
         id,
@@ -359,6 +389,12 @@ pub fn submit(
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
     }
+    // Crowdfunding has no submission concept: the builder is pre-seated as
+    // the sole winner at create time and milestone validation is off-chain.
+    // Rejecting at the contract layer keeps junk anchors out of storage.
+    if matches!(event.pillar, Pillar::Crowdfunding) {
+        return Err(Error::InvalidPillar);
+    }
     if let Some(deadline) = event.deadline {
         if deadline <= env.ledger().timestamp() {
             return Err(Error::DeadlinePassed);
@@ -478,6 +514,12 @@ pub fn select_winners(
     let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
+    }
+    // Crowdfunding seats the builder as winner at create time; there is no
+    // organizer-curation step. Reject here so the caller cannot overwrite
+    // the auto-registered Winner record.
+    if matches!(event.pillar, Pillar::Crowdfunding) {
+        return Err(Error::InvalidPillar);
     }
 
     event.owner.require_auth();

@@ -6,6 +6,17 @@ use soroban_sdk::{contracttype, Address, BytesN, Map, String};
 
 // ============================================================
 // PILLAR
+//
+// Crowdfunding differs from the other three pillars:
+//   - The owner is the project builder, not an organization.
+//   - There is no upfront owner deposit; the escrow starts at 0 and grows
+//     via add_funds from community backers.
+//   - There is exactly one recipient (the builder, registered as Winner at
+//     position 1 at create time).
+//   - claim_milestone uses dynamic math: amount = remaining_escrow /
+//     remaining_milestones, so each release pays a fair share of whatever
+//     the campaign actually raised.
+// Spec: boundless-crowdfunding-prd.md (in progress).
 // ============================================================
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -13,6 +24,7 @@ pub enum Pillar {
     Hackathon,
     Bounty,
     Grant,
+    Crowdfunding,
 }
 
 // ============================================================
@@ -168,6 +180,12 @@ pub enum DataKey {
 
     // Grant milestone tracking: (event_id, recipient, milestone) -> bool
     MilestoneClaimed(u64, Address, u32),
+
+    // Crowdfunding: count of milestones already claimed against an event.
+    // Used by the dynamic-payout math (amount = remaining_escrow /
+    // (total_milestones - claimed_count)). Only written/read for
+    // Pillar::Crowdfunding; absent entries default to 0.
+    CrowdfundingMilestonesClaimed(u64),
 
     // Idempotency
     OpSeen(BytesN<32>),
