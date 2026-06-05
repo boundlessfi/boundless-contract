@@ -216,7 +216,7 @@ Open `.env.deploy` in your editor and set:
 |---|---|
 | `ADMIN_IDENTITY` | The name of the Stellar CLI identity that will deploy and hold initial admin authority. Default is `boundless-admin`. This is the throwaway deployer per §E.0, NOT the final admin. Rename to `boundless-deployer` if the default name reads as misleading; the scripts only care about the value. |
 | `FEE_ACCOUNT` | The G-address that receives platform fees. **Separate account.** Not the deployer, not the multi-sig. Must hold a trustline for every token you register; the contract does not enforce this at registration. |
-| `FEE_BPS` | Platform fee in basis points (`100 = 1%`, `250 = 2.5%`). The `.env.deploy.example` template and `deploy.sh` validate the range as `[0, 5000]`, but the contract enforces `MAX_FEE_BPS = 1000` (10%) per the 2026-06 audit (L4 finding). Treat 1000 as the hard ceiling; values above will deploy fine and then fail at runtime. |
+| `FEE_BPS` | Platform fee in basis points (`100 = 1%`, `250 = 2.5%`). The `.env.deploy.example` template and `deploy.sh` validate the range as `[0, 1000]`, matching the contract's `MAX_FEE_BPS = 1000` (10%) cap per the 2026-06 audit (L4 finding). Values above 1000 are rejected at the script level before any deploy work happens. |
 | `BOOTSTRAP_CREDITS` | Starting credit balance assigned to newly-bootstrapped profiles. Default is 10 per the credits / reputation PRD. |
 
 `.env.deploy` is gitignored. Never commit a populated file.
@@ -269,7 +269,7 @@ The script:
 
 - Aborts if `stellar` CLI is older than 26.0.0 (Rust 1.90.0 emits reference-types wasm that earlier CLIs reject at simulation time).
 - Aborts if any of `ADMIN_IDENTITY`, `FEE_ACCOUNT`, `FEE_BPS`, `BOOTSTRAP_CREDITS` is unset.
-- Aborts if `FEE_BPS` is outside `[0, 5000]` (note: the contract's real cap is 1000; see Step 1).
+- Aborts if `FEE_BPS` is outside `[0, 1000]` (matches the contract's `MAX_FEE_BPS = 1000` cap per audit L4; see Step 1).
 - Prints the profile contract id and events contract id on success.
 
 Copy both ids into your team notes and into the boundless-nestjs deployment env:

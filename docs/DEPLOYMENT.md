@@ -18,7 +18,7 @@ Pick once per environment and document.
 | **Network** | `stellar --network` | testnet / futurenet / mainnet. |
 | **Admin identity** | both contracts' `admin` | controls `set_admin`, `set_fee_bps`, `pause`, `upgrade`, `register_supported_token`. **Use a Stellar multisig account for mainnet.** Testnet can be a single key. |
 | **Fee account** | events `fee_account` | G-address that receives the platform fee on every deposit. Must hold a trustline for every registered token. **Should be a separately-keyed account from admin.** |
-| **Fee bps** | events `fee_bps` | Basis points. 100 = 1%, 250 = 2.5%. Contract caps at 5000 (50%). |
+| **Fee bps** | events `fee_bps` | Basis points. 100 = 1%, 250 = 2.5%. Contract caps at 1000 (10%) per audit L4. |
 | **Bootstrap credits** | profile `default_bootstrap_credits` | u32. Initial credit balance for newly-created profiles. PRD default is 10. |
 | **USDC asset address** | events `register_supported_token` | Token contract (SAC) address. See Section 4. |
 

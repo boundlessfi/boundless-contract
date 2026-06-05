@@ -71,9 +71,11 @@ EOF
   exit 1
 fi
 
-# Sanity check fee_bps.
-if (( FEE_BPS < 0 || FEE_BPS > 5000 )); then
-  echo "error: FEE_BPS must be in [0, 5000]; got $FEE_BPS" >&2
+# Sanity check fee_bps. Contract enforces MAX_FEE_BPS = 1000 (10%) per
+# 2026-06 Stellar-skill audit L4; values above this will deploy fine and
+# then revert at the first create_event call.
+if (( FEE_BPS < 0 || FEE_BPS > 1000 )); then
+  echo "error: FEE_BPS must be in [0, 1000] (contract caps at 1000 = 10% per audit L4); got $FEE_BPS" >&2
   exit 1
 fi
 
