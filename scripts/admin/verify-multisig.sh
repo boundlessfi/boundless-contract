@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# verify-multisig.sh — pre-flight gate before transferring admin authority.
+# verify-multisig.sh: pre-flight gate before transferring admin authority.
 #
 # Given a candidate multi-sig G-address, this script queries the network and
 # asserts the live signer configuration matches docs/admin-custody-policy.md:
@@ -44,7 +44,7 @@ esac
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
-echo -e "${YELLOW}Verifying multi-sig $MULTISIG on $NETWORK…${NC}"
+echo -e "${YELLOW}Verifying multi-sig ${MULTISIG} on ${NETWORK}...${NC}"
 
 ACCOUNT_JSON=$(curl -sf "$HORIZON/accounts/$MULTISIG")
 if [[ -z "$ACCOUNT_JSON" ]]; then
