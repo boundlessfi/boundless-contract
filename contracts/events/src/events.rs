@@ -18,6 +18,9 @@ pub struct EventCreated {
     pub token: Address,
     pub total_budget: i128,
     pub content_uri: String,
+    // L5 (2026-06 audit): title is part of the indexer payload so
+    // listings can be rendered without a follow-up get_event read.
+    pub title: String,
 }
 
 #[contractevent]
@@ -142,6 +145,28 @@ pub struct Upgraded {
     pub new_wasm_hash: BytesN<32>,
 }
 
-// Linker keep-alive: a synthetic constant referenced from lib.rs so that the
-// module participates in the binary even if some events have no callers yet.
-pub const EVENTS_LINK_KEEP: u32 = 0;
+#[contractevent]
+pub struct PendingUpgradeProposed {
+    pub wasm_hash: BytesN<32>,
+    pub new_version: String,
+    pub available_at_ledger: u32,
+    pub expires_at_ledger: u32,
+}
+
+#[contractevent]
+pub struct PendingUpgradeCancelled {
+    pub cancelled_at_ledger: u32,
+}
+
+#[contractevent]
+pub struct UpgradeApplied {
+    pub wasm_hash: BytesN<32>,
+    pub new_version: String,
+}
+
+#[contractevent]
+pub struct Migrated {
+    pub from_version: String,
+    pub to_version: String,
+}
+

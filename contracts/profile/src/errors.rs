@@ -15,6 +15,11 @@ pub enum Error {
     NotAdmin = 5,
     PendingAdminMismatch = 6,
     PendingAdminExpired = 7,
+    NotInitialized = 8,
+    EventsContractAlreadyConfigured = 14,
+    PendingEventsContractMismatch = 15,
+    PendingEventsContractExpired = 16,
+    PendingEventsContractTimelock = 17,
 
     ProfileNotFound = 10,
     InsufficientCredits = 11,
@@ -23,4 +28,10 @@ pub enum Error {
 
     OpAlreadySeen = 20,
     Paused = 30,
+
+    // H6: timelocked upgrade + migration
+    UpgradeNotProposed = 40,
+    UpgradeTimelockNotElapsed = 41,
+    UpgradeProposalExpired = 42,
+    MigrationAlreadyApplied = 43,
 }

@@ -25,7 +25,7 @@ mod types;
 mod tests;
 
 use crate::errors::Error;
-use crate::types::Profile;
+use crate::types::{PendingEventsContract, PendingUpgrade, Profile};
 
 contractmeta!(key = "version", val = "0.1.0");
 contractmeta!(
@@ -61,6 +61,18 @@ impl ProfileContract {
         admin::set_events_contract(&env, new_addr)
     }
 
+    pub fn propose_events_contract(env: Env, new_addr: Address) -> Result<(), Error> {
+        admin::propose_events_contract(&env, new_addr)
+    }
+
+    pub fn accept_events_contract(env: Env) -> Result<(), Error> {
+        admin::accept_events_contract(&env)
+    }
+
+    pub fn cancel_pending_events_contract(env: Env) -> Result<(), Error> {
+        admin::cancel_pending_events_contract(&env)
+    }
+
     pub fn set_default_bootstrap_credits(env: Env, new_amount: u32) -> Result<(), Error> {
         admin::set_default_bootstrap_credits(&env, new_amount)
     }
@@ -73,8 +85,24 @@ impl ProfileContract {
         admin::unpause(&env)
     }
 
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
-        admin::upgrade(&env, new_wasm_hash)
+    pub fn propose_upgrade(
+        env: Env,
+        new_wasm_hash: BytesN<32>,
+        new_version: String,
+    ) -> Result<(), Error> {
+        admin::propose_upgrade(&env, new_wasm_hash, new_version)
+    }
+
+    pub fn apply_upgrade(env: Env) -> Result<(), Error> {
+        admin::apply_upgrade(&env)
+    }
+
+    pub fn cancel_pending_upgrade(env: Env) -> Result<(), Error> {
+        admin::cancel_pending_upgrade(&env)
+    }
+
+    pub fn migrate(env: Env) -> Result<(), Error> {
+        admin::migrate(&env)
     }
 
     // ============================================================
@@ -195,11 +223,27 @@ impl ProfileContract {
         admin::get_events_contract(&env)
     }
 
+    pub fn get_pending_events_contract(env: Env) -> Option<PendingEventsContract> {
+        admin::get_pending_events_contract(&env)
+    }
+
     pub fn get_default_bootstrap_credits(env: Env) -> u32 {
         admin::get_default_bootstrap_credits(&env)
     }
 
     pub fn is_paused(env: Env) -> bool {
         admin::is_paused(&env)
+    }
+
+    pub fn version(env: Env) -> String {
+        admin::get_version(&env)
+    }
+
+    pub fn get_pending_upgrade(env: Env) -> Option<PendingUpgrade> {
+        admin::get_pending_upgrade(&env)
+    }
+
+    pub fn get_migrated_to_version(env: Env) -> Option<String> {
+        admin::get_migrated_to_version(&env)
     }
 }

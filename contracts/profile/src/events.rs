@@ -86,6 +86,18 @@ pub struct EventsContractUpdated {
 }
 
 #[contractevent]
+pub struct PendingEventsContractSet {
+    pub target: Address,
+    pub proposed_at_ledger: u32,
+    pub expires_at_ledger: u32,
+}
+
+#[contractevent]
+pub struct EventsRotationCancelled {
+    pub cancelled_at_ledger: u32,
+}
+
+#[contractevent]
 pub struct BootstrapAmountSet {
     pub new_amount: u32,
 }
@@ -99,4 +111,29 @@ pub struct Unpaused {}
 #[contractevent]
 pub struct Upgraded {
     pub new_wasm_hash: BytesN<32>,
+}
+
+#[contractevent]
+pub struct PendingUpgradeProposed {
+    pub wasm_hash: BytesN<32>,
+    pub new_version: String,
+    pub available_at_ledger: u32,
+    pub expires_at_ledger: u32,
+}
+
+#[contractevent]
+pub struct PendingUpgradeCancelled {
+    pub cancelled_at_ledger: u32,
+}
+
+#[contractevent]
+pub struct UpgradeApplied {
+    pub wasm_hash: BytesN<32>,
+    pub new_version: String,
+}
+
+#[contractevent]
+pub struct Migrated {
+    pub from_version: String,
+    pub to_version: String,
 }

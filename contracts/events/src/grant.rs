@@ -1,7 +1,7 @@
 // boundless-events: grant-specific behavior + shared milestone-claim entry.
 //
 // Spec: boundless-platform-contract-prd.md Sections 6.4, 7;
-//       boundless-crowdfunding-prd.md (in progress).
+//       boundless-crowdfunding-prd.md.
 //
 // Grants use ReleaseKind::Multi(n) and release per-milestone via
 // claim_milestone. Crowdfunding reuses the same entry point but takes a
@@ -49,18 +49,18 @@ pub fn validate_create(
 //   raised exactly.
 //
 // Each call: token release + bootstrap (idempotent) + earn_credits +
-// bump_reputation + register_earnings. Marks the event Completed when the
-// last milestone for the last recipient drains remaining_escrow.
+// bump_reputation + register_earnings. Marks the event Completed when
+// the last milestone for the last recipient drains remaining_escrow.
 //
 // Auth: event.owner for grants (organization-controlled); for crowdfunding
 // the owner is the builder, so the off-chain layer routes claim_milestone
 // through an admin-signed transaction where the admin signs on the builder's
-// behalf only after milestone validation. The on-chain check is identical:
+// behalf only after milestone validation. On-chain check is identical:
 // require_auth on event.owner. Operationally that means the builder's
 // abstracted-wallet key is used to sign, gated by admin approval upstream.
 //
 // Spec: boundless-platform-contract-prd.md Section 6.4, 8;
-//       boundless-crowdfunding-prd.md (in progress).
+//       boundless-crowdfunding-prd.md.
 pub fn claim_milestone(
     env: &Env,
     event_id: u64,
@@ -89,27 +89,52 @@ pub fn claim_milestone(
 
     event.owner.require_auth();
 
+    // M5 (2026-06 audit): crowdfunding claims require admin co-sign on top
+    // of the builder's auth. Today the abstracted-wallet model keeps the
+    // builder's key on the platform side, so this is operationally a
+    // no-op; the on-chain check is the defense if the wallet model ever
+    // changes to put the key in the builder's hands. Grants stay
+    // single-auth because the event owner is the grant org, which is the
+    // intended approver. See docs/audit-2026-06-stellar-skill.md M5.
+    if matches!(event.pillar, Pillar::Crowdfunding) {
+        let admin = storage::get_admin(env)?;
+        admin.require_auth();
+    }
+
     if storage::is_milestone_claimed(env, event_id, &recipient, milestone) {
         return Err(Error::MilestoneAlreadyClaimed);
     }
 
-    // Locate the recipient in the recorded winners (the milestone=None entry
-    // written by select_winners or, for Crowdfunding, by create_event). Without
-    // that anchor there is nothing to pay.
-    let winners = storage::get_winners(env, event_id);
+    // Locate the recipient's anchor row (milestone == None), and count any
+    // prior per-milestone payouts so the fixed-split last-milestone sweep
+    // can land exactly on total_share.
+    let count = storage::winner_count(env, event_id);
     let mut winner_position: Option<u32> = None;
-    for w in winners.iter() {
-        if w.recipient == recipient && w.milestone.is_none() {
-            winner_position = Some(w.position);
-            break;
+    let mut already_claimed_for_recipient: u32 = 0;
+    let mut already_paid_to_recipient: i128 = 0;
+    for idx in 0..count {
+        let w = match storage::winner_at(env, event_id, idx) {
+            Some(w) => w,
+            None => continue,
+        };
+        if w.recipient != recipient {
+            continue;
+        }
+        match w.milestone {
+            None => winner_position = Some(w.position),
+            Some(_) => {
+                already_claimed_for_recipient =
+                    already_claimed_for_recipient.saturating_add(1);
+                already_paid_to_recipient = already_paid_to_recipient.saturating_add(w.amount);
+            }
         }
     }
     let position = winner_position.ok_or(Error::NoSubmissions)?;
 
     let is_crowdfunding = matches!(event.pillar, Pillar::Crowdfunding);
     let amount: i128 = if is_crowdfunding {
-        // Dynamic payout: split whatever's left evenly across remaining
-        // milestones. The last milestone takes the rounding remainder.
+        // Dynamic split: divide what's left evenly across remaining milestones;
+        // the final claim drains the remainder so no dust is stranded.
         let claimed_count = storage::get_crowdfunding_milestones_claimed(env, event_id);
         let remaining_milestones = total_milestones.saturating_sub(claimed_count);
         if remaining_milestones == 0 {
@@ -119,18 +144,26 @@ pub fn claim_milestone(
             return Err(Error::InsufficientEscrow);
         }
         if remaining_milestones == 1 {
-            // Final milestone: drain remainder so no dust is stranded.
             event.remaining_escrow
         } else {
             event.remaining_escrow / (remaining_milestones as i128)
         }
     } else {
+        // Fixed split with last-milestone sweep so the position share pays out
+        // exactly. Per-recipient progress was tallied during the anchor scan
+        // above.
         let percent = event
             .winner_distribution
             .get(position)
             .ok_or(Error::InvalidWinnerPosition)? as i128;
         let total_share = event.total_budget.saturating_mul(percent) / 100_i128;
-        total_share / (total_milestones as i128)
+        let per_milestone_floored = total_share / (total_milestones as i128);
+
+        if already_claimed_for_recipient.saturating_add(1) == total_milestones {
+            total_share.saturating_sub(already_paid_to_recipient)
+        } else {
+            per_milestone_floored
+        }
     };
     if amount <= 0 {
         return Err(Error::InvalidDistribution);
@@ -144,7 +177,6 @@ pub fn claim_milestone(
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     storage::mark_milestone_claimed(env, event_id, &recipient, milestone);
     if is_crowdfunding {
-        // Bump the claimed-count divisor for the next milestone's dynamic math.
         let claimed = storage::get_crowdfunding_milestones_claimed(env, event_id);
         storage::set_crowdfunding_milestones_claimed(env, event_id, claimed.saturating_add(1));
     }
@@ -165,16 +197,18 @@ pub fn claim_milestone(
     let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
     profile.register_earnings(&recipient, &event.token, &amount, &earnings_op);
 
-    // Append per-milestone Winner record (audit trail).
-    let mut updated_winners = winners;
-    updated_winners.push_back(Winner {
-        recipient: recipient.clone(),
-        position,
-        amount,
-        milestone: Some(milestone),
-        paid_at: Some(env.ledger().timestamp()),
-    });
-    storage::set_winners(env, event_id, &updated_winners);
+    // Append per-milestone Winner row for the audit trail.
+    storage::append_winner(
+        env,
+        event_id,
+        &Winner {
+            recipient: recipient.clone(),
+            position,
+            amount,
+            milestone: Some(milestone),
+            paid_at: Some(env.ledger().timestamp()),
+        },
+    );
 
     if event.remaining_escrow == 0 {
         event.status = EventStatus::Completed;

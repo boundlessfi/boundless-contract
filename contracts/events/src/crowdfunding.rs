@@ -1,6 +1,6 @@
 // boundless-events: crowdfunding-specific behavior.
 //
-// Spec: boundless-crowdfunding-prd.md (in progress).
+// Spec: boundless-crowdfunding-prd.md.
 //
 // Crowdfunding is a builder-led, community-funded pillar with these rules:
 //   - ReleaseKind::Multi(n>0): milestones drive release cadence, like grants.
@@ -54,6 +54,16 @@ pub fn validate_create(
         .ok_or(Error::InvalidDistribution)?;
     if percent != 100 {
         return Err(Error::DistributionMismatch);
+    }
+
+    // L7 (2026-06 audit): crowdfunding has no apply flow. A nonzero
+    // application_credit_cost would silently never be charged; rejecting
+    // here keeps wallet UIs and indexers from displaying a misleading
+    // value. Reuse Error::InvalidPillar to stay inside the contracterror
+    // 50-variant cap (a dedicated InvalidApplicationCreditCost would push
+    // the events contract over).
+    if record.application_credit_cost != 0 {
+        return Err(Error::InvalidPillar);
     }
 
     Ok(())

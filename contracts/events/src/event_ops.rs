@@ -4,7 +4,7 @@
 
 use soroban_sdk::{Address, BytesN, Env, String, Symbol, Vec};
 
-use crate::admin;
+use crate::admin::{self, MAX_FEE_BPS};
 use crate::bounty;
 use crate::crowdfunding;
 use crate::errors::Error;
@@ -17,13 +17,28 @@ use crate::profile_client;
 use crate::storage;
 use crate::token_whitelist;
 use crate::types::{
-    CreateEventParams, EventRecord, EventStatus, Pillar, ReleaseKind, Submission, Winner,
-    WinnerSpec,
+    CancellationBranch, CancellationState, CreateEventParams, EventRecord, EventStatus, Pillar,
+    ReleaseKind, Submission, Winner, WinnerSpec,
 };
 
 const MAX_TITLE_LEN: u32 = 120;
 const MAX_APPLY_COST: u32 = 100;
 const MAX_WINNERS_PER_SELECT: u32 = 50;
+
+// Per-event list caps. Lifted from 100 to 5_000 once paged cancel landed:
+// start_cancel / process_cancel_batch / finalize_cancel split the refund
+// pass across multiple txs so the per-tx footprint never blows past
+// MAX_REFUNDS_PER_BATCH contributors.
+//
+// Spec: docs/audit-2026-06-stellar-skill.md, H3/H4 + paged-cancel follow-up.
+pub const MAX_APPLICANTS_PER_EVENT: u32 = 5_000;
+pub const MAX_CONTRIBUTORS_PER_EVENT: u32 = 5_000;
+
+// Max refunds per process_cancel_batch tx. Conservative; the actual ceiling
+// depends on the token's transfer cost. 25 is well below Soroban's ~100-entry
+// write footprint when each refund touches ContributorAmount + a token
+// transfer (3-4 ledger entries).
+pub const MAX_REFUNDS_PER_BATCH: u32 = 25;
 
 // Open-contribution floor: 10 USDC at 7 decimals. The check is denominated in
 // stroops because every supported token on the whitelist uses Stellar's
@@ -84,15 +99,18 @@ pub fn create_event(
         return Err(Error::InvalidPillar);
     }
 
-    // Crowdfunding starts at zero escrow; the field's role flips: total_budget
-    // becomes the funding goal, and remaining_escrow grows only through
-    // community add_funds calls. Every other pillar deposits the owner's
-    // total_budget into escrow at create time.
+    if let Some(bps) = params.fee_bps_override {
+        if bps > MAX_FEE_BPS {
+            return Err(Error::InvalidFeeBps);
+        }
+    }
+    let effective_bps = escrow::effective_fee_bps(env, params.fee_bps_override);
+
+    // Crowdfunding flips total_budget into a funding goal; escrow starts at 0
+    // and grows only via add_funds. Every other pillar deposits at create.
     let is_crowdfunding = matches!(params.pillar, Pillar::Crowdfunding);
     let initial_escrow: i128 = if is_crowdfunding { 0 } else { params.total_budget };
 
-    // Pillar-specific validation. EventRecord is partially constructed here
-    // so the per-pillar validator can inspect release_kind + deadline.
     let provisional = EventRecord {
         id: 0,
         pillar: params.pillar.clone(),
@@ -108,6 +126,7 @@ pub fn create_event(
         deadline: params.deadline,
         winner_distribution: params.winner_distribution.clone(),
         application_credit_cost: params.application_credit_cost,
+        fee_bps_override: params.fee_bps_override,
     };
     match params.pillar {
         Pillar::Hackathon => hackathon::validate_create(env, &provisional, &params.owner)?,
@@ -116,11 +135,14 @@ pub fn create_event(
         Pillar::Crowdfunding => crowdfunding::validate_create(env, &provisional, &params.owner)?,
     }
 
-    // Deposit funds: pull total_budget + fee from owner, forward fee atomically.
-    // Crowdfunding skips this: the campaign starts with zero escrow and is
-    // funded entirely through community add_funds.
     if !is_crowdfunding {
-        escrow::deposit_with_fee(env, &params.token, &params.owner, params.total_budget);
+        escrow::deposit_with_fee_at(
+            env,
+            &params.token,
+            &params.owner,
+            params.total_budget,
+            effective_bps,
+        );
     }
 
     // Assign id and persist.
@@ -132,20 +154,18 @@ pub fn create_event(
     storage::set_event(env, id, &record);
 
     // Crowdfunding: pre-seat the builder as the sole winner at position 1.
-    // This skips select_winners entirely: the recipient is fixed at create
-    // time so claim_milestone can resolve the payout target without any
-    // intermediate organizer-curation step. milestone=None matches the
-    // anchor-record convention used by select_winners for Multi(n) releases.
     if is_crowdfunding {
-        let mut winners: soroban_sdk::Vec<Winner> = soroban_sdk::Vec::new(env);
-        winners.push_back(Winner {
-            recipient: params.owner.clone(),
-            position: 1,
-            amount: 0,
-            milestone: None,
-            paid_at: None,
-        });
-        storage::set_winners(env, id, &winners);
+        storage::append_winner(
+            env,
+            id,
+            &Winner {
+                recipient: params.owner.clone(),
+                position: 1,
+                amount: 0,
+                milestone: None,
+                paid_at: None,
+            },
+        );
     }
 
     evt::EventCreated {
@@ -155,6 +175,7 @@ pub fn create_event(
         token: record.token.clone(),
         total_budget: record.total_budget,
         content_uri: record.content_uri.clone(),
+        title: record.title.clone(),
     }
     .publish(env);
 
@@ -165,26 +186,6 @@ pub fn create_event(
 // ============================================================
 // ADD FUNDS (partner / community contribution)
 // ============================================================
-//
-// Open top-up to an active event's escrow. Anyone with the event id and a
-// funded wallet can call this; no pre-registration. The minimum contribution
-// is hard-coded at MIN_CONTRIBUTION_STROOPS so that the contributor list and
-// pro-rata refund math don't get spammed by dust. Owner top-ups are allowed
-// and use the same path: if the caller is event.owner the deposit is folded
-// into the running owner balance rather than recorded as a Contribution
-// entry (cancel_event refund policy treats the owner as residual; we keep
-// the Contribution list clean of owner rows).
-//
-// Token: contributions must be in event.token. We don't accept cross-token
-// top-ups; convert off-chain first.
-//
-// Fee: the deposit fee bps is charged the same way as create_event, so the
-// fee account funds out of every top-up. This keeps the fee model uniform
-// across initial deposits and partner contributions.
-//
-// Refund policy is documented in cancel_event below.
-//
-// Spec: boundless-partner-contributions-prd.md Sections 5 + 6.
 pub fn add_funds(
     env: &Env,
     event_id: u64,
@@ -209,22 +210,25 @@ pub fn add_funds(
 
     from.require_auth();
 
-    // Pull amount + fee from the contributor and forward the fee to the fee
-    // account. escrow::deposit_with_fee returns the net amount credited.
-    let credited = escrow::deposit_with_fee(env, &event.token, &from, amount);
+    // First-time contributor? Reserve the slot BEFORE moving tokens so a
+    // cap-exceeded reverts the whole flow with no half-credited row.
+    if from != event.owner {
+        let prior = storage::get_contributor_amount(env, event_id, &from);
+        if prior == 0 {
+            storage::append_contributor(env, event_id, &from, MAX_CONTRIBUTORS_PER_EVENT)?;
+        }
+    }
+
+    // Use the rate snapshotted at publish so add_funds matches the program's
+    // quoted rate even if the contract default changes mid-flight.
+    let effective_bps = escrow::effective_fee_bps(env, event.fee_bps_override);
+    let credited = escrow::deposit_with_fee_at(env, &event.token, &from, amount, effective_bps);
     event.remaining_escrow = event.remaining_escrow.saturating_add(credited);
 
-    // Only non-owner contributions land in the ContributorList. Owner top-ups
-    // grow remaining_escrow but stay invisible to the partner-refund pass.
     if from != event.owner {
         let prior = storage::get_contributor_amount(env, event_id, &from);
         let new_total = prior.saturating_add(credited);
         storage::set_contributor_amount(env, event_id, &from, new_total);
-        if prior == 0 {
-            let mut list = storage::get_contributor_list(env, event_id);
-            list.push_back(from.clone());
-            storage::set_contributor_list(env, event_id, &list);
-        }
     }
 
     storage::set_event(env, event_id, &event);
@@ -242,32 +246,42 @@ pub fn add_funds(
 }
 
 // ============================================================
-// CANCEL EVENT
-// ============================================================
+// PAGED CANCEL
 //
-// Refund policy (partners-in-full-then-owner-residual):
+// Three-step flow to keep cancel inside Soroban's per-tx footprint budget:
+//
+//   1. start_cancel(id)           — flip Active → Cancelling, snapshot the
+//                                   refund math (non_owner_total, remaining,
+//                                   count, branch). For events with 0
+//                                   contributors, also handles the owner
+//                                   refund inline.
+//   2. process_cancel_batch(id, n) — refund up to n contributors at the
+//                                   cursor. Repeats until cursor == count.
+//   3. finalize_cancel(id)         — require cursor exhausted; pay owner
+//                                   residual on FullPartnerThenResidual;
+//                                   flip Cancelling → Cancelled; clear the
+//                                   state entry.
+//
+// Refund math (snapshotted at start_cancel; stable across batches because
+// Cancelling status blocks add_funds + other contributor mutations):
 //
 //   non_owner_total = sum(ContributorAmount(event_id, *))
 //   remaining       = event.remaining_escrow
 //
-//   case A — remaining >= non_owner_total:
-//     refund each contributor their full amount, then refund (remaining -
-//     non_owner_total) to the owner.
-//
-//   case B — remaining < non_owner_total:
-//     pro-rate by amount: contributor c gets floor(c.amount * remaining /
-//     non_owner_total). Owner gets nothing. Rounding dust stays in the
-//     contract; it's negligible at the 7-decimal scale and the dust accrues
-//     to no one until the next admin sweep.
-//
-// For grants that have already distributed some milestones, only the unspent
-// balance is refunded; past milestone payments are not clawed back. The
-// policy applies symmetrically: if partners contributed and milestones drained
-// the escrow below non_owner_total, partners get pro-rated.
+//   OwnerOnly:               non_owner_total == 0; owner gets remaining.
+//                            Settled inline at start_cancel.
+//   FullPartnerThenResidual: remaining >= non_owner_total; each partner
+//                            gets full amount; owner residual paid at
+//                            finalize_cancel.
+//   ProRataPartners:         remaining < non_owner_total; partners get
+//                            floor(amt * remaining / non_owner_total).
+//                            Owner gets 0. Dust stays in contract.
 //
 // Spec: boundless-platform-contract-prd.md Section 6.2;
-//       boundless-partner-contributions-prd.md Section 7.
-pub fn cancel_event(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
+//       boundless-partner-contributions-prd.md Section 7;
+//       docs/audit-2026-06-stellar-skill.md paged-cancel follow-up.
+// ============================================================
+pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
     admin::require_not_paused(env)?;
     idempotency::require_unseen(env, &op_id)?;
 
@@ -275,26 +289,40 @@ pub fn cancel_event(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
     }
+    if storage::get_cancellation_state(env, event_id).is_some() {
+        return Err(Error::CancellationAlreadyStarted);
+    }
 
     event.owner.require_auth();
 
     let remaining = event.remaining_escrow;
-    if remaining > 0 {
-        let contributors = storage::get_contributor_list(env, event_id);
+    let count = storage::contributor_count(env, event_id);
 
-        // Sum non-owner contributions still on the books. We re-read each
-        // amount rather than caching: cancel_event is one-shot per event so
-        // the extra reads are cheap, and the on-chain value is the source of
-        // truth in case ContributorAmount was mutated elsewhere.
-        let mut non_owner_total: i128 = 0;
-        for c in contributors.iter() {
-            non_owner_total = non_owner_total.saturating_add(
-                storage::get_contributor_amount(env, event_id, &c),
-            );
+    // Sum non-owner contributions once. Bounded by MAX_CONTRIBUTORS_PER_EVENT
+    // contributor_amount reads; for events with > MAX_REFUNDS_PER_BATCH
+    // contributors the caller will need to start_cancel on smaller events
+    // OR we accept this single read pass as the cost of snapshotting.
+    let mut non_owner_total: i128 = 0;
+    for idx in 0..count {
+        if let Some(c) = storage::contributor_at(env, event_id, idx) {
+            non_owner_total =
+                non_owner_total.saturating_add(storage::get_contributor_amount(env, event_id, &c));
         }
+    }
 
-        if non_owner_total <= 0 {
-            // No partner contributions: owner gets everything.
+    let branch = if non_owner_total <= 0 {
+        CancellationBranch::OwnerOnly
+    } else if remaining >= non_owner_total {
+        CancellationBranch::FullPartnerThenResidual
+    } else {
+        CancellationBranch::ProRataPartners
+    };
+
+    // OwnerOnly shortcut: no partner refunds to page through; flip directly
+    // to Cancelled and pay owner residual inline. Saves the caller a round
+    // trip for the common "abandoned, no community contributions" case.
+    if matches!(branch, CancellationBranch::OwnerOnly) {
+        if remaining > 0 {
             escrow::release(env, &event.token, &event.owner, remaining);
             evt::OwnerResidualRefunded {
                 event_id,
@@ -302,57 +330,136 @@ pub fn cancel_event(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
                 amount: remaining,
             }
             .publish(env);
-        } else if remaining >= non_owner_total {
-            // Case A: full partner refund + owner residual.
-            for c in contributors.iter() {
-                let amt = storage::get_contributor_amount(env, event_id, &c);
-                if amt > 0 {
-                    escrow::release(env, &event.token, &c, amt);
-                    storage::set_contributor_amount(env, event_id, &c, 0);
-                    evt::ContributorRefunded {
-                        event_id,
-                        contributor: c.clone(),
-                        amount: amt,
-                    }
-                    .publish(env);
-                }
-            }
-            let owner_residual = remaining.saturating_sub(non_owner_total);
-            if owner_residual > 0 {
-                escrow::release(env, &event.token, &event.owner, owner_residual);
-                evt::OwnerResidualRefunded {
-                    event_id,
-                    owner: event.owner.clone(),
-                    amount: owner_residual,
-                }
-                .publish(env);
-            }
-        } else {
-            // Case B: pro-rate partners; owner gets nothing.
-            for c in contributors.iter() {
-                let amt = storage::get_contributor_amount(env, event_id, &c);
-                if amt > 0 {
-                    let payout = amt.saturating_mul(remaining) / non_owner_total;
-                    if payout > 0 {
-                        escrow::release(env, &event.token, &c, payout);
-                        evt::ContributorRefunded {
-                            event_id,
-                            contributor: c.clone(),
-                            amount: payout,
-                        }
-                        .publish(env);
-                    }
-                    storage::set_contributor_amount(env, event_id, &c, 0);
-                }
-            }
-            // Dust (remaining - sum of payouts) stays in the contract balance.
         }
-
         event.remaining_escrow = 0;
+        event.status = EventStatus::Cancelled;
+        storage::set_event(env, event_id, &event);
+        evt::EventCancelled { id: event_id }.publish(env);
+        idempotency::mark_seen(env, &op_id);
+        return Ok(());
     }
 
+    // Partner refund branches: persist the cursor + branch and flip to
+    // Cancelling. process_cancel_batch + finalize_cancel finish the work.
+    let state = CancellationState {
+        non_owner_total,
+        remaining_at_start: remaining,
+        count_at_start: count,
+        next_idx: 0,
+        branch,
+    };
+    storage::set_cancellation_state(env, event_id, &state);
+    event.status = EventStatus::Cancelling;
+    storage::set_event(env, event_id, &event);
+
+    idempotency::mark_seen(env, &op_id);
+    Ok(())
+}
+
+pub fn process_cancel_batch(
+    env: &Env,
+    event_id: u64,
+    max_refunds: u32,
+    op_id: BytesN<32>,
+) -> Result<u32, Error> {
+    admin::require_not_paused(env)?;
+    idempotency::require_unseen(env, &op_id)?;
+
+    let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    if !matches!(event.status, EventStatus::Cancelling) {
+        return Err(Error::CancellationNotStarted);
+    }
+    event.owner.require_auth();
+
+    let mut state =
+        storage::get_cancellation_state(env, event_id).ok_or(Error::CancellationNotStarted)?;
+
+    // Anyone can call with a 0 batch_size if the cursor is at end; nothing to do.
+    let cap = if max_refunds > MAX_REFUNDS_PER_BATCH {
+        MAX_REFUNDS_PER_BATCH
+    } else {
+        max_refunds
+    };
+    let mut processed: u32 = 0;
+    while processed < cap && state.next_idx < state.count_at_start {
+        let idx = state.next_idx;
+        state.next_idx = state.next_idx.saturating_add(1);
+
+        let c = match storage::contributor_at(env, event_id, idx) {
+            Some(c) => c,
+            None => continue,
+        };
+        let amt = storage::get_contributor_amount(env, event_id, &c);
+        if amt <= 0 {
+            continue;
+        }
+
+        let payout = match state.branch {
+            CancellationBranch::FullPartnerThenResidual => amt,
+            CancellationBranch::ProRataPartners => {
+                amt.saturating_mul(state.remaining_at_start) / state.non_owner_total
+            }
+            // OwnerOnly was settled inline at start_cancel.
+            CancellationBranch::OwnerOnly => 0,
+        };
+
+        if payout > 0 {
+            escrow::release(env, &event.token, &c, payout);
+            evt::ContributorRefunded {
+                event_id,
+                contributor: c.clone(),
+                amount: payout,
+            }
+            .publish(env);
+        }
+        storage::set_contributor_amount(env, event_id, &c, 0);
+        processed = processed.saturating_add(1);
+    }
+
+    storage::set_cancellation_state(env, event_id, &state);
+    let remaining_to_process = state.count_at_start.saturating_sub(state.next_idx);
+
+    idempotency::mark_seen(env, &op_id);
+    Ok(remaining_to_process)
+}
+
+pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
+    admin::require_not_paused(env)?;
+    idempotency::require_unseen(env, &op_id)?;
+
+    let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    if !matches!(event.status, EventStatus::Cancelling) {
+        return Err(Error::CancellationNotStarted);
+    }
+    event.owner.require_auth();
+
+    let state =
+        storage::get_cancellation_state(env, event_id).ok_or(Error::CancellationNotStarted)?;
+    if state.next_idx < state.count_at_start {
+        return Err(Error::CancellationNotFinished);
+    }
+
+    // Owner residual paid only on FullPartnerThenResidual; ProRataPartners
+    // intentionally pays the owner 0.
+    if matches!(state.branch, CancellationBranch::FullPartnerThenResidual) {
+        let owner_residual = state
+            .remaining_at_start
+            .saturating_sub(state.non_owner_total);
+        if owner_residual > 0 {
+            escrow::release(env, &event.token, &event.owner, owner_residual);
+            evt::OwnerResidualRefunded {
+                event_id,
+                owner: event.owner.clone(),
+                amount: owner_residual,
+            }
+            .publish(env);
+        }
+    }
+
+    event.remaining_escrow = 0;
     event.status = EventStatus::Cancelled;
     storage::set_event(env, event_id, &event);
+    storage::clear_cancellation_state(env, event_id);
 
     evt::EventCancelled { id: event_id }.publish(env);
 
@@ -363,18 +470,6 @@ pub fn cancel_event(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
 // ============================================================
 // SUBMIT
 // ============================================================
-//
-// Upsert semantics: the first submit creates the anchor, later calls update
-// content_uri but preserve the original submitted_at. This matches the
-// "edit window" model in the Operate PRDs: submissions are editable up to
-// the deadline; the audit time is the first submission's timestamp.
-//
-// Pillar-specific prerequisite:
-//   - Bounty / Grant: applicant must have applied (be in EventApplicants)
-//                     OR already have a prior submission (re-submit case).
-//   - Hackathon:      no prior application required; submission is the entry.
-//
-// Spec: boundless-platform-contract-prd.md Section 6.3; boundless-hackathon-operate-prd.md FR-4/FR-5; boundless-bounty-operate-prd.md FR-5..FR-7.
 pub fn submit(
     env: &Env,
     event_id: u64,
@@ -389,9 +484,7 @@ pub fn submit(
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
     }
-    // Crowdfunding has no submission concept: the builder is pre-seated as
-    // the sole winner at create time and milestone validation is off-chain.
-    // Rejecting at the contract layer keeps junk anchors out of storage.
+    // Crowdfunding has no submission concept: the builder is pre-seated.
     if matches!(event.pillar, Pillar::Crowdfunding) {
         return Err(Error::InvalidPillar);
     }
@@ -406,20 +499,11 @@ pub fn submit(
     let existing = storage::get_submission(env, event_id, &applicant);
 
     // Pillar-aware application gate (only enforced on first submission).
+    // O(1) lookup via the slot index.
     if existing.is_none() {
         let needs_application = matches!(event.pillar, Pillar::Bounty | Pillar::Grant);
-        if needs_application {
-            let applicants = storage::get_applicants(env, event_id);
-            let mut found = false;
-            for a in applicants.iter() {
-                if a == applicant {
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
-                return Err(Error::ApplicantNotApplied);
-            }
+        if needs_application && storage::applicant_slot(env, event_id, &applicant) == 0 {
+            return Err(Error::ApplicantNotApplied);
         }
     }
 
@@ -449,9 +533,6 @@ pub fn submit(
 // ============================================================
 // WITHDRAW SUBMISSION
 // ============================================================
-//
-// Removes the submission anchor. Allowed by the applicant until the event's
-// deadline passes (matches the Operate PRDs' withdraw-until-deadline rule).
 pub fn withdraw_submission(
     env: &Env,
     event_id: u64,
@@ -492,16 +573,6 @@ pub fn withdraw_submission(
 // ============================================================
 // SELECT WINNERS
 // ============================================================
-//
-// Spec: boundless-platform-contract-prd.md Section 6.4.
-//
-// Single release: per-winner amount = total_budget * distribution[position] / 100.
-//   Tokens transfer immediately; profile is bootstrapped, credits earned,
-//   reputation bumped, earnings registered. Event marks Completed when
-//   remaining_escrow reaches 0.
-//
-// Multi release (grant): winners are recorded but no transfer happens here;
-//   payments flow through claim_milestone.
 pub fn select_winners(
     env: &Env,
     event_id: u64,
@@ -515,14 +586,23 @@ pub fn select_winners(
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
     }
-    // Crowdfunding seats the builder as winner at create time; there is no
-    // organizer-curation step. Reject here so the caller cannot overwrite
-    // the auto-registered Winner record.
     if matches!(event.pillar, Pillar::Crowdfunding) {
         return Err(Error::InvalidPillar);
     }
 
     event.owner.require_auth();
+
+    // One-shot per event: detect a prior selection by an anchor row
+    // (milestone == None). Crowdfunding's create_event seeds an anchor too,
+    // but we returned above for crowdfunding.
+    let existing_count = storage::winner_count(env, event_id);
+    for idx in 0..existing_count {
+        if let Some(w) = storage::winner_at(env, event_id, idx) {
+            if w.milestone.is_none() {
+                return Err(Error::WinnersAlreadySelected);
+            }
+        }
+    }
 
     if winners.is_empty() {
         return Err(Error::NoSubmissions);
@@ -551,17 +631,24 @@ pub fn select_winners(
     }
 
     let profile = profile_client::client(env);
-    let mut winner_records: Vec<Winner> = Vec::new(env);
     let now = env.ledger().timestamp();
     let reason_win = Symbol::new(env, "win");
 
     match event.release_kind {
         ReleaseKind::Single => {
+            // M1: percent math is against the live escrow at select time
+            // (snapshotted before the first refund), so partner top-ups via
+            // add_funds flow into winner payouts rather than getting
+            // trapped until cancel. Snapshot once so each winner gets the
+            // intended share regardless of the order of releases inside
+            // this same call.
+            let escrow_at_select = event.remaining_escrow;
+
             // First pass: compute per-winner amounts and verify total fits.
             let mut total_owed: i128 = 0;
             for spec in winners.iter() {
                 let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
-                let amount = event.total_budget.saturating_mul(percent) / 100_i128;
+                let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
                 if amount <= 0 {
                     return Err(Error::InvalidDistribution);
                 }
@@ -575,17 +662,15 @@ pub fn select_winners(
             for (idx, spec) in winners.iter().enumerate() {
                 let sub_idx = idx as u8;
                 let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
-                let amount = event.total_budget.saturating_mul(percent) / 100_i128;
+                let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
 
                 escrow::release(env, &event.token, &spec.recipient, amount);
                 event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
 
-                // 1: bootstrap (idempotent on a fresh recipient).
                 let bootstrap_op =
                     idempotency::derive_child_indexed(env, &op_id, tag::BOOTSTRAP, sub_idx);
                 profile.bootstrap(&spec.recipient, &bootstrap_op);
 
-                // 2: earn credits.
                 let earn_op =
                     idempotency::derive_child_indexed(env, &op_id, tag::EARN_CREDITS, sub_idx);
                 profile.earn_credits(
@@ -595,7 +680,6 @@ pub fn select_winners(
                     &earn_op,
                 );
 
-                // 3: bump reputation.
                 let rep_op =
                     idempotency::derive_child_indexed(env, &op_id, tag::BUMP_REP, sub_idx);
                 profile.bump_reputation(
@@ -605,7 +689,6 @@ pub fn select_winners(
                     &rep_op,
                 );
 
-                // 4: register earnings in the event's token.
                 let earnings_op = idempotency::derive_child_indexed(
                     env,
                     &op_id,
@@ -619,13 +702,17 @@ pub fn select_winners(
                     &earnings_op,
                 );
 
-                winner_records.push_back(Winner {
-                    recipient: spec.recipient.clone(),
-                    position: spec.position,
-                    amount,
-                    milestone: None,
-                    paid_at: Some(now),
-                });
+                storage::append_winner(
+                    env,
+                    event_id,
+                    &Winner {
+                        recipient: spec.recipient.clone(),
+                        position: spec.position,
+                        amount,
+                        milestone: None,
+                        paid_at: Some(now),
+                    },
+                );
 
                 evt::WinnerPaid {
                     event_id,
@@ -644,19 +731,22 @@ pub fn select_winners(
         ReleaseKind::Multi(_) => {
             // Grants: record winners but defer payment to claim_milestone.
             for spec in winners.iter() {
-                winner_records.push_back(Winner {
-                    recipient: spec.recipient.clone(),
-                    position: spec.position,
-                    amount: 0,
-                    milestone: None,
-                    paid_at: None,
-                });
+                storage::append_winner(
+                    env,
+                    event_id,
+                    &Winner {
+                        recipient: spec.recipient.clone(),
+                        position: spec.position,
+                        amount: 0,
+                        milestone: None,
+                        paid_at: None,
+                    },
+                );
             }
         }
     }
 
     let winners_count = winners.len();
-    storage::set_winners(env, event_id, &winner_records);
     storage::set_event(env, event_id, &event);
 
     evt::WinnersSelected {
@@ -671,6 +761,10 @@ pub fn select_winners(
 
 // ============================================================
 // READS
+//
+// Aggregated reads (get_applicants, get_winners, get_contributors) cap at
+// MAX_*_PER_EVENT entries. Callers expecting larger lists should use the
+// paged accessors (*_count + *_at).
 // ============================================================
 pub fn get_event(env: &Env, event_id: u64) -> Result<EventRecord, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)
@@ -682,17 +776,59 @@ pub fn get_submission(env: &Env, event_id: u64, applicant: Address) -> Result<Su
 
 pub fn get_applicants(env: &Env, event_id: u64) -> Result<Vec<Address>, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::get_applicants(env, event_id))
+    Ok(storage::applicants_snapshot(
+        env,
+        event_id,
+        MAX_APPLICANTS_PER_EVENT,
+    ))
+}
+
+pub fn get_applicant_count(env: &Env, event_id: u64) -> Result<u32, Error> {
+    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(storage::applicant_count(env, event_id))
+}
+
+pub fn get_applicant_at(env: &Env, event_id: u64, idx: u32) -> Result<Option<Address>, Error> {
+    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(storage::applicant_at(env, event_id, idx))
 }
 
 pub fn get_winners(env: &Env, event_id: u64) -> Result<Vec<Winner>, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::get_winners(env, event_id))
+    Ok(storage::winners_snapshot(
+        env,
+        event_id,
+        MAX_WINNERS_PER_SELECT.saturating_mul(20),
+    ))
+}
+
+pub fn get_winner_count(env: &Env, event_id: u64) -> Result<u32, Error> {
+    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(storage::winner_count(env, event_id))
+}
+
+pub fn get_winner_at(env: &Env, event_id: u64, idx: u32) -> Result<Option<Winner>, Error> {
+    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(storage::winner_at(env, event_id, idx))
 }
 
 pub fn get_contributors(env: &Env, event_id: u64) -> Result<Vec<Address>, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::get_contributor_list(env, event_id))
+    Ok(storage::contributors_snapshot(
+        env,
+        event_id,
+        MAX_CONTRIBUTORS_PER_EVENT,
+    ))
+}
+
+pub fn get_contributor_count(env: &Env, event_id: u64) -> Result<u32, Error> {
+    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(storage::contributor_count(env, event_id))
+}
+
+pub fn get_contributor_at(env: &Env, event_id: u64, idx: u32) -> Result<Option<Address>, Error> {
+    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(storage::contributor_at(env, event_id, idx))
 }
 
 pub fn get_contributor_amount(

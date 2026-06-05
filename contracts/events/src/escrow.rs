@@ -1,27 +1,29 @@
-// boundless-events: internal escrow / token movement helpers.
-//
-// All token-transfer operations route through here so that fee withholding
-// and the atomic deposit pattern are in one place.
-//
-// Spec: boundless-platform-contract-prd.md Sections 6, 8.3.
-//
-// Wired by deposit / release / refund operations as they land.
 #![allow(dead_code)]
 
 use soroban_sdk::{token, Address, Env};
 
 use crate::storage;
 
-/// Compute the fee for a deposit amount given the current bps configuration.
-pub fn compute_fee(env: &Env, amount: i128) -> i128 {
-    let bps = storage::get_fee_bps(env) as i128;
-    amount.saturating_mul(bps) / 10_000
+pub fn effective_fee_bps(env: &Env, override_bps: Option<u32>) -> u32 {
+    override_bps.unwrap_or_else(|| storage::get_fee_bps(env))
 }
 
-/// Atomic deposit: pull `amount + fee` from `from`, then immediately forward
-/// `fee` to the fee account. Returns `amount` (the net credited to the event).
-pub fn deposit_with_fee(env: &Env, token_addr: &Address, from: &Address, amount: i128) -> i128 {
-    let fee = compute_fee(env, amount);
+pub fn compute_fee_at(amount: i128, bps: u32) -> i128 {
+    amount.saturating_mul(bps as i128) / 10_000
+}
+
+pub fn compute_fee(env: &Env, amount: i128) -> i128 {
+    compute_fee_at(amount, storage::get_fee_bps(env))
+}
+
+pub fn deposit_with_fee_at(
+    env: &Env,
+    token_addr: &Address,
+    from: &Address,
+    amount: i128,
+    bps: u32,
+) -> i128 {
+    let fee = compute_fee_at(amount, bps);
     let total = amount.saturating_add(fee);
     let contract = env.current_contract_address();
     let fee_account = storage::get_fee_account(env);
@@ -34,7 +36,10 @@ pub fn deposit_with_fee(env: &Env, token_addr: &Address, from: &Address, amount:
     amount
 }
 
-/// Release `amount` of `token` to `recipient` from the contract's balance.
+pub fn deposit_with_fee(env: &Env, token_addr: &Address, from: &Address, amount: i128) -> i128 {
+    deposit_with_fee_at(env, token_addr, from, amount, storage::get_fee_bps(env))
+}
+
 pub fn release(env: &Env, token_addr: &Address, recipient: &Address, amount: i128) {
     let contract = env.current_contract_address();
     let client = token::Client::new(env, token_addr);

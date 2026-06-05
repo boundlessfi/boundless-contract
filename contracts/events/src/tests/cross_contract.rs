@@ -13,6 +13,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
+use super::common::drive_cancel;
 use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
@@ -113,6 +114,7 @@ fn create_bounty(ctx: &Ctx, application_credit_cost: u32) -> u64 {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost,
+        fee_bps_override: None,
     };
     let op_id = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_id)
@@ -318,6 +320,7 @@ fn select_winners_rejects_duplicate_position() {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 1,
+        fee_bps_override: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let bounty_id = ctx.events.create_event(&params, &op_create);
@@ -362,6 +365,7 @@ fn select_winners_handles_multi_recipient_distribution() {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 0, // free for this test
+        fee_bps_override: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let bounty_id = ctx.events.create_event(&params, &op_create);
@@ -439,8 +443,7 @@ fn cancel_refunds_remaining_escrow_to_owner() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&bounty_id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, bounty_id);
 
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Cancelled);
@@ -455,13 +458,13 @@ fn cancel_already_cancelled_reverts() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx, 0);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&bounty_id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, bounty_id);
 
-    let op_cancel_again = BytesN::random(&ctx.env);
+    // Second start_cancel on a Cancelled event must revert.
+    let op_again = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_cancel_event(&bounty_id, &op_cancel_again);
+        .try_start_cancel(&bounty_id, &op_again);
     assert!(res.is_err(), "second cancel should revert");
 }
 
@@ -483,6 +486,7 @@ fn cancel_after_select_winners_refunds_only_remaining() {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let bounty_id = ctx.events.create_event(&params, &op_create);
@@ -505,8 +509,7 @@ fn cancel_after_select_winners_refunds_only_remaining() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&bounty_id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, bounty_id);
 
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Cancelled);
@@ -534,6 +537,7 @@ fn create_grant(ctx: &Ctx, n_milestones: u32) -> u64 {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op_create = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_create)
@@ -700,6 +704,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op_create = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_create)
@@ -812,4 +817,344 @@ fn withdraw_submission_without_submission_reverts() {
         .events
         .try_withdraw_submission(&id, &ctx.applicant, &op_wd);
     assert!(res.is_err(), "withdraw without prior submission should revert");
+}
+
+// ============================================================
+// Per-event fee_bps_override
+//
+// Sales-side discount / comp / waiver lives on the event record, not the
+// global admin config. Tests below cover:
+//   1. create_event with Some(override) charges the override rate.
+//   2. add_funds reads the override from the event (not the live default).
+//   3. waiver (Some(0)) costs the owner exactly total_budget with no fee.
+//   4. an admin change to the global default does not retroactively re-price
+//      in-flight events that snapshotted an override.
+//   5. publish rejects override > MAX_FEE_BPS.
+// ============================================================
+#[test]
+fn create_event_charges_override_rate_when_provided() {
+    let ctx = setup();
+    // Override to 1.5% (Hackathon launch rate) while the contract default is 2.5%.
+    let override_bps: u32 = 150;
+    let total_budget: i128 = 100_000_0000000_i128; // 100k USDC
+    let expected_fee = total_budget * (override_bps as i128) / 10_000;
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let owner_before = token.balance(&ctx.owner);
+    let fee_before = token.balance(&ctx.fee_account);
+
+    let params = CreateEventParams {
+        pillar: Pillar::Hackathon,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
+        title: String::from_str(&ctx.env, "Hackathon at 1.5%"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: one_winner_distribution(&ctx.env),
+        application_credit_cost: 0,
+        fee_bps_override: Some(override_bps),
+    };
+    let op = BytesN::random(&ctx.env);
+    let id = ctx.events.create_event(&params, &op);
+
+    // Owner paid total_budget + override_fee.
+    let owner_after = token.balance(&ctx.owner);
+    assert_eq!(owner_before - owner_after, total_budget + expected_fee);
+
+    // Fee account received exactly the override fee.
+    let fee_after = token.balance(&ctx.fee_account);
+    assert_eq!(fee_after - fee_before, expected_fee);
+
+    // Event record snapshotted the override.
+    let event = ctx.events.get_event(&id);
+    assert_eq!(event.fee_bps_override, Some(override_bps));
+    assert_eq!(event.remaining_escrow, total_budget);
+}
+
+#[test]
+fn add_funds_uses_event_override_not_global() {
+    let ctx = setup();
+    // Publish at a 0.5% promo rate.
+    let override_bps: u32 = 50;
+    let total_budget: i128 = 10_000_0000000_i128;
+
+    let params = CreateEventParams {
+        pillar: Pillar::Hackathon,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
+        title: String::from_str(&ctx.env, "Promo Hackathon"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: one_winner_distribution(&ctx.env),
+        application_credit_cost: 0,
+        fee_bps_override: Some(override_bps),
+    };
+    let op_create = BytesN::random(&ctx.env);
+    let id = ctx.events.create_event(&params, &op_create);
+
+    // Admin bumps global default upward; in-flight event must not re-price.
+    ctx.events.set_fee_bps(&500);
+
+    // Partner contributes 1_000 USDC. The fee should be at 0.5% (override),
+    // not 5% (new global). Mint 2_000 USDC so the partner balance comfortably
+    // covers amount + fee in either branch (so the test fails on the math
+    // assertion if the override is ignored, not on a balance error).
+    let partner = Address::generate(&ctx.env);
+    let token_admin = token::StellarAssetClient::new(&ctx.env, &ctx.token_addr);
+    token_admin.mint(&partner, &2_000_0000000_i128);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let partner_before = token.balance(&partner);
+    let fee_before = token.balance(&ctx.fee_account);
+
+    let amount = 1_000_0000000_i128;
+    let expected_fee = amount * (override_bps as i128) / 10_000;
+    let op_add = BytesN::random(&ctx.env);
+    ctx.events.add_funds(&id, &partner, &amount, &op_add);
+
+    let partner_after = token.balance(&partner);
+    assert_eq!(partner_before - partner_after, amount + expected_fee);
+    let fee_after = token.balance(&ctx.fee_account);
+    assert_eq!(fee_after - fee_before, expected_fee);
+}
+
+#[test]
+fn create_event_with_waiver_charges_no_fee() {
+    let ctx = setup();
+    let total_budget: i128 = 5_000_0000000_i128;
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let owner_before = token.balance(&ctx.owner);
+    let fee_before = token.balance(&ctx.fee_account);
+
+    let params = CreateEventParams {
+        pillar: Pillar::Hackathon,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
+        title: String::from_str(&ctx.env, "Comped Hackathon"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: one_winner_distribution(&ctx.env),
+        application_credit_cost: 0,
+        fee_bps_override: Some(0),
+    };
+    let op = BytesN::random(&ctx.env);
+    ctx.events.create_event(&params, &op);
+
+    let owner_after = token.balance(&ctx.owner);
+    assert_eq!(owner_before - owner_after, total_budget, "waiver: no fee");
+    let fee_after = token.balance(&ctx.fee_account);
+    assert_eq!(fee_after, fee_before, "waiver: fee account unchanged");
+}
+
+#[test]
+fn create_event_rejects_override_above_max_fee_bps() {
+    let ctx = setup();
+
+    let params = CreateEventParams {
+        pillar: Pillar::Hackathon,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget: 1_000_0000000_i128,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
+        title: String::from_str(&ctx.env, "Bad rate"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: one_winner_distribution(&ctx.env),
+        application_credit_cost: 0,
+        // 60% is above the MAX_FEE_BPS = 1000 cap (post L4 audit fix).
+        fee_bps_override: Some(6000),
+    };
+    let op = BytesN::random(&ctx.env);
+    let res = ctx.events.try_create_event(&params, &op);
+    assert!(res.is_err(), "override > MAX_FEE_BPS must revert");
+}
+
+#[test]
+fn create_event_omitted_override_falls_back_to_global_default() {
+    let ctx = setup();
+    let total_budget: i128 = 20_000_0000000_i128;
+    let expected_fee = total_budget * (FEE_BPS as i128) / 10_000; // contract default 2.5%
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let fee_before = token.balance(&ctx.fee_account);
+
+    let params = CreateEventParams {
+        pillar: Pillar::Hackathon,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
+        title: String::from_str(&ctx.env, "Default rate hackathon"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: one_winner_distribution(&ctx.env),
+        application_credit_cost: 0,
+        fee_bps_override: None,
+    };
+    let op = BytesN::random(&ctx.env);
+    let id = ctx.events.create_event(&params, &op);
+
+    let fee_after = token.balance(&ctx.fee_account);
+    assert_eq!(fee_after - fee_before, expected_fee);
+    // Event keeps None so future add_funds also pulls the live default.
+    let event = ctx.events.get_event(&id);
+    assert_eq!(event.fee_bps_override, None);
+}
+
+// ============================================================
+// select_winners replay lock
+//
+// Calling select_winners twice would silently overwrite the anchor winner
+// records. The contract now rejects the second call so that downstream
+// claim_milestone reads and off-chain audits read a stable winner set.
+// Tested on Grant (Multi); the same code path serves Single releases.
+// ============================================================
+#[test]
+fn select_winners_rejects_second_call_winners_already_selected() {
+    let ctx = setup();
+    let r1 = Address::generate(&ctx.env);
+    let grant_id = create_grant(&ctx, 2);
+    select_grant_winner(&ctx, grant_id, &r1);
+
+    // Second call (different recipient, fresh op_id) must be rejected.
+    let r2 = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: r2.clone(),
+            position: 1,
+            credit_earn: 0,
+            reputation_bump: 0,
+        },
+    ];
+    let op = BytesN::random(&ctx.env);
+    let res = ctx.events.try_select_winners(&grant_id, &winners, &op);
+    assert!(res.is_err(), "second select_winners must revert");
+
+    // First selection is untouched.
+    let recorded = ctx.events.get_winners(&grant_id);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded.get(0).unwrap().recipient, r1);
+}
+
+// ============================================================
+// Grant last-milestone sweep
+//
+// Per-milestone math floors total_budget * percent / 100 / n_milestones. With
+// a budget that does not divide evenly across milestones the floored amount
+// strands a small residue in escrow. The last milestone for the recipient
+// now sweeps that residue so total paid equals their full position share.
+// ============================================================
+#[test]
+fn grant_last_milestone_sweeps_rounding_residue() {
+    let ctx = setup();
+    let recipient = Address::generate(&ctx.env);
+
+    // 100k / 3 milestones = 33,333.3333333 USDC each at 7 decimals.
+    // Floored per-milestone: floor(100_000_0000000 / 3) = 33_333_3333333 stroops.
+    // Residue: 100_000_0000000 - 3 * 33_333_3333333 = 1 stroop.
+    let grant_id = create_grant(&ctx, 3);
+    select_grant_winner(&ctx, grant_id, &recipient);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let before = token.balance(&recipient);
+
+    // Claim m0 + m1 at floored rate.
+    let floored = TOTAL_BUDGET / 3;
+    ctx.events.claim_milestone(
+        &grant_id,
+        &recipient,
+        &0_u32,
+        &3_u32,
+        &5_u32,
+        &BytesN::random(&ctx.env),
+    );
+    ctx.events.claim_milestone(
+        &grant_id,
+        &recipient,
+        &1_u32,
+        &3_u32,
+        &5_u32,
+        &BytesN::random(&ctx.env),
+    );
+    let after_two = token.balance(&recipient);
+    assert_eq!(after_two - before, floored * 2);
+
+    // Last claim: sweep so the recipient ends up with the full position share.
+    ctx.events.claim_milestone(
+        &grant_id,
+        &recipient,
+        &2_u32,
+        &3_u32,
+        &5_u32,
+        &BytesN::random(&ctx.env),
+    );
+    let after_all = token.balance(&recipient);
+    assert_eq!(
+        after_all - before,
+        TOTAL_BUDGET,
+        "last milestone must sweep residue: recipient receives full position share"
+    );
+
+    // Event drained completely and marks Completed.
+    let event = ctx.events.get_event(&grant_id);
+    assert_eq!(event.remaining_escrow, 0);
+    assert_eq!(event.status, EventStatus::Completed);
+}
+
+// ============================================================
+// M1: select_winners pays partner top-ups too
+// ============================================================
+
+#[test]
+fn select_winners_pays_against_remaining_escrow_including_top_ups() {
+    // Owner deposits TOTAL_BUDGET. Partner tops up another 5_000 USDC.
+    // Single winner at 100% should receive owner_budget + partner_top_up
+    // (net of fees). Pre-audit this was capped at TOTAL_BUDGET and the
+    // top-up would have stayed trapped until cancel.
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx, 0);
+
+    let partner = Address::generate(&ctx.env);
+    let token_admin = token::StellarAssetClient::new(&ctx.env, &ctx.token_addr);
+    let top_up: i128 = 5_000_0000000_i128;
+    let top_up_fee = top_up * FEE_BPS as i128 / 10_000_i128;
+    token_admin.mint(&partner, &(top_up + top_up_fee));
+
+    let op_add = BytesN::random(&ctx.env);
+    ctx.events.add_funds(&bounty_id, &partner, &top_up, &op_add);
+
+    // Confirm the event escrow grew.
+    let event_pre = ctx.events.get_event(&bounty_id);
+    assert_eq!(event_pre.remaining_escrow, TOTAL_BUDGET + top_up);
+
+    // Single winner at 100%.
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: ctx.applicant.clone(),
+            position: 1,
+            credit_earn: 20,
+            reputation_bump: 50,
+        },
+    ];
+    let op_select = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&bounty_id, &winners, &op_select);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    // Winner receives the full live escrow at select time, not the
+    // original total_budget.
+    assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET + top_up);
+
+    // Event drained, status Completed, no orphaned partner top-up.
+    let event_post = ctx.events.get_event(&bounty_id);
+    assert_eq!(event_post.remaining_escrow, 0);
+    assert_eq!(event_post.status, EventStatus::Completed);
 }

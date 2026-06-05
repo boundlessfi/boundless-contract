@@ -8,6 +8,7 @@ use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 use crate::admin;
 use crate::errors::Error;
+use crate::event_ops::MAX_APPLICANTS_PER_EVENT;
 use crate::events as evt;
 use crate::idempotency::{self, tag};
 use crate::profile_client;
@@ -42,13 +43,9 @@ pub fn apply(
 
     applicant.require_auth();
 
-    // Reject duplicate application.
-    let mut applicants = storage::get_applicants(env, bounty_id);
-    for existing in applicants.iter() {
-        if existing == applicant {
-            return Err(Error::ApplicantAlreadyApplied);
-        }
-    }
+    // append_applicant returns Err on duplicate or cap exceeded; both are
+    // caught here so we don't bill credits before reserving the slot.
+    storage::append_applicant(env, bounty_id, &applicant, MAX_APPLICANTS_PER_EVENT)?;
 
     // Cross-contract: bootstrap (idempotent), then spend credits.
     let profile = profile_client::client(env);
@@ -62,9 +59,6 @@ pub fn apply(
         &Symbol::new(env, "apply"),
         &spend_op,
     );
-
-    applicants.push_back(applicant.clone());
-    storage::set_applicants(env, bounty_id, &applicants);
 
     evt::Applied {
         event_id: bounty_id,
@@ -99,18 +93,9 @@ pub fn withdraw_application(
         return Err(Error::SubmissionAlreadyExists);
     }
 
-    // Locate and remove the applicant.
-    let mut applicants = storage::get_applicants(env, bounty_id);
-    let mut found_at: Option<u32> = None;
-    for (idx, existing) in applicants.iter().enumerate() {
-        if existing == applicant {
-            found_at = Some(idx as u32);
-            break;
-        }
-    }
-    let idx = found_at.ok_or(Error::ApplicantNotApplied)?;
-    applicants.remove(idx);
-    storage::set_applicants(env, bounty_id, &applicants);
+    // Membership check + swap-remove. Slot lookup is O(1), so this avoids
+    // the prior O(n) linear scan even at the cap.
+    storage::remove_applicant(env, bounty_id, &applicant)?;
 
     // Cross-contract: refund 50% of the application credit cost.
     let refund = event.application_credit_cost / 2;

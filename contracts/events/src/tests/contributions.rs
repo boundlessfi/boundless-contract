@@ -31,6 +31,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
+use super::common::drive_cancel;
 use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
@@ -119,6 +120,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op)
@@ -249,8 +251,7 @@ fn add_funds_to_cancelled_event_reverts() {
     let ctx = setup();
     let id = create_hackathon(&ctx);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     let partner = Address::generate(&ctx.env);
     fund(&ctx, &partner, 1_000_0000000_i128);
@@ -304,8 +305,7 @@ fn cancel_with_no_contributors_refunds_owner_in_full() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
 
-    let op = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     let owner_after = token.balance(&ctx.owner);
     assert_eq!(
@@ -343,8 +343,7 @@ fn cancel_with_partner_pool_refunds_partners_then_owner_residual() {
     let p2_before = token.balance(&p2);
     let owner_before = token.balance(&ctx.owner);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     assert_eq!(token.balance(&p1) - p1_before, c1);
     assert_eq!(token.balance(&p2) - p2_before, c2);
@@ -357,14 +356,21 @@ fn cancel_with_partner_pool_refunds_partners_then_owner_residual() {
 
 #[test]
 fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
-    // Drain the budget so remaining_escrow == non_owner_total at cancel.
-    // Distribution covers 100%; pay both positions to drain total_budget;
-    // remaining is exactly the partner pool. Owner residual must be 0.
+    // Drain enough escrow so remaining_escrow == non_owner_total at cancel.
+    // After M1 (select_winners pays against remaining_escrow), we cannot
+    // hit the boundary by paying out 100% of distribution — that drains
+    // the partner pool too. Instead we fill only one position (50%) so
+    // half the escrow is paid and half remains; with partner pool sized
+    // to that remainder, the cancel falls on the equality boundary.
+    //
+    // TOTAL_BUDGET = 1000, partner = 1000 (split 500 / 500),
+    // escrow_at_select = 2000, dist = 50% + 50% (positions 1 and 2),
+    // pay only position 1: paid = 1000, remaining = 1000 = partner pool.
 
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 70);
-    dist.set(2, 30);
+    dist.set(1, 50);
+    dist.set(2, 50);
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -376,14 +382,15 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op_create);
 
     let p1 = Address::generate(&ctx.env);
     let p2 = Address::generate(&ctx.env);
-    let c1 = 400_0000000_i128;
-    let c2 = 400_0000000_i128;
+    let c1 = 500_0000000_i128;
+    let c2 = 500_0000000_i128;
     let fee1 = c1 * FEE_BPS as i128 / 10_000_i128;
     let fee2 = c2 * FEE_BPS as i128 / 10_000_i128;
     fund(&ctx, &p1, c1 + fee1);
@@ -393,10 +400,9 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
     let op2 = BytesN::random(&ctx.env);
     ctx.events.add_funds(&id, &p2, &c2, &op2);
 
-    // remaining = 1000 + 800 = 1800. Pay both winners to drain 1000.
-    // remaining_after = 800 = non_owner_total. Boundary case A.
+    // remaining = 1000 + 1000 = 2000. Pay only position 1 at 50% of escrow
+    // = 1000. remaining_after = 1000 = non_owner_total. Boundary case A.
     let winner_a = Address::generate(&ctx.env);
-    let winner_b = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
@@ -405,28 +411,21 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
             credit_earn: 20,
             reputation_bump: 50,
         },
-        WinnerSpec {
-            recipient: winner_b.clone(),
-            position: 2,
-            credit_earn: 10,
-            reputation_bump: 25,
-        },
     ];
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_select);
 
-    // The event isn't Completed because remaining (800) != 0.
+    // The event isn't Completed because remaining (1000) != 0.
     let after_select = ctx.events.get_event(&id);
     assert_eq!(after_select.status, EventStatus::Active);
-    assert_eq!(after_select.remaining_escrow, 800_0000000_i128);
+    assert_eq!(after_select.remaining_escrow, 1_000_0000000_i128);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);
     let owner_before = token.balance(&ctx.owner);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     assert_eq!(token.balance(&p1) - p1_before, c1);
     assert_eq!(token.balance(&p2) - p2_before, c2);
@@ -460,8 +459,7 @@ fn cancel_with_owner_top_up_keeps_owner_residual_correct() {
     let owner_before = token.balance(&ctx.owner);
     let partner_before = token.balance(&partner);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     assert_eq!(token.balance(&partner) - partner_before, pc);
     // Owner residual = 1500 - 300 = 1200 (their original budget + top-up).
@@ -470,6 +468,147 @@ fn cancel_with_owner_top_up_keeps_owner_residual_correct() {
     let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Cancelled);
     assert_eq!(event.remaining_escrow, 0);
+}
+
+// ============================================================
+// H3/H4 cap + paged read coverage
+// ============================================================
+
+#[test]
+fn add_funds_paged_storage_round_trip() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    // Three distinct partners; verify both the legacy snapshot read and
+    // the paged accessors agree on the layout.
+    let partners: [Address; 3] = [
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+    ];
+    for p in partners.iter() {
+        let amount = MIN_CONTRIB;
+        let fee = amount * FEE_BPS as i128 / 10_000_i128;
+        fund(&ctx, p, amount + fee);
+        let op = BytesN::random(&ctx.env);
+        ctx.events.add_funds(&id, p, &amount, &op);
+    }
+
+    assert_eq!(ctx.events.get_contributor_count(&id), 3);
+    for (idx, p) in partners.iter().enumerate() {
+        let stored = ctx
+            .events
+            .get_contributor_at(&id, &(idx as u32))
+            .expect("slot populated");
+        assert_eq!(stored, *p);
+    }
+    let snap = ctx.events.get_contributors(&id);
+    assert_eq!(snap.len(), 3);
+}
+
+#[test]
+fn paged_cancel_processes_in_batches() {
+    // Seed 5 partners then drive the cancel paged-flow with a batch size
+    // of 2. Confirms:
+    //   - start_cancel flips status to Cancelling and persists the cursor
+    //   - process_cancel_batch refunds the next N and advances the cursor
+    //   - finalize_cancel pays owner residual and flips to Cancelled
+    //   - all partners receive their original amount (branch A)
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let mut partners: [Address; 5] = [
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+    ];
+    let per = MIN_CONTRIB;
+    for p in partners.iter_mut() {
+        let fee = per * FEE_BPS as i128 / 10_000_i128;
+        fund(&ctx, p, per + fee);
+        let op = BytesN::random(&ctx.env);
+        ctx.events.add_funds(&id, p, &per, &op);
+    }
+    assert_eq!(ctx.events.get_contributor_count(&id), 5);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let balances_before: [i128; 5] = [
+        token.balance(&partners[0]),
+        token.balance(&partners[1]),
+        token.balance(&partners[2]),
+        token.balance(&partners[3]),
+        token.balance(&partners[4]),
+    ];
+    let owner_before = token.balance(&ctx.owner);
+
+    // start_cancel: Cancelling, owner unpaid yet.
+    let op_start = BytesN::random(&ctx.env);
+    ctx.events.start_cancel(&id, &op_start);
+    let after_start = ctx.events.get_event(&id);
+    assert_eq!(after_start.status, EventStatus::Cancelling);
+    assert_eq!(token.balance(&ctx.owner) - owner_before, 0);
+
+    // Process in batches of 2.
+    let batch = 2_u32;
+    let op_b1 = BytesN::random(&ctx.env);
+    let remaining = ctx.events.process_cancel_batch(&id, &batch, &op_b1);
+    assert_eq!(remaining, 3);
+
+    let op_b2 = BytesN::random(&ctx.env);
+    let remaining = ctx.events.process_cancel_batch(&id, &batch, &op_b2);
+    assert_eq!(remaining, 1);
+
+    // Cannot finalize yet.
+    let op_too_early = BytesN::random(&ctx.env);
+    let r = ctx.events.try_finalize_cancel(&id, &op_too_early);
+    assert!(r.is_err(), "finalize before cursor end must revert");
+
+    let op_b3 = BytesN::random(&ctx.env);
+    let remaining = ctx.events.process_cancel_batch(&id, &batch, &op_b3);
+    assert_eq!(remaining, 0);
+
+    let op_final = BytesN::random(&ctx.env);
+    ctx.events.finalize_cancel(&id, &op_final);
+
+    let event = ctx.events.get_event(&id);
+    assert_eq!(event.status, EventStatus::Cancelled);
+    assert_eq!(event.remaining_escrow, 0);
+
+    // Each partner received their original deposit.
+    for (i, p) in partners.iter().enumerate() {
+        assert_eq!(token.balance(p) - balances_before[i], per);
+    }
+    // Owner residual = TOTAL_BUDGET (their original deposit; partners are paid in full).
+    assert_eq!(token.balance(&ctx.owner) - owner_before, TOTAL_BUDGET);
+}
+
+#[test]
+fn paged_cancel_owner_only_settles_inside_start() {
+    // No partner contributions: start_cancel settles inline + flips Cancelled
+    // in one tx. process_cancel_batch / finalize_cancel must reject.
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let owner_before = token.balance(&ctx.owner);
+
+    let op_start = BytesN::random(&ctx.env);
+    ctx.events.start_cancel(&id, &op_start);
+
+    let event = ctx.events.get_event(&id);
+    assert_eq!(event.status, EventStatus::Cancelled);
+    assert_eq!(token.balance(&ctx.owner) - owner_before, TOTAL_BUDGET);
+
+    // No CancellationState left to process or finalize.
+    let op_b = BytesN::random(&ctx.env);
+    let r = ctx.events.try_process_cancel_batch(&id, &10_u32, &op_b);
+    assert!(r.is_err());
+
+    let op_f = BytesN::random(&ctx.env);
+    let r = ctx.events.try_finalize_cancel(&id, &op_f);
+    assert!(r.is_err());
 }
 
 #[test]
@@ -484,8 +623,7 @@ fn cancel_clears_contributor_amounts_so_replay_state_is_clean() {
     let op_add = BytesN::random(&ctx.env);
     ctx.events.add_funds(&id, &partner, &pc, &op_add);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     let amt = ctx.events.get_contributor_amount(&id, &partner);
     assert_eq!(amt, 0);

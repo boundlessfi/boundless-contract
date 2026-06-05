@@ -28,7 +28,6 @@ mod types;
 mod tests;
 
 use crate::errors::Error;
-use crate::events as evt;
 use crate::types::*;
 
 contractmeta!(key = "version", val = "0.1.0");
@@ -87,8 +86,24 @@ impl EventsContract {
         admin::unpause(&env)
     }
 
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
-        admin::upgrade(&env, new_wasm_hash)
+    pub fn propose_upgrade(
+        env: Env,
+        new_wasm_hash: BytesN<32>,
+        new_version: String,
+    ) -> Result<(), Error> {
+        admin::propose_upgrade(&env, new_wasm_hash, new_version)
+    }
+
+    pub fn apply_upgrade(env: Env) -> Result<(), Error> {
+        admin::apply_upgrade(&env)
+    }
+
+    pub fn cancel_pending_upgrade(env: Env) -> Result<(), Error> {
+        admin::cancel_pending_upgrade(&env)
+    }
+
+    pub fn migrate(env: Env) -> Result<(), Error> {
+        admin::migrate(&env)
     }
 
     // ============================================================
@@ -117,8 +132,21 @@ impl EventsContract {
         event_ops::create_event(&env, params, op_id)
     }
 
-    pub fn cancel_event(env: Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
-        event_ops::cancel_event(&env, event_id, op_id)
+    pub fn start_cancel(env: Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
+        event_ops::start_cancel(&env, event_id, op_id)
+    }
+
+    pub fn process_cancel_batch(
+        env: Env,
+        event_id: u64,
+        max_refunds: u32,
+        op_id: BytesN<32>,
+    ) -> Result<u32, Error> {
+        event_ops::process_cancel_batch(&env, event_id, max_refunds, op_id)
+    }
+
+    pub fn finalize_cancel(env: Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
+        event_ops::finalize_cancel(&env, event_id, op_id)
     }
 
     pub fn add_funds(
@@ -221,12 +249,48 @@ impl EventsContract {
         event_ops::get_applicants(&env, event_id)
     }
 
+    pub fn get_applicant_count(env: Env, event_id: u64) -> Result<u32, Error> {
+        event_ops::get_applicant_count(&env, event_id)
+    }
+
+    pub fn get_applicant_at(
+        env: Env,
+        event_id: u64,
+        idx: u32,
+    ) -> Result<Option<Address>, Error> {
+        event_ops::get_applicant_at(&env, event_id, idx)
+    }
+
     pub fn get_winners(env: Env, event_id: u64) -> Result<Vec<Winner>, Error> {
         event_ops::get_winners(&env, event_id)
     }
 
+    pub fn get_winner_count(env: Env, event_id: u64) -> Result<u32, Error> {
+        event_ops::get_winner_count(&env, event_id)
+    }
+
+    pub fn get_winner_at(
+        env: Env,
+        event_id: u64,
+        idx: u32,
+    ) -> Result<Option<Winner>, Error> {
+        event_ops::get_winner_at(&env, event_id, idx)
+    }
+
     pub fn get_contributors(env: Env, event_id: u64) -> Result<Vec<Address>, Error> {
         event_ops::get_contributors(&env, event_id)
+    }
+
+    pub fn get_contributor_count(env: Env, event_id: u64) -> Result<u32, Error> {
+        event_ops::get_contributor_count(&env, event_id)
+    }
+
+    pub fn get_contributor_at(
+        env: Env,
+        event_id: u64,
+        idx: u32,
+    ) -> Result<Option<Address>, Error> {
+        event_ops::get_contributor_at(&env, event_id, idx)
     }
 
     pub fn get_contributor_amount(
@@ -257,18 +321,20 @@ impl EventsContract {
         admin::is_paused(&env)
     }
 
+    pub fn version(env: Env) -> String {
+        admin::get_version(&env)
+    }
+
+    pub fn get_pending_upgrade(env: Env) -> Option<PendingUpgrade> {
+        admin::get_pending_upgrade(&env)
+    }
+
+    pub fn get_migrated_to_version(env: Env) -> Option<String> {
+        admin::get_migrated_to_version(&env)
+    }
+
     // Internal helper exposed for off-chain inspection; emits no event.
     pub fn id_base(env: Env) -> u64 {
         idempotency::id_base(&env)
-    }
-
-    // ============================================================
-    // SUPPRESS-UNUSED helpers; the explicit references below let
-    // every module participate in the public surface so the linker
-    // does not strip them in release builds.
-    // ============================================================
-    #[doc(hidden)]
-    pub fn __link_keep() {
-        let _ = evt::EVENTS_LINK_KEEP;
     }
 }

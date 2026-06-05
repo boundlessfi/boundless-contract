@@ -9,7 +9,7 @@
 //   - select_winners and submit are rejected for Crowdfunding
 //   - cancel_event refunds all contributors (no owner deposit to refund)
 //
-// Spec: boundless-crowdfunding-prd.md (in progress).
+// Spec: boundless-crowdfunding-prd.md.
 
 #![cfg(test)]
 
@@ -18,6 +18,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String, Vec as SorobanVec,
 };
 
+use super::common::drive_cancel;
 use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
@@ -35,6 +36,7 @@ struct Ctx<'a> {
     #[allow(dead_code)]
     profile: ProfileContractClient<'a>,
     builder: Address,
+    events_admin: Address,
     token_addr: Address,
     token_admin: token::StellarAssetClient<'a>,
 }
@@ -78,6 +80,7 @@ fn setup<'a>() -> Ctx<'a> {
         events,
         profile,
         builder,
+        events_admin,
         token_addr,
         token_admin,
     }
@@ -101,6 +104,7 @@ fn create_campaign(ctx: &Ctx, milestones: u32) -> u64 {
         deadline: Some(ctx.env.ledger().timestamp() + 30 * 86_400),
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op)
@@ -164,6 +168,7 @@ fn create_rejects_single_release_kind() {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -184,6 +189,7 @@ fn create_rejects_missing_deadline() {
         deadline: None,
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -207,6 +213,7 @@ fn create_rejects_distribution_with_multiple_positions() {
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 0,
+        fee_bps_override: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -426,8 +433,7 @@ fn cancel_refunds_all_partners_no_owner_residual() {
     let p2_before = token.balance(&p2);
     let builder_before = token.balance(&ctx.builder);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     assert_eq!(token.balance(&p1) - p1_before, 200_0000000_i128);
     assert_eq!(token.balance(&p2) - p2_before, 300_0000000_i128);
@@ -447,8 +453,7 @@ fn cancel_with_no_contributions_just_marks_cancelled() {
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Cancelled);
@@ -477,8 +482,7 @@ fn cancel_after_partial_claim_pro_rates_remaining() {
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);
 
-    let op_cancel = BytesN::random(&ctx.env);
-    ctx.events.cancel_event(&id, &op_cancel);
+    drive_cancel(&ctx.env, &ctx.events, id);
 
     // remaining = 600, non_owner_total = 900.
     // p1 share = 300 * 600 / 900 = 200.
@@ -489,4 +493,33 @@ fn cancel_after_partial_claim_pro_rates_remaining() {
     let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Cancelled);
     assert_eq!(event.remaining_escrow, 0);
+}
+
+// ============================================================
+// M5: crowdfunding claim_milestone requires admin co-sign
+// ============================================================
+
+#[test]
+fn crowdfunding_claim_milestone_requires_admin_auth() {
+    // Verify the admin's address is among the required auths for a
+    // crowdfunding claim. mock_all_auths_allowing_non_root_auth makes the
+    // call succeed, but env.auths() records the addresses whose auth was
+    // demanded, which is the audit-relevant observation.
+    let ctx = setup();
+    let id = create_campaign(&ctx, 2);
+    let p = Address::generate(&ctx.env);
+    back(&ctx, id, &p, 200_0000000_i128);
+
+    let op = BytesN::random(&ctx.env);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op);
+
+    let auths = ctx.env.auths();
+    let admin_required = auths.iter().any(|(addr, _)| *addr == ctx.events_admin);
+    let builder_required = auths.iter().any(|(addr, _)| *addr == ctx.builder);
+    assert!(
+        admin_required,
+        "crowdfunding claim must demand admin co-sign"
+    );
+    assert!(builder_required, "builder auth still required");
 }

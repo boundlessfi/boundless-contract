@@ -14,6 +14,7 @@ pub enum Error {
     FeeAccountCannotBeZero = 3,
     ProfileContractCannotBeZero = 4,
     InvalidFeeBps = 5,
+    NotInitialized = 6,
 
     // Auth
     Unauthorized = 10,
@@ -52,13 +53,31 @@ pub enum Error {
     MilestoneAlreadyClaimed = 54,
     InvalidMilestone = 55,
     InsufficientEscrow = 56,
+    WinnersAlreadySelected = 90,
 
     // Contributions
     BelowMinimumContribution = 57,
     InvalidContributionAmount = 58,
 
+    // Capacity (per-event list caps; see MAX_*_PER_EVENT in event_ops)
+    TooManyApplicants = 59,
+
     // Idempotency
     OpAlreadySeen = 60,
+
+    // Capacity continued
+    TooManyContributors = 61,
+
+    // Paged cancellation flow
+    CancellationNotStarted = 62,
+    CancellationAlreadyStarted = 63,
+    CancellationNotFinished = 64,
+
+    UpgradeNotProposed = 65,
+    UpgradeTimelockNotElapsed = 67,
+    UpgradeProposalExpired = 68,
+    MigrationAlreadyApplied = 69,
+
 
     // Pause
     Paused = 70,
