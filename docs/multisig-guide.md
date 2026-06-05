@@ -195,6 +195,255 @@ Why this separation matters:
 
 So when §E.2 below tells you to create a bootstrap account, that account is destined to become the multi-sig in §E.5. It is not the account you will use to run `stellar contract deploy`. Keep them separate.
 
+### E.0.B. The complete end-to-end sequence (founder cheat sheet)
+
+This is the full timeline from a clean slate to a fully-rotated mainnet deploy. Twelve steps. Read it once before you start so you have the whole map, then come back and walk through it in order.
+
+Steps that are detailed elsewhere in this guide are cross-linked. Steps that come from other docs (`mainnet-deploy-runbook.md`, `multisig-preflight.md`) are flagged.
+
+#### Step 1. Build the contract wasms
+
+From the boundless-contract repo:
+
+```bash
+cd contracts/events && cargo build --target wasm32-unknown-unknown --release
+cd ../profile && cargo build --target wasm32-unknown-unknown --release
+```
+
+This produces `boundless_events.wasm` and `boundless_profile.wasm` under each contract's `target/wasm32-unknown-unknown/release/` directory. The `deploy_mainnet.sh` script does this for you if you prefer one-shot.
+
+**Verification:** both wasm files exist and are non-empty. Their hashes match the build you intend to ship (commit the hashes alongside the deploy plan).
+
+#### Step 2. Create and fund the deployer key
+
+The deployer is a throwaway single-sig key that lives only long enough to push contracts and hand off admin.
+
+```bash
+stellar keys generate boundless-deployer --network mainnet
+stellar keys address boundless-deployer    # write this down
+```
+
+Fund the deployer with about 10 XLM from your treasury account. That covers the account reserve, both contract uploads, both deploys, both wirings, both admin rotations, and a small headroom.
+
+**Verification:** `stellar.expert` shows the deployer address with ~10 XLM and zero history.
+
+#### Step 3. Deploy the boundless-profile contract first
+
+Profile has to exist before events can be wired to it (events stores the profile contract id in its instance storage).
+
+```bash
+# Upload the wasm and get a hash
+stellar contract install \
+  --wasm contracts/profile/target/wasm32-unknown-unknown/release/boundless_profile.wasm \
+  --source-account boundless-deployer \
+  --network mainnet
+
+# Deploy a new instance of the uploaded wasm
+stellar contract deploy \
+  --wasm-hash <PROFILE_WASM_HASH> \
+  --source-account boundless-deployer \
+  --network mainnet \
+  -- \
+  --admin <DEPLOYER_G_ADDRESS>
+```
+
+Write down the **profile contract id** the deploy command prints. You will need it in Step 4 and Step 6 and Step 10.
+
+The exact constructor flags come from the profile contract's `__constructor`. Cross-check against `docs/mainnet-deploy-runbook.md` §2.3 and `deploy_mainnet.sh`. Do not invent flag names.
+
+#### Step 4. Deploy the boundless-events contract
+
+```bash
+stellar contract install \
+  --wasm contracts/events/target/wasm32-unknown-unknown/release/boundless_events.wasm \
+  --source-account boundless-deployer \
+  --network mainnet
+
+stellar contract deploy \
+  --wasm-hash <EVENTS_WASM_HASH> \
+  --source-account boundless-deployer \
+  --network mainnet \
+  -- \
+  --admin <DEPLOYER_G_ADDRESS> \
+  --profile_contract <PROFILE_CONTRACT_ID> \
+  --fee_account <FEE_COLLECTION_G_ADDRESS> \
+  --fee_bps 150
+```
+
+`--fee_bps 150` is 1.5%. Adjust per the latest pricing decision. The `<FEE_COLLECTION_G_ADDRESS>` is a separate Stellar account that owns the USDC trustline and receives platform fees. It is NOT the multi-sig and NOT the deployer.
+
+Write down the **events contract id**.
+
+Again, the exact constructor signature lives in the contract source and the deploy runbook. Do not improvise flags.
+
+#### Step 5. Wire profile back to events (if your constructor did not)
+
+Profile needs to know the events contract id so it can authorize cross-contract calls per `H5` (`set_events_contract` two-step rotation).
+
+```bash
+stellar contract invoke \
+  --source-account boundless-deployer \
+  --id <PROFILE_CONTRACT_ID> \
+  --network mainnet \
+  -- \
+  set_events_contract \
+  --new_events_contract <EVENTS_CONTRACT_ID>
+```
+
+If your deploy script handled this already, skip.
+
+#### Step 6. Register supported tokens
+
+Per the post-audit token whitelist (audit finding M2 + L7), the contract rejects any token that has not been explicitly registered. Register the production USDC SAC.
+
+```bash
+stellar contract invoke \
+  --source-account boundless-deployer \
+  --id <EVENTS_CONTRACT_ID> \
+  --network mainnet \
+  -- \
+  register_supported_token \
+  --token <USDC_MAINNET_SAC>
+```
+
+If you also want to support native XLM, register the XLM SAC the same way.
+
+**Verification:** `get_supported_tokens` returns the addresses you just registered.
+
+#### Step 7. Smoke the deployed contracts (deployer is still admin)
+
+Before bringing in the multi-sig, prove the contracts work end to end with the simple single-sig admin. Run the relevant smoke scripts from boundless-nestjs:
+
+```bash
+cd ../boundless-nestjs
+SMOKE_OWNER_ADDRESS=<DEPLOYER_G_ADDRESS> \
+SMOKE_TOKEN=<USDC_MAINNET_SAC> \
+npx ts-node -r tsconfig-paths/register scripts/smoke/escrow-contract.ts
+```
+
+Verify: `get_admin` returns the deployer, `get_fee_bps` returns 150, `is_paused` returns false.
+
+If anything looks wrong, fix it now while you still have single-sig admin. Once you rotate to the multi-sig, every fix needs two signatures.
+
+#### Step 8. Build the multi-sig (Parts E.1 through E.8)
+
+This is the middle of the timeline. Walk through:
+
+- §E.1: Decide the three signers (founder + internal employee + external trusted person).
+- Have each signer run Part D to set up Freighter and send you their G-address.
+- §E.2: Generate the bootstrap account (`boundless-multisig-bootstrap`).
+- §E.3: Fund it with ~5 XLM.
+- §E.4: Add the three signer addresses (one `set-options` tx each).
+- §E.5: Set thresholds 0/2/2 AND `--master-weight 0` in a single tx.
+- §E.6: Run `verify-multisig.sh`. Must print `PASS: all 6 checks passed`.
+- §E.7: Tell the signers it is ready.
+- §E.8: 1-day cooldown on mainnet so any mistake surfaces before the rotation.
+
+At the end of Step 8 you have a working multi-sig that is NOT yet recognized by the contract.
+
+#### Step 9. Rotate admin on the events contract
+
+This is the moment the multi-sig becomes real. Two transactions.
+
+```bash
+# 9.a. From the deployer (single-sig): hand admin to the multi-sig.
+stellar contract invoke \
+  --source-account boundless-deployer \
+  --id <EVENTS_CONTRACT_ID> \
+  --network mainnet \
+  -- \
+  set_admin \
+  --new_admin <MULTISIG_G_ADDRESS>
+
+# 9.b. From the multi-sig (needs 2-of-3 signatures): accept admin.
+# Build per §F.0.B, get the Lab signing link, collect two signatures,
+# then submit per §F.0.C.
+stellar contract invoke \
+  --source-account <MULTISIG_G_ADDRESS> \
+  --id <EVENTS_CONTRACT_ID> \
+  --network mainnet \
+  --build-only \
+  -- \
+  accept_admin
+```
+
+Step 9.b is the first time the multi-sig signs anything on mainnet. Treat it like a drill: clear comms in `#ops-admin-requests`, both signers verify the Lab tx matches `accept_admin` against the events contract id, two signatures collected, then submit.
+
+**Verification:** `get_admin` on the events contract returns the multi-sig address.
+
+#### Step 10. Rotate admin on the profile contract
+
+Repeat Step 9 against `<PROFILE_CONTRACT_ID>`. Same two transactions, same multi-sig signing flow.
+
+```bash
+stellar contract invoke \
+  --source-account boundless-deployer \
+  --id <PROFILE_CONTRACT_ID> \
+  --network mainnet \
+  -- \
+  set_admin \
+  --new_admin <MULTISIG_G_ADDRESS>
+
+# Then multi-sig accept_admin per §F.0.B.
+```
+
+**Verification:** `get_admin` on the profile contract returns the multi-sig address.
+
+#### Step 11. Final verification
+
+Re-run the multi-sig verifier to confirm nothing about the multi-sig itself changed during rotation:
+
+```bash
+./scripts/admin/verify-multisig.sh <MULTISIG_G_ADDRESS> mainnet
+```
+
+Must still print `PASS: all 6 checks passed`.
+
+Then do one real admin op end to end to prove the multi-sig path works in production. The lowest-risk option is a no-op `set_fee_bps` to the current value (e.g., `set_fee_bps --new_bps 150` if it is already 150). It changes nothing but exercises the full signing + submission flow.
+
+Record:
+
+- The events `set_admin` tx hash and `accept_admin` tx hash.
+- The profile `set_admin` tx hash and `accept_admin` tx hash.
+- The proof-of-life multi-sig tx hash.
+- The output of `verify-multisig.sh`.
+
+Save all of this in team notes. This is your evidence the rotation happened cleanly.
+
+#### Step 12. Destroy the deployer
+
+Once Step 11 is fully green:
+
+```bash
+stellar keys rm boundless-deployer
+```
+
+The deployer key is gone from your keystore. The remaining XLM balance on the deployer account is stranded forever (or you could have swept it to the treasury before this step; the gas budget you had on it is small enough that abandoning it is fine).
+
+Update `BACKLOG.md`:
+
+- Move `Mainnet admin multi-sig provisioned per docs/admin-custody-policy.md (3 signers, 2-of-3).` from open to Done, with the four rotation tx hashes and the verify-multisig output linked.
+- If there is a `Destroy boundless-deployer key after mainnet rotation` entry, mark it Done with the date.
+
+After Step 12, the contracts are live, the multi-sig is admin, and there is no single-sig back door anywhere. From this point on every admin op runs through Parts F and G of this guide.
+
+#### Recap of the whole sequence
+
+1. Build wasms.
+2. Create + fund throwaway deployer.
+3. Deploy profile contract (deployer = admin).
+4. Deploy events contract wired to profile (deployer = admin).
+5. Wire profile → events if not done by constructor.
+6. Register supported tokens.
+7. Smoke deployed contracts with deployer as admin.
+8. Build the multi-sig (Parts E.1 to E.8).
+9. Rotate events admin to multi-sig (`set_admin` + `accept_admin`).
+10. Rotate profile admin to multi-sig (`set_admin` + `accept_admin`).
+11. Verify everything and run a proof-of-life multi-sig op.
+12. Destroy the deployer key.
+
+Estimated wall time for a confident operator: half a day on testnet, a full day on mainnet (mostly the §E.8 cooldown + waiting for signers to arrive in the channel).
+
 ### E.1. Decide who the three signers are
 
 This is the single most important decision in the whole process. Pick wrong and you weaken the multi-sig before it is even built. No amount of better code or stricter process fixes a bad signer roster.
