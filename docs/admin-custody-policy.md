@@ -1,10 +1,21 @@
 # Admin key custody policy
 
 **For:** the founder, the multi-sig signers, the contracts engineer.
-**Status:** decided 2026-06-03.
+**Status:** decided 2026-06-03; software-multi-sig launch baseline added 2026-06-05.
 **Affects:** all platform governance.
 
 The admin key controls the most sensitive operations on the Boundless contracts: setting fees, swapping the fee account, pausing, upgrading. A single-person admin is unacceptable. This policy defines the multi-sig structure, signer responsibilities, rotation cadence, and emergency procedures.
+
+## Launch baseline vs target state
+
+Two phases. Both are 2-of-3 multi-sig; they differ in how the per-signer keys are stored.
+
+- **Launch baseline (current):** software signers — each signer runs Freighter (or an equivalent Stellar wallet) on their own machine, with a strong unique passphrase and a paper-only backup. This ships now.
+- **Target state:** hardware-isolated signers per the original policy text below — Yubikey, Ledger, or air-gapped machine. **Hardware upgrade trigger:** when total escrow TVL crosses the threshold set in section 10 below.
+
+Everything else in this document (thresholds, rotation, drills, operational hygiene) applies to **both phases identically.** The verify-multisig script does not care whether keys are hardware or software; it only checks the on-chain signer config.
+
+Section 3 describes the target-state hardware procedure. Section 3-bis describes the launch-baseline software procedure with the trade-offs called out.
 
 ---
 
@@ -29,11 +40,11 @@ There is no other authority. The admin cannot move funds out of escrow directly;
 
 The admin authority is a **Stellar multi-sig account** with the following starting composition:
 
-| Role | Signer | Notes |
-|---|---|---|
-| Founder primary | Collins Ikechukwu | Yubikey-held key, hardware-isolated |
-| Lead engineer | (assigned) | Yubikey-held key, hardware-isolated |
-| Trusted third (advisor or co-founder) | (assigned) | Yubikey-held key |
+| Role | Signer | Notes (target) | Notes (launch baseline) |
+|---|---|---|---|
+| Founder primary | Collins Ikechukwu | Yubikey-held key, hardware-isolated | Freighter on dedicated browser profile, unique passphrase, paper backup |
+| Lead engineer | (assigned) | Yubikey-held key, hardware-isolated | Freighter on a different machine + browser profile |
+| Trusted third (advisor or co-founder) | (assigned) | Yubikey-held key | Freighter on a different machine; ideally on a different OS family than the other two |
 
 **Threshold: 2 of 3** for standard operations. Asymmetric thresholds for specific ops are defined in Section 4.
 
@@ -53,7 +64,7 @@ Three is the smallest set that supports 2-of-N. As the team grows, expand to 5 (
 
 ---
 
-## 3. Key generation and storage
+## 3. Key generation and storage (target state — hardware)
 
 Each signer generates their own key. We do not let any single person see another signer's key. The procedure per signer:
 
@@ -61,6 +72,36 @@ Each signer generates their own key. We do not let any single person see another
 2. **Verify the public address** in two independent contexts (sign a test transaction, read the resulting account on the chain).
 3. **Backup the secret** to a sealed envelope held by the signer personally. Recommended: split using Shamir's Secret Sharing with 2-of-3 backup shares stored in physically distinct locations (e.g. bank deposit box + lawyer's safe + signer's home safe).
 4. **Confirm to the founder** in writing that the signer has read this policy, generated their key, and stored their backup.
+
+We do not have a "platform-held" backup. Loss of a signer's key without their personal recovery is a real operational risk; that is why the threshold is 2 of 3 (we can lose one and still recover).
+
+## 3-bis. Key generation and storage (launch baseline — Freighter)
+
+Per signer, in isolation. **The threat model here is "compromised machine" — software keys are extractable from any machine that gets owned.** The hygiene below is what makes this safe-enough to ship and is required, not optional.
+
+1. **Dedicated browser profile** on a personal machine (not a shared workstation, not a CI runner). No other browser extensions installed in that profile beyond Freighter. No untrusted tabs while signing.
+2. **Generate the keypair in Freighter** with a strong, unique passphrase. Recommended: 6-word [Diceware](https://en.wikipedia.org/wiki/Diceware) or equivalent, never reused for any other purpose. Not your 1Password master, not your email password.
+3. **Export the 12-word recovery phrase** and write it on paper. Store the paper in a physically secure location that is not the same machine, not a cloud drive, not a photo. **No digital copy ever.** A second paper copy in a second location is fine (e.g. signer's home safe + bank deposit box). Shamir 2-of-3 split is still recommended if the signer wants belt-and-suspenders.
+4. **Verify the public address** in two independent contexts: read it from Freighter directly, and look up the funded account on `stellar.expert` after the first transaction lands.
+5. **Confirm to the founder** in writing that the signer has read this policy, generated their key, and stored the paper backup.
+
+### Hygiene that matters
+
+| Practice | Why |
+|---|---|
+| Different machine per signer | A single supply-chain attack (npm install, browser-extension update) hitting all 3 signers at once kills the multi-sig premise. |
+| OS-level full disk encryption | Defensive against laptop theft + cold-boot RAM extraction. macOS FileVault + Linux LUKS + BitLocker all work. |
+| No browser extensions besides Freighter in the signing profile | Any extension can read page contents. A malicious one can show a doctored tx while signing. |
+| Strong unique passphrase | Encrypts the locally-stored key; an attacker with the file but not the passphrase still can't sign. |
+| Paper-only backup | The recovery phrase IS the key. Photographing it, syncing it to iCloud, or pasting it into a notes app all defeat the multi-sig. |
+| Sign on a fresh tab, after reading the tx | Freighter shows the tx hash + operation. Read it. Don't autopilot. |
+
+### Anti-patterns (do not do, even temporarily)
+
+- Sharing a Freighter install across two signers.
+- Backing up the recovery phrase in 1Password, iCloud, Google Drive, or any cloud notes app.
+- Generating keys on a shared dev workstation, even briefly.
+- Signing from a phone or any device without full disk encryption.
 
 We do not have a "platform-held" backup. Loss of a signer's key without their personal recovery is a real operational risk; that is why the threshold is 2 of 3 (we can lose one and still recover).
 
@@ -169,3 +210,27 @@ Maintain a written escalation list in 1Password (Boundless Ops vault) with phone
 - At scale: expand to 3-of-5 and add two additional signers.
 - Insurance: explore key-loss insurance once we have a track record of clean operations.
 - Annual review of this policy on each deploy anniversary.
+
+---
+
+## 10. Hardware-upgrade trigger
+
+Software multi-sig is the launch baseline (sections 2 and 3-bis). The upgrade to hardware-isolated signers happens when **any** of the following fires:
+
+| Trigger | Threshold |
+|---|---|
+| Total live escrow TVL across all pillars | **$250,000 USDC-equivalent** at any single point in time, or |
+| Sustained daily settlement volume | **$50,000 USDC-equivalent / day for 7 consecutive days**, or |
+| First confirmed security incident affecting any signer machine | immediate (regardless of TVL) |
+
+When the trigger fires, the upgrade procedure is:
+
+1. Procure 3 Yubikeys (or equivalent hardware-isolated devices).
+2. Each signer re-runs section 3 (hardware path) on their device.
+3. Create a NEW multi-sig account with the three NEW hardware-backed addresses; verify with `./scripts/admin/verify-multisig.sh <new-multisig> mainnet`.
+4. Run the rotation per section 5.1 (`set_admin(new_multisig) → accept_admin`).
+5. Destroy the software keys on each signer machine. Burn the paper backups.
+6. Run the testnet drill on the new hardware multi-sig per `docs/multisig-preflight.md` §4.
+7. Log the rotation in `deployments/admin-rotations.jsonl` with both old and new multi-sig addresses + the threshold that triggered.
+
+The thresholds above are starting points. Review them at the same cadence as the annual policy review, or sooner if the team's risk tolerance changes.
