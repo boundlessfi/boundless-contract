@@ -201,129 +201,153 @@ This is the full timeline from a clean slate to a fully-rotated mainnet deploy. 
 
 Steps that are detailed elsewhere in this guide are cross-linked. Steps that come from other docs (`mainnet-deploy-runbook.md`, `multisig-preflight.md`) are flagged.
 
-#### Step 1. Build the contract wasms
+#### Step 1. Configure .env.deploy
 
-From the boundless-contract repo:
+The deploy scripts read parameters from `.env.deploy` at the repo root. Copy the template and fill in the values.
 
 ```bash
-cd contracts/events && cargo build --target wasm32-unknown-unknown --release
-cd ../profile && cargo build --target wasm32-unknown-unknown --release
+cd boundless-contract
+cp .env.deploy.example .env.deploy
 ```
 
-This produces `boundless_events.wasm` and `boundless_profile.wasm` under each contract's `target/wasm32-unknown-unknown/release/` directory. The `deploy_mainnet.sh` script does this for you if you prefer one-shot.
+Open `.env.deploy` in your editor and set:
 
-**Verification:** both wasm files exist and are non-empty. Their hashes match the build you intend to ship (commit the hashes alongside the deploy plan).
+| Variable | What it is |
+|---|---|
+| `ADMIN_IDENTITY` | The name of the Stellar CLI identity that will deploy and hold initial admin authority. Default is `boundless-admin`. This is the throwaway deployer per §E.0, NOT the final admin. Rename to `boundless-deployer` if the default name reads as misleading; the scripts only care about the value. |
+| `FEE_ACCOUNT` | The G-address that receives platform fees. **Separate account.** Not the deployer, not the multi-sig. Must hold a trustline for every token you register; the contract does not enforce this at registration. |
+| `FEE_BPS` | Platform fee in basis points (`100 = 1%`, `250 = 2.5%`). The `.env.deploy.example` template and `deploy.sh` validate the range as `[0, 5000]`, but the contract enforces `MAX_FEE_BPS = 1000` (10%) per the 2026-06 audit (L4 finding). Treat 1000 as the hard ceiling; values above will deploy fine and then fail at runtime. |
+| `BOOTSTRAP_CREDITS` | Starting credit balance assigned to newly-bootstrapped profiles. Default is 10 per the credits / reputation PRD. |
 
-#### Step 2. Create and fund the deployer key
+`.env.deploy` is gitignored. Never commit a populated file.
 
-The deployer is a throwaway single-sig key that lives only long enough to push contracts and hand off admin.
+#### Step 2. Create the deployer Stellar identity
+
+The deployer is the throwaway single-sig key per §E.0. Generate it under the name you set as `ADMIN_IDENTITY` in `.env.deploy`.
 
 ```bash
 stellar keys generate boundless-deployer --network mainnet
-stellar keys address boundless-deployer    # write this down
+stellar keys address boundless-deployer       # write this down
 ```
 
-Fund the deployer with about 10 XLM from your treasury account. That covers the account reserve, both contract uploads, both deploys, both wirings, both admin rotations, and a small headroom.
+(Use `--network testnet` and the testnet name `boundless-admin` if rehearsing on testnet.)
 
-**Verification:** `stellar.expert` shows the deployer address with ~10 XLM and zero history.
+The secret stays in the OS keychain. You will not see it.
 
-#### Step 3. Deploy the boundless-profile contract first
+#### Step 3. Fund the deployer
 
-Profile has to exist before events can be wired to it (events stores the profile contract id in its instance storage).
+Send about 10 XLM to the deployer address from your treasury. That budget covers:
+
+- Account reserve (currently 1 XLM).
+- Both contract uploads + deploys (Soroban resource fees: typically <1 XLM each).
+- One `set_events_contract` wiring call.
+- One `register_supported_token` per token.
+- Two `set_admin` rotation calls in Steps 9 + 10.
+- A small headroom.
+
+Verify funding:
 
 ```bash
-# Upload the wasm and get a hash
-stellar contract install \
-  --wasm contracts/profile/target/wasm32-unknown-unknown/release/boundless_profile.wasm \
-  --source-account boundless-deployer \
-  --network mainnet
-
-# Deploy a new instance of the uploaded wasm
-stellar contract deploy \
-  --wasm-hash <PROFILE_WASM_HASH> \
-  --source-account boundless-deployer \
-  --network mainnet \
-  -- \
-  --admin <DEPLOYER_G_ADDRESS>
+curl -s "https://horizon.stellar.org/accounts/$(stellar keys address boundless-deployer)" | jq '.balances'
 ```
 
-Write down the **profile contract id** the deploy command prints. You will need it in Step 4 and Step 6 and Step 10.
-
-The exact constructor flags come from the profile contract's `__constructor`. Cross-check against `docs/mainnet-deploy-runbook.md` §2.3 and `deploy_mainnet.sh`. Do not invent flag names.
-
-#### Step 4. Deploy the boundless-events contract
+On testnet, friendbot funds it for free:
 
 ```bash
-stellar contract install \
-  --wasm contracts/events/target/wasm32-unknown-unknown/release/boundless_events.wasm \
-  --source-account boundless-deployer \
-  --network mainnet
-
-stellar contract deploy \
-  --wasm-hash <EVENTS_WASM_HASH> \
-  --source-account boundless-deployer \
-  --network mainnet \
-  -- \
-  --admin <DEPLOYER_G_ADDRESS> \
-  --profile_contract <PROFILE_CONTRACT_ID> \
-  --fee_account <FEE_COLLECTION_G_ADDRESS> \
-  --fee_bps 150
+curl "https://friendbot.stellar.org/?addr=$(stellar keys address boundless-admin)"
 ```
 
-`--fee_bps 150` is 1.5%. Adjust per the latest pricing decision. The `<FEE_COLLECTION_G_ADDRESS>` is a separate Stellar account that owns the USDC trustline and receives platform fees. It is NOT the multi-sig and NOT the deployer.
+#### Step 4. Run the deploy script
 
-Write down the **events contract id**.
-
-Again, the exact constructor signature lives in the contract source and the deploy runbook. Do not improvise flags.
-
-#### Step 5. Wire profile back to events (if your constructor did not)
-
-Profile needs to know the events contract id so it can authorize cross-contract calls per `H5` (`set_events_contract` two-step rotation).
+The script `scripts/deploy/deploy.sh` does the whole deploy in one shot: builds both contract wasms via `stellar contract build`, deploys `boundless-profile`, deploys `boundless-events` wired to profile, calls `profile.set_events_contract` to complete the back-wiring, and writes a deployment record at `deployments/<network>.json`.
 
 ```bash
-stellar contract invoke \
-  --source-account boundless-deployer \
-  --id <PROFILE_CONTRACT_ID> \
-  --network mainnet \
-  -- \
-  set_events_contract \
-  --new_events_contract <EVENTS_CONTRACT_ID>
+./scripts/deploy/deploy.sh mainnet
 ```
 
-If your deploy script handled this already, skip.
+The script:
 
-#### Step 6. Register supported tokens
+- Aborts if `stellar` CLI is older than 26.0.0 (Rust 1.90.0 emits reference-types wasm that earlier CLIs reject at simulation time).
+- Aborts if any of `ADMIN_IDENTITY`, `FEE_ACCOUNT`, `FEE_BPS`, `BOOTSTRAP_CREDITS` is unset.
+- Aborts if `FEE_BPS` is outside `[0, 5000]` (note: the contract's real cap is 1000; see Step 1).
+- Prints the profile contract id and events contract id on success.
 
-Per the post-audit token whitelist (audit finding M2 + L7), the contract rejects any token that has not been explicitly registered. Register the production USDC SAC.
+Copy both ids into your team notes and into the boundless-nestjs deployment env:
+
+```
+BOUNDLESS_EVENTS_CONTRACT_ADDRESS=<events id>
+BOUNDLESS_PROFILE_CONTRACT_ADDRESS=<profile id>
+```
+
+Under the hood, the constructor invocations are:
+
+- `boundless-profile`: `--admin <DEPLOYER_ADDR> --default_bootstrap_credits <BOOTSTRAP_CREDITS>`.
+- `boundless-events`: `--admin <DEPLOYER_ADDR> --fee_account <FEE_ACCOUNT> --fee_bps <FEE_BPS> --profile_contract <PROFILE_ID>`.
+- Wiring call: `profile.set_events_contract --new_addr <EVENTS_ID>`.
+
+You generally do not need to invoke these by hand. The script is the source of truth; if it breaks, fix the script, do not work around it.
+
+#### Step 5. Register each supported token
 
 ```bash
-stellar contract invoke \
-  --source-account boundless-deployer \
-  --id <EVENTS_CONTRACT_ID> \
-  --network mainnet \
-  -- \
-  register_supported_token \
-  --token <USDC_MAINNET_SAC>
+./scripts/deploy/register_token.sh mainnet <USDC_MAINNET_SAC>
 ```
 
-If you also want to support native XLM, register the XLM SAC the same way.
+The script:
 
-**Verification:** `get_supported_tokens` returns the addresses you just registered.
+- Reads the events contract id and fee account from `deployments/mainnet.json` (so Step 4 must have succeeded).
+- Prompts: `fee account holds an active trustline for this token? [y/N]`. **Do not skip this prompt.** The contract does NOT enforce the trustline at registration; missing it means every deposit will fail at runtime.
+- On confirmation, calls `register_supported_token --token <TOKEN>` from the deployer.
+- Appends the token to `supported_tokens` in the deployment record.
 
-#### Step 7. Smoke the deployed contracts (deployer is still admin)
+To verify the trustline before answering `y`:
 
-Before bringing in the multi-sig, prove the contracts work end to end with the simple single-sig admin. Run the relevant smoke scripts from boundless-nestjs:
+```bash
+stellar account get --account "$FEE_ACCOUNT" --network mainnet | jq '.balances'
+```
+
+The asset code + issuer must appear in `balances[]`. If they do not, build a Change Trust operation on the fee account in Stellar Lab first, then re-run the script.
+
+Repeat for each token you support (USDC mandatory, native XLM SAC if you accept XLM).
+
+#### Step 6. Verify on-chain state
+
+```bash
+./scripts/deploy/verify.sh mainnet
+```
+
+The script reads `deployments/mainnet.json` and queries each contract for its full admin-visible state:
+
+- **Events:** `get_admin`, `get_fee_account`, `get_fee_bps`, `get_profile_contract`, `is_paused`.
+- **Profile:** `get_admin`, `get_events_contract`, `get_default_bootstrap_credits`, `is_paused`.
+
+Expected output at this point:
+
+- Both `admin` fields return the **deployer address** (rotation has not happened yet).
+- `events.fee_account` matches `.env.deploy`.
+- `events.fee_bps` matches `.env.deploy`.
+- `events.profile_contract` matches the profile id.
+- `profile.events_contract` matches the events id.
+- `profile.default_bootstrap_credits` matches `.env.deploy`.
+- Both `is_paused` return `false`.
+
+If anything is wrong, fix it now. The deployer still has single-sig admin authority through Step 8; from Step 9 onward every fix needs two signatures.
+
+#### Step 7. (Optional) Smoke from boundless-nestjs
+
+For extra confidence before the rotation, run the contract smoke battery from boundless-nestjs against the live mainnet deploy:
 
 ```bash
 cd ../boundless-nestjs
-SMOKE_OWNER_ADDRESS=<DEPLOYER_G_ADDRESS> \
+BOUNDLESS_EVENTS_CONTRACT_ADDRESS=<events id> \
+BOUNDLESS_PROFILE_CONTRACT_ADDRESS=<profile id> \
+STELLAR_NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015" \
+SMOKE_OWNER_ADDRESS=$(stellar keys address boundless-deployer) \
 SMOKE_TOKEN=<USDC_MAINNET_SAC> \
 npx ts-node -r tsconfig-paths/register scripts/smoke/escrow-contract.ts
 ```
 
-Verify: `get_admin` returns the deployer, `get_fee_bps` returns 150, `is_paused` returns false.
-
-If anything looks wrong, fix it now while you still have single-sig admin. Once you rotate to the multi-sig, every fix needs two signatures.
+The read-path + build-path + drift checks should all pass. Any failure here means the off-chain orchestrator does not agree with the freshly-deployed contract; do NOT rotate admin until that is resolved.
 
 #### Step 8. Build the multi-sig (Parts E.1 through E.8)
 
@@ -343,13 +367,14 @@ At the end of Step 8 you have a working multi-sig that is NOT yet recognized by 
 
 #### Step 9. Rotate admin on the events contract
 
-This is the moment the multi-sig becomes real. Two transactions.
+This is the moment the multi-sig becomes real. Two transactions:
 
 ```bash
 # 9.a. From the deployer (single-sig): hand admin to the multi-sig.
+EVENTS_ID=$(jq -r '.events_contract' deployments/mainnet.json)
 stellar contract invoke \
   --source-account boundless-deployer \
-  --id <EVENTS_CONTRACT_ID> \
+  --id "$EVENTS_ID" \
   --network mainnet \
   -- \
   set_admin \
@@ -360,7 +385,7 @@ stellar contract invoke \
 # then submit per §F.0.C.
 stellar contract invoke \
   --source-account <MULTISIG_G_ADDRESS> \
-  --id <EVENTS_CONTRACT_ID> \
+  --id "$EVENTS_ID" \
   --network mainnet \
   --build-only \
   -- \
@@ -369,48 +394,59 @@ stellar contract invoke \
 
 Step 9.b is the first time the multi-sig signs anything on mainnet. Treat it like a drill: clear comms in `#ops-admin-requests`, both signers verify the Lab tx matches `accept_admin` against the events contract id, two signatures collected, then submit.
 
-**Verification:** `get_admin` on the events contract returns the multi-sig address.
+**Verification:** `./scripts/deploy/verify.sh mainnet` now shows `events.admin` = multi-sig address (profile.admin still = deployer until Step 10).
 
 #### Step 10. Rotate admin on the profile contract
 
-Repeat Step 9 against `<PROFILE_CONTRACT_ID>`. Same two transactions, same multi-sig signing flow.
+Repeat Step 9 against the profile contract.
 
 ```bash
+PROFILE_ID=$(jq -r '.profile_contract' deployments/mainnet.json)
 stellar contract invoke \
   --source-account boundless-deployer \
-  --id <PROFILE_CONTRACT_ID> \
+  --id "$PROFILE_ID" \
   --network mainnet \
   -- \
   set_admin \
   --new_admin <MULTISIG_G_ADDRESS>
 
 # Then multi-sig accept_admin per §F.0.B.
+stellar contract invoke \
+  --source-account <MULTISIG_G_ADDRESS> \
+  --id "$PROFILE_ID" \
+  --network mainnet \
+  --build-only \
+  -- \
+  accept_admin
 ```
 
-**Verification:** `get_admin` on the profile contract returns the multi-sig address.
+**Verification:** `./scripts/deploy/verify.sh mainnet` now shows BOTH contracts' `admin` = multi-sig address.
 
-#### Step 11. Final verification
+#### Step 11. Final verification + proof-of-life
 
-Re-run the multi-sig verifier to confirm nothing about the multi-sig itself changed during rotation:
+Re-run both verification scripts. Both must pass cleanly.
 
 ```bash
 ./scripts/admin/verify-multisig.sh <MULTISIG_G_ADDRESS> mainnet
+./scripts/deploy/verify.sh mainnet
 ```
 
-Must still print `PASS: all 6 checks passed`.
+- `verify-multisig.sh` must still print `PASS: all 6 checks passed`. Rotation should not have touched the multi-sig itself.
+- `verify.sh` must show both `events.admin` and `profile.admin` as the multi-sig address.
 
-Then do one real admin op end to end to prove the multi-sig path works in production. The lowest-risk option is a no-op `set_fee_bps` to the current value (e.g., `set_fee_bps --new_bps 150` if it is already 150). It changes nothing but exercises the full signing + submission flow.
+Then do one real admin op end to end to prove the multi-sig signing path works in production. The lowest-risk option is a no-op `set_fee_bps --new_bps <current value>` (e.g., re-set to whatever `events.fee_bps` already reads). It changes nothing but exercises the full multi-sig build + sign + submit flow against the live contract.
 
-Record:
+Record in team notes:
 
 - The events `set_admin` tx hash and `accept_admin` tx hash.
 - The profile `set_admin` tx hash and `accept_admin` tx hash.
 - The proof-of-life multi-sig tx hash.
 - The output of `verify-multisig.sh`.
+- The output of `verify.sh`.
 
-Save all of this in team notes. This is your evidence the rotation happened cleanly.
+This is your evidence the rotation happened cleanly.
 
-#### Step 12. Destroy the deployer
+#### Step 12. Destroy the deployer + close out BACKLOG
 
 Once Step 11 is fully green:
 
@@ -418,29 +454,29 @@ Once Step 11 is fully green:
 stellar keys rm boundless-deployer
 ```
 
-The deployer key is gone from your keystore. The remaining XLM balance on the deployer account is stranded forever (or you could have swept it to the treasury before this step; the gas budget you had on it is small enough that abandoning it is fine).
+The deployer secret is gone from your OS keychain. The remaining XLM balance on the deployer account is stranded (you can sweep it to the treasury before this step if you want; the gas headroom is small enough that abandoning it is also fine).
 
 Update `BACKLOG.md`:
 
-- Move `Mainnet admin multi-sig provisioned per docs/admin-custody-policy.md (3 signers, 2-of-3).` from open to Done, with the four rotation tx hashes and the verify-multisig output linked.
-- If there is a `Destroy boundless-deployer key after mainnet rotation` entry, mark it Done with the date.
+- Move `Mainnet admin multi-sig provisioned per docs/admin-custody-policy.md (3 signers, 2-of-3).` from open to Done. Link the four rotation tx hashes + the `verify-multisig` + `verify.sh` outputs.
+- If a `Destroy deployer key after mainnet rotation` entry exists, mark it Done with the date.
 
-After Step 12, the contracts are live, the multi-sig is admin, and there is no single-sig back door anywhere. From this point on every admin op runs through Parts F and G of this guide.
+After Step 12, the contracts are live, the multi-sig is admin on both, and there is no single-sig back door anywhere. From this point on every admin op runs through Parts F and G of this guide.
 
 #### Recap of the whole sequence
 
-1. Build wasms.
-2. Create + fund throwaway deployer.
-3. Deploy profile contract (deployer = admin).
-4. Deploy events contract wired to profile (deployer = admin).
-5. Wire profile → events if not done by constructor.
-6. Register supported tokens.
-7. Smoke deployed contracts with deployer as admin.
-8. Build the multi-sig (Parts E.1 to E.8).
-9. Rotate events admin to multi-sig (`set_admin` + `accept_admin`).
-10. Rotate profile admin to multi-sig (`set_admin` + `accept_admin`).
-11. Verify everything and run a proof-of-life multi-sig op.
-12. Destroy the deployer key.
+1. Configure `.env.deploy` (ADMIN_IDENTITY, FEE_ACCOUNT, FEE_BPS, BOOTSTRAP_CREDITS).
+2. Generate the deployer identity (`stellar keys generate boundless-deployer`).
+3. Fund the deployer (~10 XLM).
+4. Run `./scripts/deploy/deploy.sh mainnet` (builds + deploys both contracts + wires `set_events_contract` + writes `deployments/mainnet.json`).
+5. Run `./scripts/deploy/register_token.sh mainnet <token>` per supported token (confirm fee-account trustline at the prompt).
+6. Run `./scripts/deploy/verify.sh mainnet` to confirm on-chain state matches the deployment record.
+7. (Optional) Smoke from boundless-nestjs against the deployed contracts.
+8. Build the multi-sig (§E.1 through §E.8).
+9. Rotate events admin to multi-sig (`set_admin` from deployer + `accept_admin` from multi-sig).
+10. Rotate profile admin to multi-sig (same two transactions on profile).
+11. Re-run both verifiers + do one proof-of-life multi-sig op. Record all hashes.
+12. `stellar keys rm boundless-deployer` + close out `BACKLOG.md`.
 
 Estimated wall time for a confident operator: half a day on testnet, a full day on mainnet (mostly the §E.8 cooldown + waiting for signers to arrive in the channel).
 
