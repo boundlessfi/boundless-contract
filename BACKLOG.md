@@ -9,8 +9,8 @@ Legend: `[ ]` open, `[~]` in flight, `[x]` done.
 ## P0 (blocking mainnet)
 
 - [ ] Third-party security audit (events + profile). Cost ~$30-80k for a Soroban-experienced firm. Schedule blocker for the mainnet date.
-- [ ] Non-USDC token end-to-end smoke. Register testnet native XLM SAC + run `scripts/smoke/contract-non-usdc-token.ts` from boundless-nestjs.
-- [ ] Mainnet admin multi-sig provisioned per `docs/admin-custody-policy.md` (3 signers, Yubikey-backed, 2-of-3).
+- [x] Non-USDC token end-to-end smoke. 2026-06-05: registered the testnet native XLM SAC (`CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`) on the new events contract; ran `scripts/smoke/contract-non-usdc-token.ts`. Bounty published in XLM, alice applied + submitted + won + got paid; payout tx `a6c8daad…`. Smoke updated to tolerate native-asset tx fees (~143k stroops / 0.014 XLM for 3 alice-signed txs); for non-native tokens the assertion still demands exact-budget delta.
+- [ ] Mainnet admin multi-sig provisioned per `docs/admin-custody-policy.md` (3 signers, Yubikey-backed, 2-of-3). 2026-06-05: provisioning + signer enrollment + Yubikey procurement are out-of-band human work. Pre-flight gate is now codified — see `docs/multisig-preflight.md` (step-by-step checklist) and `scripts/admin/verify-multisig.sh` (chain-state gate that asserts master weight 0, thresholds 0/2/2, exactly 3 weight-1 signers). The verify script was sanity-tested against a single-sig account and correctly fails with the per-check breakdown.
 - [ ] Mainnet deploy executed per `docs/mainnet-deploy-runbook.md`. Result committed to `deployments/mainnet.json`.
 
 ### From the 2026-06 Stellar-skill audit

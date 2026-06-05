@@ -203,6 +203,9 @@ If any step fails, **pause the contract** before continuing (see Section 4) and 
 
 ### 2.7 Rotate admin from single-key to multi-sig
 
+**Gate:** complete `docs/multisig-preflight.md` (every checkbox) and run `./scripts/admin/verify-multisig.sh <MULTISIG_G_ADDRESS> mainnet` until every check passes BEFORE invoking `set_admin`. If verify-multisig fails, do not proceed.
+
+
 Now that the deploy works, rotate the admin key. This is the operation that locks production down.
 
 ```bash
