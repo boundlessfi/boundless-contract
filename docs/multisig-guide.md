@@ -152,6 +152,49 @@ This part is for the founder (or whoever has been designated to run the operatio
 
 Estimated time: 45 minutes on testnet, plus a 1-day cooldown before repeating on mainnet so any mistakes surface before real money is on the line.
 
+### E.0. Where the multi-sig fits in the deploy lifecycle (read this first)
+
+A common point of confusion: **the multi-sig is NOT the same account that deploys the contract.** They are two different Stellar accounts with different lifetimes and different security models.
+
+There are two distinct accounts in play:
+
+| Account | Lifetime | Role | Signature model |
+|---|---|---|---|
+| **Deployer (initial-admin key)** | Short. Created right before deploy, destroyed right after rotation. | Pays the deploy fee. Runs `stellar contract deploy`. Becomes admin via the contract's constructor. Then hands admin off to the multi-sig and dies. | Single-sig (just one normal Stellar key). |
+| **Multi-sig (the bootstrap account in §E.2 below)** | Long. Lives as long as Boundless does. | Never deploys anything. Becomes admin AFTER the deploy, via `set_admin` + `accept_admin`. Holds admin authority from then on. | 2-of-3 (after §E.5). |
+
+The handoff sequence, from `docs/mainnet-deploy-runbook.md` §2.7:
+
+```bash
+# 1. Founder deploys with the throwaway single-sig deployer key.
+stellar contract deploy --source-account boundless-deployer ...
+
+# 2. Founder rotates admin from deployer to multi-sig.
+stellar contract invoke \
+  --source-account boundless-deployer \
+  --id <EVENTS_CONTRACT_ID> \
+  -- set_admin --new_admin <MULTISIG_G_ADDRESS>
+
+# 3. Multi-sig (2-of-3) accepts admin authority.
+stellar contract invoke \
+  --source-account <MULTISIG_G_ADDRESS> \
+  --id <EVENTS_CONTRACT_ID> \
+  -- accept_admin
+
+# 4. Founder destroys the deployer key. It is no longer needed.
+stellar keys rm boundless-deployer
+```
+
+After step 4, the only thing that can change contract admin settings is the multi-sig. The deployer key does not exist. There is no path back through the old key, and that is the point.
+
+Why this separation matters:
+
+- **Deploying with a single-sig key is fast.** Push the wasm, run the constructor, done. Coordinating three signers just to push contract code would be painful and would give an attacker more windows to interpose.
+- **The deployer is disposable.** If the deployer key leaks before §E.0 step 2, the damage is bounded to a throwaway account that holds no funds. The multi-sig stays clean.
+- **The multi-sig is permanent.** It outlives the deployer. It also outlives any individual signer (Part J covers rotation). The deployer dies young; the multi-sig is built to last.
+
+So when §E.2 below tells you to create a bootstrap account, that account is destined to become the multi-sig in §E.5. It is not the account you will use to run `stellar contract deploy`. Keep them separate.
+
 ### E.1. Decide who the three signers are
 
 This is the single most important decision in the whole process. Pick wrong and you weaken the multi-sig before it is even built. No amount of better code or stricter process fixes a bad signer roster.
