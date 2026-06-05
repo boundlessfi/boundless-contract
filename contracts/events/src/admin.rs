@@ -285,13 +285,28 @@ pub fn cancel_pending_upgrade(env: &Env) -> Result<(), Error> {
 // ============================================================
 // MIGRATE (post-upgrade one-shot; H6)
 //
-// Called once per version after apply_upgrade swaps the wasm. Reads the
-// current Version label, checks MigratedToVersion, applies any per-version
-// data migration, then stamps MigratedToVersion = current.
+// Called once per version after apply_upgrade swaps the wasm. The shape
+// is:
 //
-// The actual migration logic is version-pair specific and lives in this
-// function as a match block. Initial mainnet ship is 0.2.0 with no
-// migration body required (constructor sets storage in the new shape).
+//   1. Read the current Version label (set by apply_upgrade) and the
+//      previously-applied migration marker (MigratedToVersion). If the
+//      marker already equals the current Version, reject as
+//      MigrationAlreadyApplied — a second invocation is always a
+//      misconfiguration.
+//   2. Dispatch on (prev, current) and run the migration body. Bodies
+//      run cleanly inside the same tx as the marker write, so a failure
+//      reverts both — there is no half-migrated state to recover from.
+//   3. Stamp MigratedToVersion = current and emit Migrated{}.
+//
+// Mainnet bootstrap: the first deploy lands the constructor with the
+// current storage layout, so no migration body is needed. The first real
+// migration body will land with the first storage-layout upgrade after
+// mainnet goes live. We keep an empty match arm for the no-op case so the
+// shape is stable and future contributors do not have to debate where
+// the dispatch goes.
+//
+// NB: Soroban String only supports equality + length, no `as_str()` /
+// pattern matching. The dispatch below uses `String::from_str` + equality.
 // ============================================================
 pub fn migrate(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
@@ -305,12 +320,31 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 
     let from_version = already.unwrap_or_else(|| String::from_str(env, "0.0.0"));
 
-    // Per-(from -> to) migration bodies live here. Initial 0.2.0 ship has
-    // no migration body because __constructor writes storage in the new
-    // shape. Future upgrades add their migration logic in this block.
+    // ============================================================
+    // PER-(from -> to) MIGRATION DISPATCH
     //
-    // NB: branch on Soroban String comparison only — avoid String::as_str
-    // because it requires alloc.
+    // Each future upgrade adds an `if` clause here with its migration body.
+    // Touch only persistent / instance entries that the new layout changes;
+    // anything the new code reads with backwards-compatible defaults can
+    // be left alone.
+    //
+    // Pattern:
+    //
+    //     if from_version == String::from_str(env, "0.2.0")
+    //         && current == String::from_str(env, "0.3.0")
+    //     {
+    //         migrate_0_2_0_to_0_3_0(env)?;
+    //     }
+    //
+    // The corresponding private fn lives below the match block. Keep it
+    // small enough to read; if the migration is large, split it into named
+    // helpers and call from inside the body.
+    // ============================================================
+
+    // No-op for the initial 0.2.0 deploy. __constructor populates storage
+    // in the current shape, so admin can call migrate() once just to stamp
+    // the marker and unlock the audit trail (the Migrated event signals
+    // off-chain runbooks that the post-upgrade cleanup ran).
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);

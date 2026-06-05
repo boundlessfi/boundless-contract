@@ -283,6 +283,15 @@ pub fn cancel_pending_upgrade(env: &Env) -> Result<(), Error> {
     Ok(())
 }
 
+// ============================================================
+// MIGRATE (post-upgrade one-shot; H6)
+//
+// Mirror of the events contract's migrate(). See contracts/events/src/admin.rs
+// for the full pattern + dispatch-block convention. The profile contract has
+// a simpler storage layout, so most upgrades will not need a migration body
+// here; the empty pass-through still stamps MigratedToVersion so off-chain
+// runbooks see a Migrated event.
+// ============================================================
 pub fn migrate(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
     let current = storage::get_version(env).ok_or(Error::NotInitialized)?;
@@ -295,8 +304,23 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 
     let from_version = already.unwrap_or_else(|| String::from_str(env, "0.0.0"));
 
-    // Per-(from -> to) migration bodies go here. Initial 0.2.0 ship has
-    // no body because __constructor writes storage in the new shape.
+    // ============================================================
+    // PER-(from -> to) MIGRATION DISPATCH
+    //
+    //     if from_version == String::from_str(env, "0.2.0")
+    //         && current == String::from_str(env, "0.3.0")
+    //     {
+    //         migrate_0_2_0_to_0_3_0(env)?;
+    //     }
+    //
+    // Soroban String only supports equality + length, so dispatch is via
+    // `String::from_str` + `==`. Keep bodies inline unless the migration
+    // grows past ~30 lines, then promote into a private fn below.
+    // ============================================================
+
+    // No-op for the initial 0.2.0 deploy. __constructor populates storage
+    // in the current shape; admin still calls migrate() once after deploy
+    // so the audit trail records that the post-upgrade cleanup ran.
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);
