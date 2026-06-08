@@ -121,6 +121,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         winner_distribution: single_dist(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op)
@@ -383,6 +384,7 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
         winner_distribution: dist,
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op_create);

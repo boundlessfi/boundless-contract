@@ -151,6 +151,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "manager"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "owner"
                       },
                       "val": {
@@ -225,7 +231,7 @@
                   ]
                 },
                 {
-                  "bytes": "83f31a74629c7017eff121b573d6b0c19e1e8cedf308134ed087518cd58da151"
+                  "bytes": "1202f6ff505f06b8797b02ade1425dedeefac5ae4e0fe2772090cc7dfd6a0bb2"
                 }
               ]
             }
@@ -694,7 +700,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "83f31a74629c7017eff121b573d6b0c19e1e8cedf308134ed087518cd58da151"
+                  "bytes": "1202f6ff505f06b8797b02ade1425dedeefac5ae4e0fe2772090cc7dfd6a0bb2"
                 }
               ]
             },
@@ -714,7 +720,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "83f31a74629c7017eff121b573d6b0c19e1e8cedf308134ed087518cd58da151"
+                      "bytes": "1202f6ff505f06b8797b02ade1425dedeefac5ae4e0fe2772090cc7dfd6a0bb2"
                     }
                   ]
                 },

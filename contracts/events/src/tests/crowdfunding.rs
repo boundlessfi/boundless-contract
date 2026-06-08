@@ -105,6 +105,7 @@ fn create_campaign(ctx: &Ctx, milestones: u32) -> u64 {
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op)
@@ -169,6 +170,7 @@ fn create_rejects_single_release_kind() {
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -190,6 +192,7 @@ fn create_rejects_missing_deadline() {
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -214,6 +217,7 @@ fn create_rejects_distribution_with_multiple_positions() {
         winner_distribution: dist,
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
