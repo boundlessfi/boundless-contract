@@ -3,4 +3,5 @@
 #![cfg(test)]
 
 mod admin;
+mod bootstrap;
 mod common;

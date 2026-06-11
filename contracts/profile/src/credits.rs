@@ -33,6 +33,30 @@ pub fn bootstrap(env: &Env, user: Address, op_id: BytesN<32>) -> Result<(), Erro
     Ok(())
 }
 
+/// Self-service bootstrap. A user creates their OWN profile by authorizing the
+/// call with their wallet — no admin key, no events-contract dependency. Used
+/// at platform onboarding so every user has a profile before they participate.
+/// Idempotent: a second call when the profile already exists is a no-op.
+pub fn bootstrap_self(env: &Env, user: Address, op_id: BytesN<32>) -> Result<(), Error> {
+    user.require_auth();
+    admin::require_not_paused(env)?;
+    idempotency::require_unseen(env, &op_id)?;
+
+    if storage::get_profile(env, &user).is_none() {
+        let initial = storage::get_default_bootstrap_credits(env);
+        let profile = Profile::new(env.ledger().timestamp(), initial);
+        storage::set_profile(env, &user, &profile);
+        evt::ProfileBootstrapped {
+            user,
+            initial_credits: initial,
+        }
+        .publish(env);
+    }
+
+    idempotency::mark_seen(env, &op_id);
+    Ok(())
+}
+
 pub fn spend(
     env: &Env,
     user: Address,
