@@ -89,10 +89,18 @@ echo "    fee bps:           $FEE_BPS"
 echo "    bootstrap credits: $BOOTSTRAP_CREDITS"
 echo
 
-# 1. Build both contracts.
+# 1. Build both contracts. Testnet/futurenet enable the `testnet` feature →
+#    zero upgrade timelock for fast iteration. Mainnet MUST build WITHOUT it
+#    (default = full audit-mandated timelock; fail-safe).
 echo "==> building contracts"
-( cd "$REPO_ROOT/contracts/events"  && stellar contract build )
-( cd "$REPO_ROOT/contracts/profile" && stellar contract build )
+BUILD_FEATURES=""
+if [[ "$NETWORK" == "testnet" || "$NETWORK" == "futurenet" ]]; then
+  BUILD_FEATURES="--features testnet"
+fi
+# shellcheck disable=SC2086
+( cd "$REPO_ROOT/contracts/events"  && stellar contract build $BUILD_FEATURES )
+# shellcheck disable=SC2086
+( cd "$REPO_ROOT/contracts/profile" && stellar contract build $BUILD_FEATURES )
 
 EVENTS_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_events.wasm"
 PROFILE_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_profile.wasm"

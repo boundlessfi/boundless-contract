@@ -112,6 +112,17 @@ impl ProfileContract {
         credits::bootstrap(&env, user, op_id)
     }
 
+    /// Self-service profile creation: the user authorizes their own bootstrap
+    /// (no admin key, no events-contract dependency). Called at onboarding so
+    /// every user has a profile before they participate.
+    pub fn bootstrap_self(
+        env: Env,
+        user: Address,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        credits::bootstrap_self(&env, user, op_id)
+    }
+
     // ============================================================
     // CREDITS
     // ============================================================

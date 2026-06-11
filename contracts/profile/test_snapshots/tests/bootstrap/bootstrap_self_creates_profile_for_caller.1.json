@@ -1,25 +1,26 @@
 {
   "generators": {
-    "address": 2,
+    "address": 3,
     "nonce": 0,
     "mux_id": 0
   },
   "auth": [
     [],
+    [],
     [
       [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
         {
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-              "function_name": "propose_upgrade",
+              "function_name": "bootstrap_self",
               "args": [
                 {
-                  "bytes": "5a45608c0d6d46dfc830f5c93687caecf822d94a09883bb90b3a365d73039634"
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "string": "0.3.0"
+                  "bytes": "d5d176dcdd209c002d31ed6bc9c12818506ebedbd40f9e06e984ab3e39fad539"
                 }
               ]
             }
@@ -32,7 +33,7 @@
   ],
   "ledger": {
     "protocol_version": 23,
-    "sequence_number": 518401,
+    "sequence_number": 0,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
@@ -43,11 +44,16 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
             "key": {
-              "ledger_key_nonce": {
-                "nonce": "801925984706572462"
-              }
+              "vec": [
+                {
+                  "symbol": "OpSeen"
+                },
+                {
+                  "bytes": "d5d176dcdd209c002d31ed6bc9c12818506ebedbd40f9e06e984ab3e39fad539"
+                }
+              ]
             },
             "durability": "temporary"
           }
@@ -58,19 +64,96 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
                 "key": {
-                  "ledger_key_nonce": {
-                    "nonce": "801925984706572462"
-                  }
+                  "vec": [
+                    {
+                      "symbol": "OpSeen"
+                    },
+                    {
+                      "bytes": "d5d176dcdd209c002d31ed6bc9c12818506ebedbd40f9e06e984ab3e39fad539"
+                    }
+                  ]
                 },
                 "durability": "temporary",
-                "val": "void"
+                "val": {
+                  "bool": true
+                }
               }
             },
             "ext": "v0"
           },
-          6311999
+          15
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Profile"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Profile"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "bootstrapped_at"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "credits"
+                      },
+                      "val": {
+                        "u32": 30
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "reputation"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          1555200
         ]
       ],
       [
@@ -117,7 +200,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 10
+                          "u32": 30
                         }
                       },
                       {
@@ -148,59 +231,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "PendingUpgrade"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "map": [
-                            {
-                              "key": {
-                                "symbol": "available_at_ledger"
-                              },
-                              "val": {
-                                "u32": 17280
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "expires_at_ledger"
-                              },
-                              "val": {
-                                "u32": 518400
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "new_version"
-                              },
-                              "val": {
-                                "string": "0.3.0"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "proposed_at_ledger"
-                              },
-                              "val": {
-                                "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "wasm_hash"
-                              },
-                              "val": {
-                                "bytes": "5a45608c0d6d46dfc830f5c93687caecf822d94a09883bb90b3a365d73039634"
-                              }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "Version"
                             }
                           ]
@@ -216,7 +246,40 @@
             },
             "ext": "v0"
           },
-          522496
+          518400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "801925984706572462"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "801925984706572462"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
         ]
       ],
       [
