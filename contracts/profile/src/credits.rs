@@ -74,10 +74,7 @@ pub fn spend(
     }
     
 
-    let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
-    if profile.credits < amount {
-        return Err(Error::InsufficientCredits);
-    }
+    
 
         // Use verify_balance logic directly
     let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
