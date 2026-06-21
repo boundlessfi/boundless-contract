@@ -18,11 +18,7 @@ use crate::profile_client;
 use crate::storage;
 use crate::types::{EventRecord, EventStatus, Pillar, ReleaseKind, Winner};
 
-pub fn validate_create(
-    _env: &Env,
-    record: &EventRecord,
-    _owner: &Address,
-) -> Result<(), Error> {
+pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Result<(), Error> {
     match record.release_kind {
         ReleaseKind::Multi(n) if n > 0 => Ok(()),
         _ => Err(Error::InvalidReleaseKind),
@@ -123,8 +119,7 @@ pub fn claim_milestone(
         match w.milestone {
             None => winner_position = Some(w.position),
             Some(_) => {
-                already_claimed_for_recipient =
-                    already_claimed_for_recipient.saturating_add(1);
+                already_claimed_for_recipient = already_claimed_for_recipient.saturating_add(1);
                 already_paid_to_recipient = already_paid_to_recipient.saturating_add(w.amount);
             }
         }

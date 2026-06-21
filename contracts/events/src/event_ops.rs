@@ -52,11 +52,7 @@ const MIN_CONTRIBUTION_STROOPS: i128 = 100_000_000_i128; // 10 * 10^7
 // ============================================================
 // CREATE EVENT
 // ============================================================
-pub fn create_event(
-    env: &Env,
-    params: CreateEventParams,
-    op_id: BytesN<32>,
-) -> Result<u64, Error> {
+pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> Result<u64, Error> {
     admin::require_not_paused(env)?;
     idempotency::require_unseen(env, &op_id)?;
 
@@ -109,7 +105,11 @@ pub fn create_event(
     // Crowdfunding flips total_budget into a funding goal; escrow starts at 0
     // and grows only via add_funds. Every other pillar deposits at create.
     let is_crowdfunding = matches!(params.pillar, Pillar::Crowdfunding);
-    let initial_escrow: i128 = if is_crowdfunding { 0 } else { params.total_budget };
+    let initial_escrow: i128 = if is_crowdfunding {
+        0
+    } else {
+        params.total_budget
+    };
 
     let provisional = EventRecord {
         id: 0,
@@ -147,10 +147,7 @@ pub fn create_event(
 
     // Assign id and persist.
     let id = idempotency::next_event_id(env);
-    let record = EventRecord {
-        id,
-        ..provisional
-    };
+    let record = EventRecord { id, ..provisional };
     storage::set_event(env, id, &record);
 
     // Crowdfunding: pre-seat the builder as the sole winner at position 1.
@@ -673,15 +670,9 @@ pub fn select_winners(
 
                 let earn_op =
                     idempotency::derive_child_indexed(env, &op_id, tag::EARN_CREDITS, sub_idx);
-                profile.earn_credits(
-                    &spec.recipient,
-                    &spec.credit_earn,
-                    &reason_win,
-                    &earn_op,
-                );
+                profile.earn_credits(&spec.recipient, &spec.credit_earn, &reason_win, &earn_op);
 
-                let rep_op =
-                    idempotency::derive_child_indexed(env, &op_id, tag::BUMP_REP, sub_idx);
+                let rep_op = idempotency::derive_child_indexed(env, &op_id, tag::BUMP_REP, sub_idx);
                 profile.bump_reputation(
                     &spec.recipient,
                     &spec.reputation_bump,
@@ -689,18 +680,9 @@ pub fn select_winners(
                     &rep_op,
                 );
 
-                let earnings_op = idempotency::derive_child_indexed(
-                    env,
-                    &op_id,
-                    tag::REGISTER_EARNINGS,
-                    sub_idx,
-                );
-                profile.register_earnings(
-                    &spec.recipient,
-                    &event.token,
-                    &amount,
-                    &earnings_op,
-                );
+                let earnings_op =
+                    idempotency::derive_child_indexed(env, &op_id, tag::REGISTER_EARNINGS, sub_idx);
+                profile.register_earnings(&spec.recipient, &event.token, &amount, &earnings_op);
 
                 storage::append_winner(
                     env,

@@ -46,8 +46,7 @@ fn setup<'a>() -> Ctx<'a> {
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
-    let profile_id =
-        env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
+    let profile_id = env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     let events_admin = Address::generate(&env);
@@ -279,23 +278,20 @@ fn claim_milestone_splits_evenly_across_remaining() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
 
     let op_m0 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &0_u32, &op_m0);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &0_u32, &op_m0);
     assert_eq!(token.balance(&ctx.builder), 300_0000000_i128);
-    assert_eq!(
-        ctx.events.get_event(&id).remaining_escrow,
-        600_0000000_i128
-    );
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 600_0000000_i128);
 
     let op_m1 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.builder, &1_u32, &0_u32, &0_u32, &op_m1);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &1_u32, &0_u32, &0_u32, &op_m1);
     assert_eq!(token.balance(&ctx.builder), 600_0000000_i128);
-    assert_eq!(
-        ctx.events.get_event(&id).remaining_escrow,
-        300_0000000_i128
-    );
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 300_0000000_i128);
 
     let op_m2 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.builder, &2_u32, &0_u32, &0_u32, &op_m2);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &2_u32, &0_u32, &0_u32, &op_m2);
     assert_eq!(token.balance(&ctx.builder), 900_0000000_i128);
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);

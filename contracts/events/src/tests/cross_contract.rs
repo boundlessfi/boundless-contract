@@ -44,10 +44,7 @@ fn setup<'a>() -> Ctx<'a> {
 
     // Deploy profile contract.
     let profile_admin = Address::generate(&env);
-    let profile_id = env.register(
-        ProfileContract,
-        (profile_admin.clone(), BOOTSTRAP_CREDITS),
-    );
+    let profile_id = env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     // Deploy events contract pointing at profile.
@@ -133,7 +130,10 @@ fn apply_charges_credits_via_profile() {
         .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
 
     // Profile should be bootstrapped and one credit lighter.
-    let profile = ctx.profile.get_profile(&ctx.applicant).expect("bootstrapped");
+    let profile = ctx
+        .profile
+        .get_profile(&ctx.applicant)
+        .expect("bootstrapped");
     assert_eq!(profile.credits, BOOTSTRAP_CREDITS - 1);
 
     // Applicant should be on the event's applicants list.
@@ -148,7 +148,8 @@ fn duplicate_apply_reverts() {
     let bounty_id = create_bounty(&ctx, 1);
 
     let op_a = BytesN::random(&ctx.env);
-    ctx.events.apply_to_bounty(&bounty_id, &ctx.applicant, &op_a);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_a);
 
     let op_b = BytesN::random(&ctx.env);
     let res = ctx
@@ -176,7 +177,10 @@ fn withdraw_refunds_half_credits() {
     ctx.events
         .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
 
-    let after_wd = ctx.profile.get_profile(&ctx.applicant).expect("still exists");
+    let after_wd = ctx
+        .profile
+        .get_profile(&ctx.applicant)
+        .expect("still exists");
     // Refund is cost / 2 = 1
     assert_eq!(after_wd.credits, BOOTSTRAP_CREDITS - 2 + 1);
 
@@ -196,7 +200,10 @@ fn insufficient_credits_reverts() {
     let res = ctx
         .events
         .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-    assert!(res.is_err(), "apply with insufficient credits should revert");
+    assert!(
+        res.is_err(),
+        "apply with insufficient credits should revert"
+    );
 }
 
 #[test]
@@ -205,7 +212,8 @@ fn replayed_apply_reverts_idempotently() {
     let bounty_id = create_bounty(&ctx, 1);
 
     let op_id = BytesN::random(&ctx.env);
-    ctx.events.apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
 
     // Replay with the same op_id should revert (OpAlreadySeen on the events
     // contract before any cross-contract call).
@@ -257,9 +265,7 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     assert_eq!(profile.reputation, 50);
 
     // Earnings registered against the event's token.
-    let earnings = ctx
-        .profile
-        .get_earnings(&ctx.applicant, &ctx.token_addr);
+    let earnings = ctx.profile.get_earnings(&ctx.applicant, &ctx.token_addr);
     assert_eq!(earnings, TOTAL_BUDGET);
 
     // Event completed.
@@ -462,9 +468,7 @@ fn cancel_already_cancelled_reverts() {
 
     // Second start_cancel on a Cancelled event must revert.
     let op_again = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_start_cancel(&bounty_id, &op_again);
+    let res = ctx.events.try_start_cancel(&bounty_id, &op_again);
     assert!(res.is_err(), "second cancel should revert");
 }
 
@@ -644,22 +648,16 @@ fn claim_milestone_rejects_non_grant_events() {
         },
     ];
     let op_select = BytesN::random(&ctx.env);
-    ctx.events
-        .select_winners(&bounty_id, &winners, &op_select);
+    ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     // The bounty is Completed now anyway, but claim_milestone should reject
     // even an Active Single-release event. Recreate a Single bounty without
     // winners selected:
     let bounty_id2 = create_bounty(&ctx, 0);
     let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_claim_milestone(
-        &bounty_id2,
-        &ctx.applicant,
-        &0_u32,
-        &3_u32,
-        &5_u32,
-        &op,
-    );
+    let res =
+        ctx.events
+            .try_claim_milestone(&bounty_id2, &ctx.applicant, &0_u32, &3_u32, &5_u32, &op);
     assert!(res.is_err(), "claim on Single-release event should revert");
 }
 
@@ -732,9 +730,7 @@ fn bounty_submit_requires_prior_application() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
     let op = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_submit(&id, &ctx.applicant, &uri, &op);
+    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
     assert!(res.is_err(), "submit before apply on bounty should revert");
 }
 
@@ -772,7 +768,10 @@ fn resubmit_preserves_original_submitted_at_and_updates_uri() {
 
     let second = ctx.events.get_submission(&id, &ctx.applicant);
     assert_eq!(second.content_uri, uri_b);
-    assert_eq!(second.submitted_at, first_time, "submitted_at must be preserved across re-submit");
+    assert_eq!(
+        second.submitted_at, first_time,
+        "submitted_at must be preserved across re-submit"
+    );
 }
 
 #[test]
@@ -784,9 +783,7 @@ fn submit_replayed_reverts() {
     let op = BytesN::random(&ctx.env);
     ctx.events.submit(&id, &ctx.applicant, &uri, &op);
 
-    let res = ctx
-        .events
-        .try_submit(&id, &ctx.applicant, &uri, &op);
+    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
     assert!(res.is_err(), "replayed submit should revert");
 }
 
@@ -800,8 +797,7 @@ fn withdraw_submission_removes_anchor() {
     ctx.events.submit(&id, &ctx.applicant, &uri, &op_submit);
 
     let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_submission(&id, &ctx.applicant, &op_wd);
+    ctx.events.withdraw_submission(&id, &ctx.applicant, &op_wd);
 
     let res = ctx.events.try_get_submission(&id, &ctx.applicant);
     assert!(res.is_err(), "withdrawn submission should not be readable");
@@ -816,7 +812,10 @@ fn withdraw_submission_without_submission_reverts() {
     let res = ctx
         .events
         .try_withdraw_submission(&id, &ctx.applicant, &op_wd);
-    assert!(res.is_err(), "withdraw without prior submission should revert");
+    assert!(
+        res.is_err(),
+        "withdraw without prior submission should revert"
+    );
 }
 
 // ============================================================
