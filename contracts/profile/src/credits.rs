@@ -33,6 +33,29 @@ pub fn bootstrap(env: &Env, user: Address, op_id: BytesN<32>) -> Result<(), Erro
     Ok(())
 }
 
+pub fn verify_balance(
+    env: &Env,
+    user: Address,
+    amount: u32,
+    op_id: BytesN<32>,
+) -> Result<bool, Error> {
+    admin::require_events_contract(env)?;
+    admin::require_not_paused(env)?;
+    idempotency::require_unseen(env, &op_id)?;
+
+    let profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
+    let has_sufficient = profile.credits >= amount;
+    
+    evt::BalanceVerified {
+        user,
+        amount,
+        has_sufficient,
+    }.publish(env);
+    
+    idempotency::mark_seen(env, &op_id);
+    Ok(has_sufficient)
+}
+
 pub fn spend(
     env: &Env,
     user: Address,
@@ -49,11 +72,20 @@ pub fn spend(
         idempotency::mark_seen(env, &op_id);
         return Ok(());
     }
+    
 
     let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
     if profile.credits < amount {
         return Err(Error::InsufficientCredits);
     }
+
+        // Use verify_balance logic directly
+    let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
+    if profile.credits < amount {
+        return Err(Error::InsufficientCredits);
+    }
+
+    
     profile.credits -= amount;
     storage::set_profile(env, &user, &profile);
 
