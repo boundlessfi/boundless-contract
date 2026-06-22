@@ -8,6 +8,7 @@
 
 mod admin;
 mod common;
+mod bounty_pillar;
 mod contributions;
 mod cross_contract;
 mod crowdfunding;
