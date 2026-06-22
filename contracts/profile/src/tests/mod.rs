@@ -4,3 +4,4 @@
 
 mod admin;
 mod common;
+mod earnings;
