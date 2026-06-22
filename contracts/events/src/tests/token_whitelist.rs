@@ -103,3 +103,17 @@ fn register_supported_token_requires_admin_auth() {
         "register_supported_token must demand admin authorization"
     );
 }
+
+#[test]
+fn deregister_supported_token_requires_admin_auth() {
+    let ctx = setup(250);
+    let token = Address::generate(&ctx.env);
+
+    ctx.client.deregister_supported_token(&token);
+
+    let admin_required = ctx.env.auths().iter().any(|(addr, _)| *addr == ctx.admin);
+    assert!(
+        admin_required,
+        "deregister_supported_token must demand admin authorization"
+    );
+}
