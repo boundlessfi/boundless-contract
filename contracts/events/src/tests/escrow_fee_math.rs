@@ -232,6 +232,34 @@ fn add_funds_without_override_uses_current_global_fee() {
 }
 
 #[test]
+fn add_funds_rejects_duplicate_op_id_without_side_effects() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx, TOTAL_BUDGET, Some(50));
+    let partner = Address::generate(&ctx.env);
+    let amount = 500_0000000_i128;
+    ctx.token_admin.mint(&partner, &1_000_0000000_i128);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let op_id = BytesN::random(&ctx.env);
+    ctx.events.add_funds(&id, &partner, &amount, &op_id);
+
+    let partner_after_first = token.balance(&partner);
+    let fee_after_first = token.balance(&ctx.fee_account);
+    let escrow_after_first = ctx.events.get_event(&id).remaining_escrow;
+
+    let err = ctx
+        .events
+        .try_add_funds(&id, &partner, &amount, &op_id)
+        .err()
+        .expect("duplicate add_funds op_id should fail")
+        .unwrap();
+    assert_eq!(err, Error::OpAlreadySeen);
+    assert_eq!(token.balance(&partner), partner_after_first);
+    assert_eq!(token.balance(&ctx.fee_account), fee_after_first);
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, escrow_after_first);
+}
+
+#[test]
 fn select_winners_uses_live_escrow_and_leaves_flooring_dust() {
     let ctx = setup();
     let total_budget = 1_000_0000001_i128;
