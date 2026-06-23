@@ -1,8 +1,8 @@
 // boundless-events: cross-contract integration test.
 //
 // Deploys boundless-events + a real boundless-profile, wires them together,
-// creates a Bounty, and walks an applicant through apply / withdraw to verify
-// the cross-contract credit charging works end-to-end.
+// and exercises cross-contract flows (select_winners, submit, cancel, grants).
+// Bounty apply / withdraw coverage lives in tests/bounty_pillar.rs.
 //
 // Spec: boundless-platform-contract-prd.md Section 4; boundless-credits-reputation-prd.md Section 10.1.
 
@@ -118,101 +118,6 @@ fn create_bounty(ctx: &Ctx, application_credit_cost: u32) -> u64 {
     };
     let op_id = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_id)
-}
-
-#[test]
-fn apply_charges_credits_via_profile() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    // Pre-apply: profile does not exist yet.
-    assert!(ctx.profile.get_profile(&ctx.applicant).is_none());
-
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-
-    // Profile should be bootstrapped and one credit lighter.
-    let profile = ctx.profile.get_profile(&ctx.applicant).expect("bootstrapped");
-    assert_eq!(profile.credits, BOOTSTRAP_CREDITS - 1);
-
-    // Applicant should be on the event's applicants list.
-    let applicants = ctx.events.get_applicants(&bounty_id);
-    assert_eq!(applicants.len(), 1);
-    assert_eq!(applicants.get(0).unwrap(), ctx.applicant);
-}
-
-#[test]
-fn duplicate_apply_reverts() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_a = BytesN::random(&ctx.env);
-    ctx.events.apply_to_bounty(&bounty_id, &ctx.applicant, &op_a);
-
-    let op_b = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_b);
-    assert!(res.is_err(), "second apply should revert");
-}
-
-#[test]
-fn withdraw_refunds_half_credits() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 2); // cost 2, refund 1
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    let after_apply = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("bootstrapped");
-    assert_eq!(after_apply.credits, BOOTSTRAP_CREDITS - 2);
-
-    let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
-
-    let after_wd = ctx.profile.get_profile(&ctx.applicant).expect("still exists");
-    // Refund is cost / 2 = 1
-    assert_eq!(after_wd.credits, BOOTSTRAP_CREDITS - 2 + 1);
-
-    // Applicant should be off the event's list.
-    let applicants = ctx.events.get_applicants(&bounty_id);
-    assert_eq!(applicants.len(), 0);
-}
-
-#[test]
-fn insufficient_credits_reverts() {
-    let ctx = setup();
-    // Cost 100 (the max), bootstrap is only 10. Apply should revert because
-    // InsufficientCredits bubbles up from profile.
-    let bounty_id = create_bounty(&ctx, 100);
-
-    let op_id = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-    assert!(res.is_err(), "apply with insufficient credits should revert");
-}
-
-#[test]
-fn replayed_apply_reverts_idempotently() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events.apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-
-    // Replay with the same op_id should revert (OpAlreadySeen on the events
-    // contract before any cross-contract call).
-    let res = ctx
-        .events
-        .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-    assert!(res.is_err(), "replayed apply should revert");
 }
 
 // ============================================================
