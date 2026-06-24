@@ -21,7 +21,13 @@ pub trait ProfileInterface {
     fn refund_credits(env: Env, user: Address, amount: u32, reason: Symbol, op_id: BytesN<32>);
     fn bump_reputation(env: Env, user: Address, delta: u32, reason: Symbol, op_id: BytesN<32>);
     fn slash_reputation(env: Env, user: Address, delta: u32, reason: Symbol, op_id: BytesN<32>);
-    fn register_earnings(env: Env, user: Address, token: Address, amount: i128, op_id: BytesN<32>);
+    fn register_earnings(
+        env: Env,
+        user: Address,
+        token: Address,
+        amount: i128,
+        op_id: BytesN<32>,
+    );
 }
 
 /// Helper to build a typed ProfileClient pointing at the currently-configured

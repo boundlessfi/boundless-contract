@@ -169,3 +169,4 @@ pub struct Migrated {
     pub from_version: String,
     pub to_version: String,
 }
+

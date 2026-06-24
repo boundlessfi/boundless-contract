@@ -46,7 +46,11 @@ pub fn initialize(
 ) {
     // Refuse double-init by checking the admin key in instance storage (the
     // new home for admin/config per the 2026-06 audit).
-    if env.storage().instance().has(&crate::types::DataKey::Admin) {
+    if env
+        .storage()
+        .instance()
+        .has(&crate::types::DataKey::Admin)
+    {
         panic_with_error!(env, Error::AlreadyInitialized);
     }
     if fee_bps > MAX_FEE_BPS {
@@ -356,7 +360,8 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 // READS
 // ============================================================
 pub fn get_admin(env: &Env) -> Address {
-    storage::get_admin(env).unwrap_or_else(|_| panic_with_error!(env, Error::NotInitialized))
+    storage::get_admin(env)
+        .unwrap_or_else(|_| panic_with_error!(env, Error::NotInitialized))
 }
 
 pub fn get_fee_bps(env: &Env) -> u32 {
@@ -376,7 +381,8 @@ pub fn is_paused(env: &Env) -> bool {
 }
 
 pub fn get_version(env: &Env) -> String {
-    storage::get_version(env).unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+    storage::get_version(env)
+        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
 }
 
 pub fn get_pending_upgrade(env: &Env) -> Option<PendingUpgrade> {

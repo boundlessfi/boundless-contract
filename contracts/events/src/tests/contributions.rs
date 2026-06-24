@@ -62,7 +62,8 @@ fn setup<'a>() -> Ctx<'a> {
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
-    let profile_id = env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
+    let profile_id =
+        env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     let events_admin = Address::generate(&env);
@@ -239,7 +240,9 @@ fn replayed_add_funds_reverts() {
     let op = BytesN::random(&ctx.env);
     ctx.events.add_funds(&id, &partner, &MIN_CONTRIB, &op);
 
-    let res = ctx.events.try_add_funds(&id, &partner, &MIN_CONTRIB, &op);
+    let res = ctx
+        .events
+        .try_add_funds(&id, &partner, &MIN_CONTRIB, &op);
     assert!(res.is_err(), "replayed add_funds should revert");
 }
 
@@ -282,8 +285,7 @@ fn multiple_top_ups_from_same_contributor_aggregate_and_dont_duplicate_list() {
     let op_a = BytesN::random(&ctx.env);
     ctx.events.add_funds(&id, &partner, &MIN_CONTRIB, &op_a);
     let op_b = BytesN::random(&ctx.env);
-    ctx.events
-        .add_funds(&id, &partner, &(MIN_CONTRIB * 2), &op_b);
+    ctx.events.add_funds(&id, &partner, &(MIN_CONTRIB * 2), &op_b);
 
     let list = ctx.events.get_contributors(&id);
     assert_eq!(list.len(), 1, "contributor list de-dupes");
