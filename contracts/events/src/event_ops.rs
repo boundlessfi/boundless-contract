@@ -250,10 +250,18 @@ pub fn add_funds(
         }
     }
 
-    // Use the rate snapshotted at publish so add_funds matches the program's
-    // quoted rate even if the contract default changes mid-flight.
-    let effective_bps = escrow::effective_fee_bps(env, event.fee_bps_override);
-    let credited = escrow::deposit_with_fee_at(env, &event.token, &from, amount, effective_bps);
+    // Fee model is per-pillar. Crowdfunding backers pay EXACTLY their pledge:
+    // the platform fee is borne by the builder and taken at claim_milestone, so
+    // a cancelled campaign refunds backers in full. Every other pillar charges
+    // the fee on top here (the funder is the program owner/sponsor).
+    let credited = if matches!(event.pillar, Pillar::Crowdfunding) {
+        escrow::deposit_no_fee(env, &event.token, &from, amount)
+    } else {
+        // Rate snapshotted at publish so add_funds matches the program's quoted
+        // rate even if the contract default changes mid-flight.
+        let effective_bps = escrow::effective_fee_bps(env, event.fee_bps_override);
+        escrow::deposit_with_fee_at(env, &event.token, &from, amount, effective_bps)
+    };
     event.remaining_escrow = event.remaining_escrow.saturating_add(credited);
 
     if from != event.owner {
