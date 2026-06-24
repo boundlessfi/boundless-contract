@@ -11,3 +11,4 @@ mod common;
 mod contributions;
 mod cross_contract;
 mod crowdfunding;
+mod hackathon_pillar;
