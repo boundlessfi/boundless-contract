@@ -231,7 +231,7 @@
                   ]
                 },
                 {
-                  "bytes": "2bf2dc889843e3d9c33a3873e622d7df1354bac8ce710318fcf9aa3dc825cb58"
+                  "bytes": "788d4de5f05bbfbe4f74c45af84a259c682621afcb4716a749ce44ad24c87ec9"
                 }
               ]
             }
@@ -280,7 +280,7 @@
                   "string": "ipfs://Qm.../v1.json"
                 },
                 {
-                  "bytes": "d7338966533ff990173b59b89d949590d0533455259f3b3bbede3eff85f84975"
+                  "bytes": "c95ef7d736541601d1d5c977a30049e3ebf446ef1a00d804b64cca22f332091e"
                 }
               ]
             }
@@ -804,7 +804,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "2bf2dc889843e3d9c33a3873e622d7df1354bac8ce710318fcf9aa3dc825cb58"
+                  "bytes": "788d4de5f05bbfbe4f74c45af84a259c682621afcb4716a749ce44ad24c87ec9"
                 }
               ]
             },
@@ -824,7 +824,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "2bf2dc889843e3d9c33a3873e622d7df1354bac8ce710318fcf9aa3dc825cb58"
+                      "bytes": "788d4de5f05bbfbe4f74c45af84a259c682621afcb4716a749ce44ad24c87ec9"
                     }
                   ]
                 },
@@ -849,7 +849,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "d7338966533ff990173b59b89d949590d0533455259f3b3bbede3eff85f84975"
+                  "bytes": "c95ef7d736541601d1d5c977a30049e3ebf446ef1a00d804b64cca22f332091e"
                 }
               ]
             },
@@ -869,7 +869,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "d7338966533ff990173b59b89d949590d0533455259f3b3bbede3eff85f84975"
+                      "bytes": "c95ef7d736541601d1d5c977a30049e3ebf446ef1a00d804b64cca22f332091e"
                     }
                   ]
                 },

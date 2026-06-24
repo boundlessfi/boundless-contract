@@ -690,7 +690,10 @@ pub fn select_winners(
             // First pass: compute per-winner amounts and verify total fits.
             let mut total_owed: i128 = 0;
             for spec in winners.iter() {
-                let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
+                let percent = event
+                    .winner_distribution
+                    .get(spec.position)
+                    .ok_or(Error::InvalidDistribution)? as i128;
                 let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
                 if amount <= 0 {
                     return Err(Error::InvalidDistribution);
@@ -704,7 +707,10 @@ pub fn select_winners(
             // Second pass: release per winner with all four profile-side calls.
             for (idx, spec) in winners.iter().enumerate() {
                 let sub_idx = idx as u8;
-                let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
+                let percent = event
+                    .winner_distribution
+                    .get(spec.position)
+                    .ok_or(Error::InvalidDistribution)? as i128;
                 let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
 
                 escrow::release(env, &event.token, &spec.recipient, amount);

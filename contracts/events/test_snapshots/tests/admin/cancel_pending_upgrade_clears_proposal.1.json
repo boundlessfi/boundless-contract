@@ -16,7 +16,7 @@
               "function_name": "propose_upgrade",
               "args": [
                 {
-                  "bytes": "19e6a647bbc252e64a169f40316f7c478d14d562864e5e2281f86459e9afe2ad"
+                  "bytes": "4eff30e4ea5270b4dd5ee2fb81a058a1bedcc68924db71f2cac443c74be9f41d"
                 },
                 {
                   "string": "0.3.0"
