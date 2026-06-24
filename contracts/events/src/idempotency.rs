@@ -64,12 +64,7 @@ pub fn derive_child(env: &Env, parent: &BytesN<32>, op_tag: u8) -> BytesN<32> {
 /// Same as `derive_child` but also XORs a sub-index into the second byte, so
 /// per-winner cross-contract calls within select_winners get unique op_ids
 /// even when the same op_tag is reused across winners.
-pub fn derive_child_indexed(
-    env: &Env,
-    parent: &BytesN<32>,
-    op_tag: u8,
-    sub_idx: u8,
-) -> BytesN<32> {
+pub fn derive_child_indexed(env: &Env, parent: &BytesN<32>, op_tag: u8, sub_idx: u8) -> BytesN<32> {
     let mut payload = parent.to_array();
     payload[0] ^= op_tag;
     payload[1] ^= sub_idx;

@@ -241,7 +241,11 @@ impl EventsContract {
         event_ops::get_event(&env, event_id)
     }
 
-    pub fn get_submission(env: Env, event_id: u64, applicant: Address) -> Result<Submission, Error> {
+    pub fn get_submission(
+        env: Env,
+        event_id: u64,
+        applicant: Address,
+    ) -> Result<Submission, Error> {
         event_ops::get_submission(&env, event_id, applicant)
     }
 
@@ -253,11 +257,7 @@ impl EventsContract {
         event_ops::get_applicant_count(&env, event_id)
     }
 
-    pub fn get_applicant_at(
-        env: Env,
-        event_id: u64,
-        idx: u32,
-    ) -> Result<Option<Address>, Error> {
+    pub fn get_applicant_at(env: Env, event_id: u64, idx: u32) -> Result<Option<Address>, Error> {
         event_ops::get_applicant_at(&env, event_id, idx)
     }
 
@@ -269,11 +269,7 @@ impl EventsContract {
         event_ops::get_winner_count(&env, event_id)
     }
 
-    pub fn get_winner_at(
-        env: Env,
-        event_id: u64,
-        idx: u32,
-    ) -> Result<Option<Winner>, Error> {
+    pub fn get_winner_at(env: Env, event_id: u64, idx: u32) -> Result<Option<Winner>, Error> {
         event_ops::get_winner_at(&env, event_id, idx)
     }
 
@@ -285,11 +281,7 @@ impl EventsContract {
         event_ops::get_contributor_count(&env, event_id)
     }
 
-    pub fn get_contributor_at(
-        env: Env,
-        event_id: u64,
-        idx: u32,
-    ) -> Result<Option<Address>, Error> {
+    pub fn get_contributor_at(env: Env, event_id: u64, idx: u32) -> Result<Option<Address>, Error> {
         event_ops::get_contributor_at(&env, event_id, idx)
     }
 

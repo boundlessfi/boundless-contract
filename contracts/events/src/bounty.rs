@@ -15,11 +15,7 @@ use crate::profile_client;
 use crate::storage;
 use crate::types::{EventRecord, EventStatus, Pillar, ReleaseKind};
 
-pub fn validate_create(
-    _env: &Env,
-    record: &EventRecord,
-    _owner: &Address,
-) -> Result<(), Error> {
+pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Result<(), Error> {
     if !matches!(record.release_kind, ReleaseKind::Single) {
         return Err(Error::InvalidReleaseKind);
     }

@@ -78,7 +78,6 @@ pub enum Error {
     UpgradeProposalExpired = 68,
     MigrationAlreadyApplied = 69,
 
-
     // Pause
     Paused = 70,
 

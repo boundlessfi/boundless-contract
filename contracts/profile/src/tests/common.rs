@@ -18,10 +18,7 @@ pub fn setup<'a>(default_bootstrap_credits: u32) -> TestCtx<'a> {
     env.mock_all_auths();
     let admin = Address::generate(&env);
 
-    let contract_id = env.register(
-        ProfileContract,
-        (admin.clone(), default_bootstrap_credits),
-    );
+    let contract_id = env.register(ProfileContract, (admin.clone(), default_bootstrap_credits));
     let client = ProfileContractClient::new(&env, &contract_id);
 
     TestCtx { env, admin, client }
