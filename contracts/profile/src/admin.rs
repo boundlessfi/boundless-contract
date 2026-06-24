@@ -14,7 +14,13 @@ use crate::types::{PendingAdmin, PendingEventsContract, PendingUpgrade};
 const PENDING_TTL_LEDGERS: u32 = 120_960; // 7 days at ~5 sec per ledger.
 
 // H6: timelocked upgrade windows. Match the events contract for consistency.
+// Testnet builds (`--features testnet`) zero the upgrade timelock for fast
+// iteration; the default build (mainnet + everything else) keeps the full
+// ~1-day timelock. Fail-safe: omitting the flag yields the secure value, never 0.
+#[cfg(not(feature = "testnet"))]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
+#[cfg(feature = "testnet")]
+const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
 pub const INITIAL_VERSION: &str = "0.2.0";

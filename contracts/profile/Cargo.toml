@@ -8,6 +8,12 @@ publish = false
 crate-type = ["lib", "cdylib"]
 doctest = false
 
+[features]
+# Testnet-only: zero the upgrade timelock so upgrades apply immediately for fast
+# iteration. NEVER enable on mainnet — the default (feature off) keeps the full
+# audit-mandated ~1-day timelock, so forgetting the flag fails safe (secure).
+testnet = []
+
 [dependencies]
 soroban-sdk = { workspace = true }
 

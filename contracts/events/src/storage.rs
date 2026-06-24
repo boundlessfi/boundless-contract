@@ -214,6 +214,22 @@ pub fn set_event(env: &Env, id: u64, record: &EventRecord) {
     touch_event_persistent(env, &key);
 }
 
+// Per-event management authority override (side map; absent => owner manages).
+pub fn get_event_manager(env: &Env, id: u64) -> Option<Address> {
+    let key = DataKey::EventManager(id);
+    let m: Option<Address> = env.storage().persistent().get(&key);
+    if m.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    m
+}
+
+pub fn set_event_manager(env: &Env, id: u64, manager: &Address) {
+    let key = DataKey::EventManager(id);
+    env.storage().persistent().set(&key, manager);
+    touch_event_persistent(env, &key);
+}
+
 // ============================================================
 // APPLICANTS (paged, persistent)
 //
@@ -290,7 +306,7 @@ pub fn remove_applicant(env: &Env, id: u64, addr: &Address) -> Result<(), Error>
 
     // If not the last entry, swap the last applicant into the freed slot.
     if idx != last_idx {
-        let last_addr = applicant_at(env, id, last_idx).expect("count > 0 implies last present");
+        let last_addr = applicant_at(env, id, last_idx).ok_or(Error::EventNotFound)?;
         let at_key = DataKey::EventApplicantAt(id, idx);
         env.storage().persistent().set(&at_key, &last_addr);
         touch_event_persistent(env, &at_key);

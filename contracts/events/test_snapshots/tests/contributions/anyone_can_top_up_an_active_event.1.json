@@ -151,6 +151,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "manager"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "owner"
                       },
                       "val": {
@@ -225,7 +231,7 @@
                   ]
                 },
                 {
-                  "bytes": "65626bad6e958ec04913dafa63307c0a0fd657089fcc31b156401dfd4b4967d3"
+                  "bytes": "bc1ff0a7f196374300b55515de0ec776c2da67f64a6775a94027cfcb97f146f1"
                 }
               ]
             }
@@ -297,7 +303,7 @@
                   "i128": "5000000000"
                 },
                 {
-                  "bytes": "dd9a94d9b188e22483dfbad15f08fffdd77dc6ae729672d9d682143818994321"
+                  "bytes": "1dc19455ea067a5ca8ad7f9af841281b077519a1c0737205ed7a06266a87e762"
                 }
               ]
             }
@@ -967,7 +973,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "65626bad6e958ec04913dafa63307c0a0fd657089fcc31b156401dfd4b4967d3"
+                  "bytes": "1dc19455ea067a5ca8ad7f9af841281b077519a1c0737205ed7a06266a87e762"
                 }
               ]
             },
@@ -987,7 +993,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "65626bad6e958ec04913dafa63307c0a0fd657089fcc31b156401dfd4b4967d3"
+                      "bytes": "1dc19455ea067a5ca8ad7f9af841281b077519a1c0737205ed7a06266a87e762"
                     }
                   ]
                 },
@@ -1012,7 +1018,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "dd9a94d9b188e22483dfbad15f08fffdd77dc6ae729672d9d682143818994321"
+                  "bytes": "bc1ff0a7f196374300b55515de0ec776c2da67f64a6775a94027cfcb97f146f1"
                 }
               ]
             },
@@ -1032,7 +1038,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "dd9a94d9b188e22483dfbad15f08fffdd77dc6ae729672d9d682143818994321"
+                      "bytes": "bc1ff0a7f196374300b55515de0ec776c2da67f64a6775a94027cfcb97f146f1"
                     }
                   ]
                 },

@@ -26,7 +26,13 @@ pub(crate) const MAX_FEE_BPS: u32 = 1_000;
 //                                to react before the new wasm lands.
 //   PENDING_UPGRADE_TTL_LEDGERS  hard expiry on the proposal; ~30 days.
 //                                Past this the admin must re-propose.
+// Testnet builds (`--features testnet`) zero the upgrade timelock for fast
+// iteration; the default build (mainnet + everything else) keeps the full
+// ~1-day timelock. Fail-safe: omitting the flag yields the secure value, never 0.
+#[cfg(not(feature = "testnet"))]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
+#[cfg(feature = "testnet")]
+const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
 // Initial contract version. Written by __constructor and bumped on
