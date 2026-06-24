@@ -203,6 +203,7 @@ fn select_winners_single_100_percent_drains_escrow() {
     let id = create_hackathon(&ctx, budget, None);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let fee_before = token.balance(&ctx.fee_account);
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
@@ -211,6 +212,7 @@ fn select_winners_single_100_percent_drains_escrow() {
     ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&winner), budget);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);
     assert_eq!(event.status, EventStatus::Completed);
@@ -245,6 +247,7 @@ fn select_winners_60_40_split_math_correct() {
     let id = ctx.events.create_event(&params, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let fee_before = token.balance(&ctx.fee_account);
     let w1 = Address::generate(&ctx.env);
     let w2 = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
@@ -256,6 +259,7 @@ fn select_winners_60_40_split_math_correct() {
 
     assert_eq!(token.balance(&w1), budget * 60 / 100);
     assert_eq!(token.balance(&w2), budget * 40 / 100);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
 }
 
@@ -276,6 +280,7 @@ fn select_winners_pays_against_full_escrow_including_top_ups() {
     ctx.events.add_funds(&id, &partner, &top_up, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let fee_before = token.balance(&ctx.fee_account);
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
@@ -284,6 +289,7 @@ fn select_winners_pays_against_full_escrow_including_top_ups() {
     ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&winner), budget + top_up);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
 }
 

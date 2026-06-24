@@ -137,7 +137,7 @@ fn get_earnings_returns_zero_for_unknown_user_token() {
 }
 
 #[test]
-fn register_earnings_requires_events_contract_auth() {
+fn register_earnings_succeeds_when_events_contract_is_authorized() {
     let ctx = setup(BOOTSTRAP);
     ctx.client.set_events_contract(&Address::generate(&ctx.env));
 
@@ -146,7 +146,35 @@ fn register_earnings_requires_events_contract_auth() {
     ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
     ctx.client.register_earnings(&user, &token, &50_0000000_i128, &BytesN::random(&ctx.env));
 
-    // With mock_all_auths the call succeeds; the auth requirement is exercised
-    // by the events-contract guard in the implementation.
     assert_eq!(ctx.client.get_earnings(&user, &token), 50_0000000_i128);
+}
+
+#[test]
+fn register_earnings_without_events_contract_auth_reverts() {
+    use soroban_sdk::testutils::MockAuth;
+    use soroban_sdk::testutils::MockAuthInvoke;
+    use soroban_sdk::IntoVal;
+
+    let ctx = setup(BOOTSTRAP);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+
+    let user = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+
+    let op = BytesN::random(&ctx.env);
+    let impostor = Address::generate(&ctx.env);
+    let result = ctx.client
+        .mock_auths(&[MockAuth {
+            address: &impostor,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.client.address,
+                fn_name: "register_earnings",
+                args: (user.clone(), token.clone(), 50_0000000_i128, op.clone()).into_val(&ctx.env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_register_earnings(&user, &token, &50_0000000_i128, &op);
+    assert!(result.is_err());
 }

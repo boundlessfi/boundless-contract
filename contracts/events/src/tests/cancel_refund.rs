@@ -143,12 +143,14 @@ fn full_partner_then_residual_pays_partners_and_owner() {
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);
     let owner_before = token.balance(&ctx.owner);
+    let fee_before = token.balance(&ctx.fee_account);
 
     drive_cancel(&ctx.env, &ctx.events, id);
 
     assert_eq!(token.balance(&p1) - p1_before, 200_0000000_i128);
     assert_eq!(token.balance(&p2) - p2_before, 300_0000000_i128);
     assert_eq!(token.balance(&ctx.owner) - owner_before, TOTAL_BUDGET);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelled);
 }
 
@@ -177,6 +179,7 @@ fn paged_cancel_processes_in_batches() {
         token.balance(&partners[4]),
     ];
     let owner_before = token.balance(&ctx.owner);
+    let fee_before = token.balance(&ctx.fee_account);
 
     ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelling);
@@ -202,16 +205,18 @@ fn paged_cancel_processes_in_batches() {
         assert_eq!(token.balance(p) - balances[i], MIN_CONTRIB);
     }
     assert_eq!(token.balance(&ctx.owner) - owner_before, TOTAL_BUDGET);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 }
 
 // ============================================================
-// ProRataPartners branch (boundary: remaining == non_owner_total)
+// ProRataPartners branch (remaining < non_owner_total)
 // ============================================================
 
 #[test]
-fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
-    // 60/40 split; pay position 1 (60%); remaining = 40% of escrow.
-    // With partner pool == remaining, no owner residual.
+fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
+    // escrow = 2000 (owner 1000 + p1 500 + p2 500); select_winners pays
+    // pos1 60% (1200) leaving remaining = 800. non_owner_total = 1000.
+    // 800 < 1000 -> ProRata: each partner gets 500 * 800 / 1000 = 400; owner = 0.
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
     dist.set(1, 60);
@@ -223,7 +228,7 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
         total_budget: TOTAL_BUDGET,
         release_kind: ReleaseKind::Single,
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/boundary"),
-        title: String::from_str(&ctx.env, "Boundary Cancel"),
+        title: String::from_str(&ctx.env, "ProRata Cancel"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
         application_credit_cost: 0,
@@ -237,22 +242,6 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
     contribute(&ctx, id, &p1, 500_0000000_i128);
     contribute(&ctx, id, &p2, 500_0000000_i128);
 
-    // remaining = 1000 + 1000 = 2000; pay pos1 (60%) = 1200 → remaining = 800.
-    // non_owner_total = 1000. 800 < 1000 → ProRata.
-    // But let's use a cleaner case: pay pos1 at 60% of 2000 = 1200; remaining = 800.
-    // Actually simpler: use total_budget=1000, partner=1000, pay pos1(60%)=1200 err.
-    // Use the boundary exactly as in contributions.rs: partner == remaining.
-    // escrow=2000, pay pos1 (60% of 2000)=1200, remaining=800, partner=1000 → ProRata.
-    // For FullPartner boundary: remaining==non_owner_total.
-    // Pay pos1 (60%*2000=1200), remaining=800; partner=800 → FullPartner boundary.
-    // Re-seed with partner = 400 each (800 total).
-    // Actually the test in contributions.rs already covers the boundary well.
-    // Here just verify the basic FullPartner case works with no owner residual.
-
-    // Simpler: create fresh event with partner == remaining after partial payout.
-    // TOTAL_BUDGET=1000, two partners 250 each (500 total). remaining = 1500.
-    // Pay pos1 60% of 1500 = 900. remaining = 600. non_owner = 500. 600 > 500 → FullPartner.
-    // Owner residual = 600 - 500 = 100.
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
 
     let w = Address::generate(&ctx.env);
@@ -262,18 +251,17 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
     ];
     ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
-    // remaining after pay: 2000 - 2000*0.6 = 800. non_owner = 1000. ProRata.
-    // p1 share = 500 * 800 / 1000 = 400.
-    // p2 share = 500 * 800 / 1000 = 400.
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);
     let owner_before = token.balance(&ctx.owner);
+    let fee_before = token.balance(&ctx.fee_account);
 
     drive_cancel(&ctx.env, &ctx.events, id);
 
     assert_eq!(token.balance(&p1) - p1_before, 400_0000000_i128);
     assert_eq!(token.balance(&p2) - p2_before, 400_0000000_i128);
     assert_eq!(token.balance(&ctx.owner) - owner_before, 0);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 }
 
 // ============================================================

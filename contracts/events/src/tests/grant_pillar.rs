@@ -159,11 +159,13 @@ fn claim_milestone_pays_fixed_per_milestone_amount() {
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let before = token.balance(&recipient);
+    let fee_before = token.balance(&ctx.fee_account);
 
     ctx.events.claim_milestone(&id, &recipient, &0_u32, &3_u32, &5_u32, &BytesN::random(&ctx.env));
 
     let per_milestone = TOTAL_BUDGET / 4;
     assert_eq!(token.balance(&recipient) - before, per_milestone);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, TOTAL_BUDGET - per_milestone);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
 }
@@ -177,6 +179,7 @@ fn claim_milestone_last_sweeps_rounding_residue() {
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let before = token.balance(&recipient);
+    let fee_before = token.balance(&ctx.fee_account);
     let floored = TOTAL_BUDGET / 3;
 
     ctx.events.claim_milestone(&id, &recipient, &0_u32, &0, &0, &BytesN::random(&ctx.env));
@@ -185,6 +188,7 @@ fn claim_milestone_last_sweeps_rounding_residue() {
 
     ctx.events.claim_milestone(&id, &recipient, &2_u32, &0, &0, &BytesN::random(&ctx.env));
     assert_eq!(token.balance(&recipient) - before, TOTAL_BUDGET);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);
@@ -330,6 +334,7 @@ fn two_winner_grant_each_claims_their_share() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let w1_before = token.balance(&w1);
     let w2_before = token.balance(&w2);
+    let fee_before = token.balance(&ctx.fee_account);
 
     ctx.events.claim_milestone(&id, &w1, &0_u32, &0, &0, &BytesN::random(&ctx.env));
     ctx.events.claim_milestone(&id, &w1, &1_u32, &0, &0, &BytesN::random(&ctx.env));
@@ -338,6 +343,7 @@ fn two_winner_grant_each_claims_their_share() {
 
     assert_eq!(token.balance(&w1) - w1_before, TOTAL_BUDGET * 60 / 100);
     assert_eq!(token.balance(&w2) - w2_before, TOTAL_BUDGET * 40 / 100);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 }

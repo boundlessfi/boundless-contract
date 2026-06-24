@@ -255,6 +255,8 @@ fn select_winners_pays_recipient_and_updates_profile() {
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
+    let expected_fee = TOTAL_BUDGET * FEE_BPS as i128 / 10_000;
+    assert_eq!(token.balance(&ctx.fee_account), expected_fee);
 
     let profile = ctx.profile.get_profile(&ctx.applicant).unwrap();
     assert_eq!(profile.credits, BOOTSTRAP_CREDITS - 1 + 20);

@@ -10,6 +10,7 @@ use soroban_sdk::{
     Address, BytesN, Env, Map, String,
 };
 
+use crate::errors::Error;
 use crate::types::{CreateEventParams, Pillar, ReleaseKind};
 use crate::{EventsContract, EventsContractClient};
 
@@ -131,8 +132,9 @@ fn create_event_with_unsupported_token_reverts() {
         fee_bps_override: None,
         manager: None,
     };
-    let res = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env));
-    assert!(res.is_err());
+    let err = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env))
+        .err().unwrap().unwrap();
+    assert_eq!(err, Error::TokenNotSupported);
 }
 
 #[test]
@@ -156,8 +158,37 @@ fn create_event_with_deregistered_token_reverts() {
         fee_bps_override: None,
         manager: None,
     };
-    let res = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env));
-    assert!(res.is_err());
+    let err = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env))
+        .err().unwrap().unwrap();
+    assert_eq!(err, Error::TokenNotSupported);
+}
+
+// ============================================================
+// Negative auth: non-admin callers are rejected
+// ============================================================
+
+#[test]
+fn register_without_admin_auth_reverts() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let fee_account = Address::generate(&env);
+    let profile = Address::generate(&env);
+    let id = env.register(EventsContract, (admin.clone(), fee_account.clone(), FEE_BPS, profile));
+    let client = EventsContractClient::new(&env, &id);
+    let tok = Address::generate(&env);
+    assert!(client.try_register_supported_token(&tok).is_err());
+}
+
+#[test]
+fn deregister_without_admin_auth_reverts() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let fee_account = Address::generate(&env);
+    let profile = Address::generate(&env);
+    let id = env.register(EventsContract, (admin.clone(), fee_account.clone(), FEE_BPS, profile));
+    let client = EventsContractClient::new(&env, &id);
+    let tok = Address::generate(&env);
+    assert!(client.try_deregister_supported_token(&tok).is_err());
 }
 
 // ============================================================

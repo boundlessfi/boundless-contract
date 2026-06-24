@@ -208,6 +208,8 @@ fn select_winners_single_pays_full_budget_and_updates_profile() {
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
+    let expected_fee = TOTAL_BUDGET * FEE_BPS as i128 / 10_000;
+    assert_eq!(token.balance(&ctx.fee_account), expected_fee);
 
     let profile = ctx.profile.get_profile(&ctx.applicant).unwrap();
     assert_eq!(profile.credits, BOOTSTRAP_CREDITS + 20);
@@ -253,6 +255,8 @@ fn select_winners_multi_recipient_distribution() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&w1), TOTAL_BUDGET * 60 / 100);
     assert_eq!(token.balance(&w2), TOTAL_BUDGET * 40 / 100);
+    let expected_fee = TOTAL_BUDGET * FEE_BPS as i128 / 10_000;
+    assert_eq!(token.balance(&ctx.fee_account), expected_fee);
 
     let p1 = ctx.profile.get_profile(&w1).unwrap();
     let p2 = ctx.profile.get_profile(&w2).unwrap();
