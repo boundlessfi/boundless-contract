@@ -31,7 +31,11 @@ const EVENTS_CONTRACT_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_EVENTS_CONTRACT_TTL_LEDGERS: u32 = 120_960;
 
 pub fn initialize(env: &Env, admin: Address, default_bootstrap_credits: u32) {
-    if env.storage().instance().has(&crate::types::DataKey::Admin) {
+    if env
+        .storage()
+        .instance()
+        .has(&crate::types::DataKey::Admin)
+    {
         panic_with_error!(env, Error::AlreadyInitialized);
     }
 
@@ -332,7 +336,8 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 // READS
 // ============================================================
 pub fn get_admin(env: &Env) -> Address {
-    storage::get_admin(env).unwrap_or_else(|_| panic_with_error!(env, Error::NotInitialized))
+    storage::get_admin(env)
+        .unwrap_or_else(|_| panic_with_error!(env, Error::NotInitialized))
 }
 
 pub fn get_events_contract(env: &Env) -> Option<Address> {
@@ -352,7 +357,8 @@ pub fn is_paused(env: &Env) -> bool {
 }
 
 pub fn get_version(env: &Env) -> String {
-    storage::get_version(env).unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+    storage::get_version(env)
+        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
 }
 
 pub fn get_pending_upgrade(env: &Env) -> Option<PendingUpgrade> {
@@ -387,3 +393,4 @@ pub fn require_not_paused(env: &Env) -> Result<(), Error> {
     }
     Ok(())
 }
+
