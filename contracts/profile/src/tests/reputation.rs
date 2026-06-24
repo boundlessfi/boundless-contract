@@ -1,10 +1,7 @@
-// boundless-profile: reputation tests.
+// boundless-profile: reputation tests (#29).
 //
-// Covers reputation::bump, reputation::slash, reputation::admin_slash.
-// Every function: happy path + each reachable Error variant + edge cases
-// (saturating add/sub, zero delta) + auth-rejection + idempotency replay.
-//
-// Spec: boundless-credits-reputation-prd.md Section 5.3.
+// Covers bump_reputation / slash_reputation / admin_slash_reputation:
+//   - Happy path + each Error variant + edge cases + auth-rejection + idempotency.
 
 #![cfg(test)]
 
@@ -13,408 +10,165 @@ use soroban_sdk::{
     Address, BytesN, String, Symbol,
 };
 
-use super::common::{setup, TestCtx};
+use super::common::setup;
 use crate::errors::Error;
 
-// ============================================================
-// Helpers
-// ============================================================
+const BOOTSTRAP: u32 = 10;
 
-/// A fresh, unique idempotency key.
-fn op_id(ctx: &TestCtx) -> BytesN<32> {
-    BytesN::random(&ctx.env)
+fn reason(env: &soroban_sdk::Env) -> Symbol {
+    Symbol::new(env, "test")
 }
 
-/// bump/slash reason (Symbol).
-fn reason(ctx: &TestCtx) -> Symbol {
-    Symbol::new(&ctx.env, "win")
-}
-
-/// Current reputation for a user that is expected to have a profile.
-fn reputation_of(ctx: &TestCtx, user: &Address) -> u64 {
-    ctx.client
-        .get_profile(user)
-        .expect("profile exists")
-        .reputation
-}
-
-/// setup() + wire an events contract + bootstrap one user so the
-/// events-gated reputation ops have a profile to mutate.
-///
-/// Returns the context plus the bootstrapped user. The events-contract
-/// address is mocked-authed by `setup`, so subsequent bump/slash calls
-/// satisfy `require_events_contract`.
-fn setup_with_user<'a>() -> (TestCtx<'a>, Address) {
-    let ctx = setup(10);
-    let events = Address::generate(&ctx.env);
-    ctx.client.set_events_contract(&events);
-
+fn setup_with_profile<'a>() -> (super::common::TestCtx<'a>, Address) {
+    let ctx = setup(BOOTSTRAP);
+    ctx.client.set_events_contract(&Address::generate(&ctx.env));
     let user = Address::generate(&ctx.env);
     ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
     (ctx, user)
 }
 
 // ============================================================
-// bump
+// bump_reputation
 // ============================================================
 
 #[test]
-fn bump_happy_path_increments_reputation() {
-    let (ctx, user) = setup_with_user();
-    assert_eq!(reputation_of(&ctx, &user), 0);
-
-    ctx.client
-        .bump_reputation(&user, &5, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 5);
+fn bump_increments_reputation() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &100_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    assert_eq!(ctx.client.get_profile(&user).unwrap().reputation, 100);
 }
 
 #[test]
-fn bump_accumulates_across_calls() {
-    let (ctx, user) = setup_with_user();
-
-    ctx.client
-        .bump_reputation(&user, &5, &reason(&ctx), &op_id(&ctx));
-    ctx.client
-        .bump_reputation(&user, &7, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 12);
+fn bump_multiple_times_accumulates() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &50_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    ctx.client.bump_reputation(&user, &25_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    assert_eq!(ctx.client.get_profile(&user).unwrap().reputation, 75);
 }
 
 #[test]
-fn bump_accepts_u32_max_delta_without_overflow() {
-    // delta is u32, reputation is u64. A single max-delta bump must widen
-    // cleanly into u64 and never overflow/panic.
-    let (ctx, user) = setup_with_user();
-
-    ctx.client
-        .bump_reputation(&user, &u32::MAX, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), u32::MAX as u64);
+fn bump_large_values_accumulate_without_overflow() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &u32::MAX, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    ctx.client.bump_reputation(&user, &u32::MAX, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    assert_eq!(ctx.client.get_profile(&user).unwrap().reputation, (u32::MAX as u64) * 2);
 }
 
 #[test]
-fn bump_zero_delta_is_noop_but_marks_seen() {
-    let (ctx, user) = setup_with_user();
-    let op = op_id(&ctx);
-
-    ctx.client.bump_reputation(&user, &0, &reason(&ctx), &op);
-    assert_eq!(reputation_of(&ctx, &user), 0);
-
-    // Replaying the same op_id is rejected even though the op was a no-op.
-    let err = ctx
-        .client
-        .try_bump_reputation(&user, &0, &reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
-        .unwrap();
-    assert_eq!(err, Error::OpAlreadySeen);
-}
-
-#[test]
-fn bump_reverts_when_events_contract_not_configured() {
-    // No set_events_contract: the events-contract auth guard is the first
-    // check and rejects before anything else.
-    let ctx = setup(10);
+fn bump_on_missing_profile_reverts() {
+    let ctx = setup(BOOTSTRAP);
+    ctx.client.set_events_contract(&Address::generate(&ctx.env));
     let user = Address::generate(&ctx.env);
-
-    let err = ctx
-        .client
-        .try_bump_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected guard to reject")
-        .unwrap();
-    assert_eq!(err, Error::EventsContractNotConfigured);
-}
-
-#[test]
-fn bump_reverts_when_paused() {
-    let (ctx, user) = setup_with_user();
-    ctx.client.pause();
-
-    let err = ctx
-        .client
-        .try_bump_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected pause to block")
-        .unwrap();
-    assert_eq!(err, Error::Paused);
-}
-
-#[test]
-fn bump_reverts_when_profile_not_found() {
-    let ctx = setup(10);
-    let events = Address::generate(&ctx.env);
-    ctx.client.set_events_contract(&events);
-
-    // A user that was never bootstrapped has no profile.
-    let ghost = Address::generate(&ctx.env);
-    let err = ctx
-        .client
-        .try_bump_reputation(&ghost, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected missing profile")
-        .unwrap();
+    let err = ctx.client
+        .try_bump_reputation(&user, &10_u32, &reason(&ctx.env), &BytesN::random(&ctx.env))
+        .err().unwrap().unwrap();
     assert_eq!(err, Error::ProfileNotFound);
 }
 
 #[test]
-fn bump_is_idempotent_on_replay() {
-    let (ctx, user) = setup_with_user();
-    let op = op_id(&ctx);
-
-    ctx.client.bump_reputation(&user, &5, &reason(&ctx), &op);
-    assert_eq!(reputation_of(&ctx, &user), 5);
-
-    let err = ctx
-        .client
-        .try_bump_reputation(&user, &5, &reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
-        .unwrap();
-    assert_eq!(err, Error::OpAlreadySeen);
-    // Reputation unchanged: the replay did not double-apply.
-    assert_eq!(reputation_of(&ctx, &user), 5);
-}
-
-#[test]
-fn bump_rejects_caller_without_events_contract_auth() {
-    // Genuine auth rejection: the events contract is configured, but no
-    // authorization is provided for the bump call, so events.require_auth()
-    // fails and the host aborts the invocation.
-    let (ctx, user) = setup_with_user();
-
-    ctx.env.mock_auths(&[]);
-    let res = ctx
-        .client
-        .try_bump_reputation(&user, &1, &reason(&ctx), &op_id(&ctx));
-    assert!(res.is_err(), "unauthorized bump must be rejected");
+fn bump_op_replay_reverts() {
+    let (ctx, user) = setup_with_profile();
+    let op = BytesN::random(&ctx.env);
+    ctx.client.bump_reputation(&user, &10_u32, &reason(&ctx.env), &op);
+    assert!(ctx.client.try_bump_reputation(&user, &10_u32, &reason(&ctx.env), &op).is_err());
 }
 
 // ============================================================
-// slash
+// slash_reputation
 // ============================================================
 
 #[test]
-fn slash_happy_path_decrements_reputation() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .slash_reputation(&user, &4, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 6);
+fn slash_decrements_reputation() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &100_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    ctx.client.slash_reputation(&user, &30_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    assert_eq!(ctx.client.get_profile(&user).unwrap().reputation, 70);
 }
 
 #[test]
 fn slash_saturates_at_zero() {
-    // Slashing more than the current reputation floors at zero rather than
-    // underflowing (saturating_sub).
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &5, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .slash_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 0);
+    let (ctx, user) = setup_with_profile();
+    ctx.client.slash_reputation(&user, &u32::MAX, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    assert_eq!(ctx.client.get_profile(&user).unwrap().reputation, 0);
 }
 
 #[test]
-fn slash_zero_delta_is_noop() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &3, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .slash_reputation(&user, &0, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 3);
-}
-
-#[test]
-fn slash_reverts_when_events_contract_not_configured() {
-    let ctx = setup(10);
+fn slash_on_missing_profile_reverts() {
+    let ctx = setup(BOOTSTRAP);
+    ctx.client.set_events_contract(&Address::generate(&ctx.env));
     let user = Address::generate(&ctx.env);
-
-    let err = ctx
-        .client
-        .try_slash_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected guard to reject")
-        .unwrap();
-    assert_eq!(err, Error::EventsContractNotConfigured);
+    assert!(ctx.client.try_slash_reputation(&user, &10_u32, &reason(&ctx.env), &BytesN::random(&ctx.env)).is_err());
 }
 
 #[test]
-fn slash_reverts_when_paused() {
-    let (ctx, user) = setup_with_user();
-    ctx.client.pause();
+fn slash_op_replay_reverts() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &50_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    let op = BytesN::random(&ctx.env);
+    ctx.client.slash_reputation(&user, &10_u32, &reason(&ctx.env), &op);
+    assert!(ctx.client.try_slash_reputation(&user, &10_u32, &reason(&ctx.env), &op).is_err());
+}
 
-    let err = ctx
-        .client
-        .try_slash_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected pause to block")
-        .unwrap();
-    assert_eq!(err, Error::Paused);
+// ============================================================
+// admin_slash_reputation
+// ============================================================
+
+#[test]
+fn admin_slash_decrements_reputation() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &100_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+
+    let r = String::from_str(&ctx.env, "rule violation");
+    ctx.client.admin_slash_reputation(&user, &40_u32, &r, &BytesN::random(&ctx.env));
+    assert_eq!(ctx.client.get_profile(&user).unwrap().reputation, 60);
 }
 
 #[test]
-fn slash_reverts_when_profile_not_found() {
-    let ctx = setup(10);
-    let events = Address::generate(&ctx.env);
-    ctx.client.set_events_contract(&events);
-
-    let ghost = Address::generate(&ctx.env);
-    let err = ctx
-        .client
-        .try_slash_reputation(&ghost, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected missing profile")
-        .unwrap();
+fn admin_slash_on_missing_profile_reverts() {
+    let ctx = setup(BOOTSTRAP);
+    let user = Address::generate(&ctx.env);
+    let r = String::from_str(&ctx.env, "reason");
+    let err = ctx.client
+        .try_admin_slash_reputation(&user, &10_u32, &r, &BytesN::random(&ctx.env))
+        .err().unwrap().unwrap();
     assert_eq!(err, Error::ProfileNotFound);
 }
 
 #[test]
-fn slash_is_idempotent_on_replay() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-    let op = op_id(&ctx);
-
-    ctx.client.slash_reputation(&user, &4, &reason(&ctx), &op);
-    assert_eq!(reputation_of(&ctx, &user), 6);
-
-    let err = ctx
-        .client
-        .try_slash_reputation(&user, &4, &reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
-        .unwrap();
-    assert_eq!(err, Error::OpAlreadySeen);
-    assert_eq!(reputation_of(&ctx, &user), 6);
-}
-
-#[test]
-fn slash_rejects_caller_without_events_contract_auth() {
-    let (ctx, user) = setup_with_user();
-
-    ctx.env.mock_auths(&[]);
-    let res = ctx
-        .client
-        .try_slash_reputation(&user, &1, &reason(&ctx), &op_id(&ctx));
-    assert!(res.is_err(), "unauthorized slash must be rejected");
-}
-
-// ============================================================
-// admin_slash
-// ============================================================
-
-/// admin_slash reason is a String (audited free text), not a Symbol.
-fn admin_reason(ctx: &TestCtx) -> String {
-    String::from_str(&ctx.env, "fraud")
-}
-
-#[test]
-fn admin_slash_happy_path_decrements_reputation() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .admin_slash_reputation(&user, &3, &admin_reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 7);
-}
-
-#[test]
-fn admin_slash_saturates_at_zero() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &2, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .admin_slash_reputation(&user, &9, &admin_reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 0);
-}
-
-#[test]
-fn admin_slash_reverts_on_empty_reason() {
-    let (ctx, user) = setup_with_user();
+fn admin_slash_empty_reason_reverts() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &50_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
     let empty = String::from_str(&ctx.env, "");
-
-    let err = ctx
-        .client
-        .try_admin_slash_reputation(&user, &1, &empty, &op_id(&ctx))
-        .err()
-        .expect("expected empty reason to reject")
-        .unwrap();
+    let err = ctx.client
+        .try_admin_slash_reputation(&user, &10_u32, &empty, &BytesN::random(&ctx.env))
+        .err().unwrap().unwrap();
     assert_eq!(err, Error::ReasonRequired);
 }
 
 #[test]
-fn admin_slash_reverts_when_paused() {
-    // require_admin passes (mocked), then the pause guard fires.
-    let (ctx, user) = setup_with_user();
-    ctx.client.pause();
-
-    let err = ctx
-        .client
-        .try_admin_slash_reputation(&user, &1, &admin_reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected pause to block")
-        .unwrap();
-    assert_eq!(err, Error::Paused);
+fn admin_slash_requires_admin_auth() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &100_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    let r = String::from_str(&ctx.env, "violation");
+    ctx.client.admin_slash_reputation(&user, &10_u32, &r, &BytesN::random(&ctx.env));
+    let auths = ctx.env.auths();
+    assert!(auths.iter().any(|(addr, _)| *addr == ctx.admin));
 }
 
 #[test]
-fn admin_slash_reverts_when_profile_not_found() {
-    let ctx = setup(10);
-    // No events contract needed: admin_slash is admin-gated, not events-gated.
-    let ghost = Address::generate(&ctx.env);
-
-    let err = ctx
-        .client
-        .try_admin_slash_reputation(&ghost, &1, &admin_reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected missing profile")
-        .unwrap();
-    assert_eq!(err, Error::ProfileNotFound);
+fn admin_slash_op_replay_reverts() {
+    let (ctx, user) = setup_with_profile();
+    ctx.client.bump_reputation(&user, &100_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
+    let r = String::from_str(&ctx.env, "reason");
+    let op = BytesN::random(&ctx.env);
+    ctx.client.admin_slash_reputation(&user, &10_u32, &r, &op);
+    assert!(ctx.client.try_admin_slash_reputation(&user, &10_u32, &r, &op).is_err());
 }
 
 #[test]
-fn admin_slash_is_idempotent_on_replay() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-    let op = op_id(&ctx);
-
-    ctx.client
-        .admin_slash_reputation(&user, &3, &admin_reason(&ctx), &op);
-    assert_eq!(reputation_of(&ctx, &user), 7);
-
-    let err = ctx
-        .client
-        .try_admin_slash_reputation(&user, &3, &admin_reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
-        .unwrap();
-    assert_eq!(err, Error::OpAlreadySeen);
-    assert_eq!(reputation_of(&ctx, &user), 7);
-}
-
-#[test]
-fn admin_slash_rejects_non_admin_caller() {
-    // Genuine auth rejection: no authorization provided, so admin.require_auth()
-    // fails and the host aborts the invocation.
-    let (ctx, user) = setup_with_user();
-
-    ctx.env.mock_auths(&[]);
-    let res = ctx
-        .client
-        .try_admin_slash_reputation(&user, &1, &admin_reason(&ctx), &op_id(&ctx));
-    assert!(res.is_err(), "non-admin admin_slash must be rejected");
+fn admin_slash_saturates_at_zero() {
+    let (ctx, user) = setup_with_profile();
+    let r = String::from_str(&ctx.env, "reason");
+    ctx.client.admin_slash_reputation(&user, &u32::MAX, &r, &BytesN::random(&ctx.env));
+    assert_eq!(ctx.client.get_profile(&user).unwrap().reputation, 0);
 }

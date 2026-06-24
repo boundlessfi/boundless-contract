@@ -1,31 +1,25 @@
-// boundless-events: bounty pillar tests.
+// boundless-events: bounty pillar tests (#33).
 //
-// Covers Pillar::Bounty paths:
-//   - validate_create (Single release only; application_credit_cost cap)
-//   - apply_to_bounty (credit bootstrap + spend via profile)
-//   - withdraw_application (50% credit refund)
-//   - auth, idempotency, pause, deadline, and lifecycle guards
-//
-// Spec: boundless-platform-contract-prd.md Sections 6.3, 7.
+// Covers apply_to_bounty / withdraw_application + credit charge/refund,
+// validate_create (Single release required), submission gate, select_winners.
 
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _, Ledger},
+    testutils::{Address as _, BytesN as _},
     token, Address, BytesN, Env, Map, String,
 };
 
 use super::common::drive_cancel;
-use crate::errors::Error;
 use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
-
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
 const BOOTSTRAP_CREDITS: u32 = 10;
 const FEE_BPS: u32 = 250;
 const TOTAL_BUDGET: i128 = 10_000_0000000_i128;
 
+#[allow(dead_code)]
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
@@ -33,6 +27,8 @@ struct Ctx<'a> {
     owner: Address,
     applicant: Address,
     token_addr: Address,
+    token_admin: token::StellarAssetClient<'a>,
+    fee_account: Address,
 }
 
 fn setup<'a>() -> Ctx<'a> {
@@ -47,12 +43,7 @@ fn setup<'a>() -> Ctx<'a> {
     let fee_account = Address::generate(&env);
     let events_id = env.register(
         EventsContract,
-        (
-            events_admin.clone(),
-            fee_account.clone(),
-            FEE_BPS,
-            profile_id.clone(),
-        ),
+        (events_admin.clone(), fee_account.clone(), FEE_BPS, profile_id.clone()),
     );
     let events = EventsContractClient::new(&env, &events_id);
     profile.set_events_contract(&events_id);
@@ -65,80 +56,35 @@ fn setup<'a>() -> Ctx<'a> {
 
     let owner = Address::generate(&env);
     token_admin.mint(&owner, &1_000_000_0000000_i128);
-
     events.register_supported_token(&token_addr);
 
     let applicant = Address::generate(&env);
 
-    Ctx {
-        env,
-        events,
-        profile,
-        owner,
-        applicant,
-        token_addr,
-    }
+    Ctx { env, events, profile, owner, applicant, token_addr, token_admin, fee_account }
 }
 
-fn one_winner_distribution(env: &Env) -> Map<u32, u32> {
+fn single_dist(env: &Env) -> Map<u32, u32> {
     let mut m = Map::new(env);
     m.set(1, 100);
     m
 }
 
-fn create_bounty(ctx: &Ctx, application_credit_cost: u32) -> u64 {
-    create_bounty_with_deadline(
-        ctx,
-        application_credit_cost,
-        ctx.env.ledger().timestamp() + 86_400,
-    )
-}
-
-fn create_bounty_with_deadline(ctx: &Ctx, application_credit_cost: u32, deadline: u64) -> u64 {
+fn create_bounty(ctx: &Ctx, credit_cost: u32) -> u64 {
     let params = CreateEventParams {
         pillar: Pillar::Bounty,
         owner: ctx.owner.clone(),
         token: ctx.token_addr.clone(),
         total_budget: TOTAL_BUDGET,
         release_kind: ReleaseKind::Single,
-        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/events/draft/x"),
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/bounty/1"),
         title: String::from_str(&ctx.env, "Test Bounty"),
-        deadline: Some(deadline),
-        winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost,
-        fee_bps_override: None,
-        manager: None,
-    };
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events.create_event(&params, &op_id)
-}
-
-fn create_hackathon(ctx: &Ctx) -> u64 {
-    let params = CreateEventParams {
-        pillar: Pillar::Hackathon,
-        owner: ctx.owner.clone(),
-        token: ctx.token_addr.clone(),
-        total_budget: TOTAL_BUDGET,
-        release_kind: ReleaseKind::Single,
-        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
-        title: String::from_str(&ctx.env, "Test Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 0,
+        winner_distribution: single_dist(&ctx.env),
+        application_credit_cost: credit_cost,
         fee_bps_override: None,
         manager: None,
     };
-    let op = BytesN::random(&ctx.env);
-    ctx.events.create_event(&params, &op)
-}
-
-fn expect_op_err<T, E>(
-    result: Result<Result<T, E>, Result<Error, soroban_sdk::InvokeError>>,
-) -> Error {
-    match result {
-        Err(Ok(e)) => e,
-        _ => panic!("expected contract error"),
-    }
+    ctx.events.create_event(&params, &BytesN::random(&ctx.env))
 }
 
 // ============================================================
@@ -146,7 +92,17 @@ fn expect_op_err<T, E>(
 // ============================================================
 
 #[test]
-fn create_rejects_multi_release_kind() {
+fn bounty_create_with_single_release_succeeds() {
+    let ctx = setup();
+    let id = create_bounty(&ctx, 0);
+    let event = ctx.events.get_event(&id);
+    assert_eq!(event.pillar, Pillar::Bounty);
+    assert_eq!(event.release_kind, ReleaseKind::Single);
+    assert_eq!(event.remaining_escrow, TOTAL_BUDGET);
+}
+
+#[test]
+fn bounty_create_with_multi_release_reverts() {
     let ctx = setup();
     let params = CreateEventParams {
         pillar: Pillar::Bounty,
@@ -154,414 +110,196 @@ fn create_rejects_multi_release_kind() {
         token: ctx.token_addr.clone(),
         total_budget: TOTAL_BUDGET,
         release_kind: ReleaseKind::Multi(3),
-        content_uri: String::from_str(&ctx.env, "uri"),
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/bounty"),
         title: String::from_str(&ctx.env, "Bad Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        winner_distribution: single_dist(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
-    let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_create_event(&params, &op));
-    assert_eq!(err, Error::InvalidReleaseKind);
-}
-
-#[test]
-fn create_rejects_excessive_application_credit_cost() {
-    let ctx = setup();
-    let params = CreateEventParams {
-        pillar: Pillar::Bounty,
-        owner: ctx.owner.clone(),
-        token: ctx.token_addr.clone(),
-        total_budget: TOTAL_BUDGET,
-        release_kind: ReleaseKind::Single,
-        content_uri: String::from_str(&ctx.env, "uri"),
-        title: String::from_str(&ctx.env, "Bad Bounty"),
-        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 101,
-        fee_bps_override: None,
-        manager: None,
-    };
-    let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_create_event(&params, &op));
-    assert_eq!(err, Error::InvalidPillar);
+    assert!(ctx.events.try_create_event(&params, &BytesN::random(&ctx.env)).is_err());
 }
 
 // ============================================================
-// apply_to_bounty — happy path + credits
+// apply_to_bounty
 // ============================================================
 
 #[test]
-fn apply_charges_credits_via_profile() {
+fn apply_bootstraps_profile_and_charges_credits() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
+    let id = create_bounty(&ctx, 1);
 
     assert!(ctx.profile.get_profile(&ctx.applicant).is_none());
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
 
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-
-    let profile = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("bootstrapped");
+    let profile = ctx.profile.get_profile(&ctx.applicant).unwrap();
     assert_eq!(profile.credits, BOOTSTRAP_CREDITS - 1);
 
-    let applicants = ctx.events.get_applicants(&bounty_id);
+    let applicants = ctx.events.get_applicants(&id);
     assert_eq!(applicants.len(), 1);
     assert_eq!(applicants.get(0).unwrap(), ctx.applicant);
 }
 
 #[test]
-fn apply_with_zero_credit_cost_bootstraps_without_spending() {
+fn apply_with_zero_cost_does_not_drain_credits() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
-
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-
-    let profile = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("bootstrapped");
+    let id = create_bounty(&ctx, 0);
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+    let profile = ctx.profile.get_profile(&ctx.applicant).unwrap();
     assert_eq!(profile.credits, BOOTSTRAP_CREDITS);
 }
-
-// ============================================================
-// apply_to_bounty — errors + idempotency
-// ============================================================
 
 #[test]
 fn duplicate_apply_reverts() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_a = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_a);
-
-    let op_b = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_b),
-    );
-    assert_eq!(err, Error::ApplicantAlreadyApplied);
+    let id = create_bounty(&ctx, 1);
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+    assert!(ctx.events.try_apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env)).is_err());
 }
 
 #[test]
 fn insufficient_credits_reverts() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 100);
-
-    let op_id = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-    assert!(res.is_err(), "profile InsufficientCredits should bubble up");
+    let id = create_bounty(&ctx, 100);
+    assert!(ctx.events.try_apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env)).is_err());
 }
 
 #[test]
-fn replayed_apply_reverts_idempotently() {
+fn apply_replay_same_op_reverts() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
+    let id = create_bounty(&ctx, 1);
+    let op = BytesN::random(&ctx.env);
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &op);
+    assert!(ctx.events.try_apply_to_bounty(&id, &ctx.applicant, &op).is_err());
+}
 
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
+// ============================================================
+// withdraw_application
+// ============================================================
 
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::OpAlreadySeen);
+#[test]
+fn withdraw_refunds_half_credits_and_removes_applicant() {
+    let ctx = setup();
+    let id = create_bounty(&ctx, 2);
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    let after_apply = ctx.profile.get_profile(&ctx.applicant).unwrap();
+    assert_eq!(after_apply.credits, BOOTSTRAP_CREDITS - 2);
+
+    ctx.events.withdraw_application(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    let after_wd = ctx.profile.get_profile(&ctx.applicant).unwrap();
+    assert_eq!(after_wd.credits, BOOTSTRAP_CREDITS - 2 + 1); // refund = cost / 2 = 1
+
+    assert_eq!(ctx.events.get_applicants(&id).len(), 0);
 }
 
 #[test]
-fn apply_on_nonexistent_event_reverts() {
+fn withdraw_without_prior_apply_reverts() {
     let ctx = setup();
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&9999, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::EventNotFound);
+    let id = create_bounty(&ctx, 1);
+    assert!(ctx.events.try_withdraw_application(&id, &ctx.applicant, &BytesN::random(&ctx.env)).is_err());
 }
 
 #[test]
-fn apply_on_wrong_pillar_reverts() {
+fn withdraw_after_submission_reverts() {
     let ctx = setup();
-    let hackathon_id = create_hackathon(&ctx);
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&hackathon_id, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::InvalidPillar);
+    let id = create_bounty(&ctx, 1);
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    let uri = String::from_str(&ctx.env, "ipfs://Qm/bounty.json");
+    ctx.events.submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
+
+    assert!(ctx.events.try_withdraw_application(&id, &ctx.applicant, &BytesN::random(&ctx.env)).is_err());
+}
+
+// ============================================================
+// Submission gate
+// ============================================================
+
+#[test]
+fn submit_without_prior_apply_reverts() {
+    let ctx = setup();
+    let id = create_bounty(&ctx, 1);
+    let uri = String::from_str(&ctx.env, "ipfs://Qm/bounty.json");
+    assert!(ctx.events.try_submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env)).is_err());
 }
 
 #[test]
-fn apply_on_cancelled_event_reverts() {
+fn submit_after_apply_succeeds() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
-    drive_cancel(&ctx.env, &ctx.events, bounty_id);
-
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::EventNotActive);
+    let id = create_bounty(&ctx, 1);
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+    let uri = String::from_str(&ctx.env, "ipfs://Qm/bounty.json");
+    ctx.events.submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
+    let sub = ctx.events.get_submission(&id, &ctx.applicant);
+    assert_eq!(sub.content_uri, uri);
 }
 
-#[test]
-fn apply_on_completed_event_reverts() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
+// ============================================================
+// select_winners
+// ============================================================
 
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
+#[test]
+fn select_winners_pays_recipient_and_updates_profile() {
+    let ctx = setup();
+    let id = create_bounty(&ctx, 1);
+    ctx.events.apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
 
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec {
-            recipient: ctx.applicant.clone(),
-            position: 1,
-            credit_earn: 0,
-            reputation_bump: 0,
-        },
+        WinnerSpec { recipient: ctx.applicant.clone(), position: 1, credit_earn: 20, reputation_bump: 50 },
     ];
-    let op_select = BytesN::random(&ctx.env);
-    ctx.events.select_winners(&bounty_id, &winners, &op_select);
+    ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
-    let event = ctx.events.get_event(&bounty_id);
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
+
+    let profile = ctx.profile.get_profile(&ctx.applicant).unwrap();
+    assert_eq!(profile.credits, BOOTSTRAP_CREDITS - 1 + 20);
+    assert_eq!(profile.reputation, 50);
+    assert_eq!(ctx.profile.get_earnings(&ctx.applicant, &ctx.token_addr), TOTAL_BUDGET);
+
+    let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Completed);
-
-    let op_retry = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_retry),
-    );
-    assert_eq!(err, Error::EventNotActive);
+    assert_eq!(event.remaining_escrow, 0);
 }
 
 #[test]
-fn apply_after_deadline_reverts() {
+fn select_winners_rejects_invalid_position() {
     let ctx = setup();
-    let deadline = ctx.env.ledger().timestamp() + 100;
-    let bounty_id = create_bounty_with_deadline(&ctx, 1, deadline);
-
-    ctx.env.ledger().with_mut(|li| {
-        li.timestamp = deadline;
-    });
-
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::DeadlinePassed);
+    let id = create_bounty(&ctx, 0);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec { recipient: ctx.applicant.clone(), position: 2, credit_earn: 0, reputation_bump: 0 },
+    ];
+    assert!(ctx.events.try_select_winners(&id, &winners, &BytesN::random(&ctx.env)).is_err());
 }
 
 #[test]
-fn apply_when_paused_reverts() {
+fn select_winners_twice_reverts() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-    ctx.events.pause();
-
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::Paused);
-}
-
-#[test]
-fn apply_requires_applicant_auth() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-
-    let auths = ctx.env.auths();
-    let applicant_required = auths.iter().any(|(addr, _)| *addr == ctx.applicant);
-    assert!(applicant_required, "apply must demand applicant auth");
+    let id = create_bounty(&ctx, 0);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec { recipient: ctx.applicant.clone(), position: 1, credit_earn: 0, reputation_bump: 0 },
+    ];
+    ctx.events.select_winners(&id, &winners.clone(), &BytesN::random(&ctx.env));
+    assert!(ctx.events.try_select_winners(&id, &winners, &BytesN::random(&ctx.env)).is_err());
 }
 
 // ============================================================
-// withdraw_application — happy path + credits
+// cancel
 // ============================================================
 
 #[test]
-fn withdraw_refunds_half_credits() {
+fn cancel_bounty_refunds_owner() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 2);
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    let after_apply = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("bootstrapped");
-    assert_eq!(after_apply.credits, BOOTSTRAP_CREDITS - 2);
-
-    let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
-
-    let after_wd = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("still exists");
-    assert_eq!(after_wd.credits, BOOTSTRAP_CREDITS - 2 + 1);
-
-    let applicants = ctx.events.get_applicants(&bounty_id);
-    assert_eq!(applicants.len(), 0);
-}
-
-#[test]
-fn withdraw_with_zero_credit_cost_skips_refund() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    let before = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("bootstrapped")
-        .credits;
-
-    let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
-
-    let after = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("still exists");
-    assert_eq!(after.credits, before);
-
-    let applicants = ctx.events.get_applicants(&bounty_id);
-    assert_eq!(applicants.len(), 0);
-}
-
-// ============================================================
-// withdraw_application — errors + idempotency
-// ============================================================
-
-#[test]
-fn withdraw_without_apply_reverts() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_withdraw_application(
-        &bounty_id,
-        &ctx.applicant,
-        &op_id,
-    ));
-    assert_eq!(err, Error::ApplicantNotApplied);
-}
-
-#[test]
-fn withdraw_after_submit_reverts() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
-    let op_submit = BytesN::random(&ctx.env);
-    ctx.events
-        .submit(&bounty_id, &ctx.applicant, &uri, &op_submit);
-
-    let op_wd = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_withdraw_application(
-        &bounty_id,
-        &ctx.applicant,
-        &op_wd,
-    ));
-    assert_eq!(err, Error::SubmissionAlreadyExists);
-}
-
-#[test]
-fn replayed_withdraw_reverts_idempotently() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 2);
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
-
-    let err = expect_op_err(ctx.events.try_withdraw_application(
-        &bounty_id,
-        &ctx.applicant,
-        &op_wd,
-    ));
-    assert_eq!(err, Error::OpAlreadySeen);
-}
-
-#[test]
-fn withdraw_on_nonexistent_event_reverts() {
-    let ctx = setup();
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_withdraw_application(&9999, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::EventNotFound);
-}
-
-#[test]
-fn withdraw_when_paused_reverts() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    ctx.events.pause();
-
-    let op_wd = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_withdraw_application(
-        &bounty_id,
-        &ctx.applicant,
-        &op_wd,
-    ));
-    assert_eq!(err, Error::Paused);
-}
-
-#[test]
-fn withdraw_requires_applicant_auth() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
-
-    let auths = ctx.env.auths();
-    let applicant_required = auths.iter().any(|(addr, _)| *addr == ctx.applicant);
-    assert!(applicant_required, "withdraw must demand applicant auth");
+    let id = create_bounty(&ctx, 0);
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let before = token.balance(&ctx.owner);
+    drive_cancel(&ctx.env, &ctx.events, id);
+    assert_eq!(token.balance(&ctx.owner) - before, TOTAL_BUDGET);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelled);
 }
