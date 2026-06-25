@@ -107,6 +107,7 @@ fn create_bounty_with_deadline(ctx: &Ctx, application_credit_cost: u32, deadline
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost,
         fee_bps_override: None,
+        manager: None,
     };
     let op_id = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_id)
@@ -125,6 +126,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op)
@@ -158,6 +160,7 @@ fn create_rejects_multi_release_kind() {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let err = expect_op_err(ctx.events.try_create_event(&params, &op));
@@ -179,6 +182,7 @@ fn create_rejects_excessive_application_credit_cost() {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost: 101,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let err = expect_op_err(ctx.events.try_create_event(&params, &op));

@@ -127,6 +127,7 @@ fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, u32>, deadline: Option<u64>) 
         winner_distribution: dist,
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op)
@@ -177,6 +178,7 @@ fn create_rejects_multi_release_kind() {
         winner_distribution: single_winner_dist(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -198,6 +200,7 @@ fn create_rejects_missing_deadline() {
         winner_distribution: single_winner_dist(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -221,6 +224,7 @@ fn create_rejects_past_deadline() {
         winner_distribution: single_winner_dist(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
