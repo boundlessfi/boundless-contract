@@ -300,9 +300,9 @@ pub fn remove_applicant(env: &Env, id: u64, addr: &Address) -> Result<(), Error>
     if slot == 0 {
         return Err(Error::ApplicantNotApplied);
     }
-    let idx = slot - 1;
+    let idx = slot.checked_sub(1).ok_or(Error::ApplicantNotApplied)?;
     let count = applicant_count(env, id);
-    let last_idx = count - 1;
+    let last_idx = count.checked_sub(1).ok_or(Error::EventNotFound)?;
 
     // If not the last entry, swap the last applicant into the freed slot.
     if idx != last_idx {
@@ -324,7 +324,7 @@ pub fn remove_applicant(env: &Env, id: u64, addr: &Address) -> Result<(), Error>
         .remove(&DataKey::EventApplicantSlot(id, addr.clone()));
 
     let count_key = DataKey::EventApplicantCount(id);
-    let new_count = count - 1;
+    let new_count = count.checked_sub(1).ok_or(Error::EventNotFound)?;
     if new_count == 0 {
         env.storage().persistent().remove(&count_key);
     } else {

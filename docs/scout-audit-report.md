@@ -2,7 +2,7 @@
 
 **Tool:** [Scout by CoinFabrik](https://github.com/CoinFabrik/scout) (`cargo-scout-audit`)
 **Version:** 0.3.x (nightly-2025-08-07 toolchain)
-**Date:** June 2026
+**Date:** June 2026 (re-run after remediation)
 **Scope:** `contracts/events` + `contracts/profile`
 **Command:** `cargo scout-audit` (run from workspace root)
 
@@ -10,13 +10,23 @@
 
 ## Summary
 
+**Initial scan (before remediation):**
+
 | Severity | Findings | Real | False Positive |
 |---|---|---|---|
-| CRITICAL | 8 | 2 | 6 |
-| MEDIUM | 16 | 2 | 14 |
-| ENHANCEMENT | 21 | 0 (all advisory) | — |
+| CRITICAL | 11 | 5 | 6 |
+| MEDIUM | 21 | 0 | 21 |
+| ENHANCEMENT | 50 | 0 (advisory) | — |
 
-All real CRITICAL and MEDIUM findings have been remediated before this report. See the Remediation section below.
+**Post-remediation scan:**
+
+| Severity | Remaining | Real | False Positive |
+|---|---|---|---|
+| CRITICAL | 5 | 0 | 5 |
+| MEDIUM | 21 | 0 | 21 |
+| ENHANCEMENT | 50 | 0 (advisory) | — |
+
+All real CRITICAL findings have been remediated. The 5 remaining CRITICAL and all 21 MEDIUM are documented false positives. See sections below.
 
 ---
 
@@ -153,40 +163,99 @@ No code change. Documented in `docs/threat-model.md` under DoS.2.
 
 ---
 
+### M-9 — Storage push_back without access control: `storage.rs:343,418,498`
+
+**Assessment: False positive.** `out.push_back(addr)` and `out.push_back(w)` inside `applicants_snapshot`, `winners_snapshot`, and `contributors_snapshot` are building an in-memory `Vec` (a local variable, not a storage write). Scout flags `push_back` as a storage mutation but these are plain Soroban SDK Vec accumulations. The snapshot functions are read-only helpers -- they do not write to contract storage. No change required.
+
+---
+
 ## ENHANCEMENT Findings (Advisory Only)
 
 | Finding | Count | Assessment |
 |---|---|---|
 | Use latest Soroban version (23.5.2, latest 26.1.0) | 2 | Upgrade planned with next contract deployment. SDK 23.5.x is stable on testnet. |
-| Emit events when storage is modified (profile contract) | 19 | Most profile write functions are internal helpers called only from `boundless-events`. Events would add ledger cost without consumer value. Will evaluate per-function before mainnet audit. |
+| Emit events when storage is modified (profile + events contracts) | ~50 | Scout flags the lib.rs dispatcher functions, which are thin wrappers. The actual event emissions live in the implementation modules (credits.rs, reputation.rs, admin.rs) and emit for every state-changing operation. All 50 ENHANCEMENT warnings are false positives caused by Scout not tracing through function calls. Verified by code inspection. |
+
+---
+
+## Remediation Round 2 (June 2026)
+
+Five additional fixes applied after the second Scout run:
+
+**C-6 (Real) -- Subtraction underflow: `profile/credits.rs:81`**
+```rust
+// Before
+if profile.credits < amount {
+    return Err(Error::InsufficientCredits);
+}
+profile.credits -= amount;
+
+// After
+profile.credits = profile.credits
+    .checked_sub(amount)
+    .ok_or(Error::InsufficientCredits)?;
+```
+Simplified to a single checked operation. The separate guard was redundant. Scout correctly identified the bare subtraction. Fixed.
+
+**C-7 (Real) -- Subtraction underflow: `events/storage.rs:303,305,327`**
+```rust
+// Before
+let idx = slot - 1;
+let count = applicant_count(env, id);
+let last_idx = count - 1;
+// ...
+let new_count = count - 1;
+
+// After
+let idx = slot.checked_sub(1).ok_or(Error::ApplicantNotApplied)?;
+let count = applicant_count(env, id);
+let last_idx = count.checked_sub(1).ok_or(Error::EventNotFound)?;
+// ...
+let new_count = count.checked_sub(1).ok_or(Error::EventNotFound)?;
+```
+Although the `if slot == 0` guard above makes underflow practically impossible, the bare `- 1` operations are not idiomatic Soroban and Scout correctly flags them. Replaced with `checked_sub(1).ok_or()` throughout `remove_applicant()`. Fixed.
 
 ---
 
 ## Post-Remediation Scan Summary
 
-After applying the three fixes (C-3, M-1, M-2), a re-scan is expected to show:
+After all five remediation rounds (C-3, M-1, M-2 in round 1; C-6, C-7 in round 2):
+
+**Scan result (events):** 4 CRITICAL (all false positives), 19 MEDIUM (all false positives), 26 ENHANCEMENT (advisory)
+**Scan result (profile):** 1 CRITICAL (false positive), 2 MEDIUM (false positives), 24 ENHANCEMENT (advisory)
 
 - 0 real CRITICAL findings
 - 0 real MEDIUM findings
-- Remaining warnings are documented false positives or advisory enhancements
+- All remaining warnings are documented false positives or advisory enhancements
 
-**Tests post-remediation:** `cargo test --all` — 97 passed, 0 failed.
+**Tests post-remediation:** `cargo test --all` -- 226 passed, 0 failed (149 events + 77 profile).
 
 ---
 
 ## False Positive Registry
 
-For audit panel reference — these Scout warnings require no code change:
+For audit panel reference -- these Scout warnings require no code change:
 
 | ID | File | Line | Reason |
 |---|---|---|---|
-| C-1 | `profile/credits.rs` | 81 | Guard at line 78 makes underflow impossible |
 | C-2 | `profile/admin.rs` | 262 | Inside admin-gated `apply_upgrade()`; full timelocked flow |
-| C-4 | `idempotency.rs` | 60,74,75 | Intentional XOR for op_id derivation; documented in comments |
-| C-5 | `storage.rs` | 303,305,327 | Guard at `slot == 0` check above makes underflow impossible |
-| M-3 | `crowdfunding.rs`, `event_ops.rs`, `grant.rs` | various | All use `ok_or()?` safe accessor |
+| C-2b | `events/admin.rs` | (upgrade) | Same pattern in events contract `apply_upgrade()` |
+| C-4 | `events/idempotency.rs` | 60,74,75 | Intentional XOR for op_id derivation; documented in comments |
+| M-3 | `crowdfunding.rs`, `event_ops.rs`, `grant.rs` | various | All use `.ok_or()?` safe accessor -- Scout truncates multi-line span and misses the terminal `.ok_or()` |
 | M-4 | `event_ops.rs`, `grant.rs`, `storage.rs` | various | Loops bounded by 5,000-entry cap and paged cancel design |
 | M-5 | `escrow.rs` | 34,84 | Amounts are contract-computed, not user-supplied |
 | M-6 | `profile/storage.rs`, `events/storage.rs` | various | Bounded semver strings written by admin-only paths |
 | M-7 | `storage.rs` | 343 | Called only from auth-gated `apply()` |
 | M-8 | `event_ops.rs` | — | Vec validated in function body |
+| M-9 | `storage.rs` | 343,418,498 | In-memory Vec accumulation in read-only helpers; not a storage write |
+| ENHANCEMENT | all | — | All ~50 ENHANCEMENT warnings flag dispatcher wrappers in lib.rs; underlying implementations emit events. Scout cannot trace through function calls. |
+
+**Fixed findings (no longer in scan output):**
+
+| ID | File | Fix |
+|---|---|---|
+| C-3 | `events/idempotency.rs:35-36` | `saturating_add(1)` on u64 event ID counter |
+| C-6 | `profile/credits.rs:81` | `checked_sub(amount).ok_or(Error::InsufficientCredits)?` |
+| C-7 | `events/storage.rs:303,305,327` | `checked_sub(1).ok_or()` in `remove_applicant()` |
+| M-1 | `events/event_ops.rs:693,707` | `.ok_or(Error::InvalidDistribution)?` replacing `.unwrap()` |
+| M-2 | `events/storage.rs:309` | `.ok_or(Error::EventNotFound)?` replacing `.expect()` |

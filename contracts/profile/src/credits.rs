@@ -75,10 +75,9 @@ pub fn spend(
     }
 
     let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
-    if profile.credits < amount {
-        return Err(Error::InsufficientCredits);
-    }
-    profile.credits -= amount;
+    profile.credits = profile.credits
+        .checked_sub(amount)
+        .ok_or(Error::InsufficientCredits)?;
     storage::set_profile(env, &user, &profile);
 
     evt::CreditsSpent {

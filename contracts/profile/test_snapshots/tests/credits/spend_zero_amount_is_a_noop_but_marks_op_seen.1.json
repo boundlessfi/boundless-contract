@@ -38,7 +38,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "bytes": "ae64334b1ad12d34951317d29861a07c7a0e49b67323be5a18bd811e50a61d33"
+                  "bytes": "b18f4f97ce5571236a7cbe680dfe9cc5c32b09e6e275d8deb0505b5e1ec24ca9"
                 }
               ]
             }
@@ -66,7 +66,7 @@
                   "symbol": "noop"
                 },
                 {
-                  "bytes": "34850e61dcbc2752cdf8a08280bd7f34c168dca79c66e347b50a1369ba6d39a7"
+                  "bytes": "67b4a2050113acf07ea4b4bfbf3c614321f802764b29479bedd78845ededbbea"
                 }
               ]
             }
@@ -131,7 +131,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "34850e61dcbc2752cdf8a08280bd7f34c168dca79c66e347b50a1369ba6d39a7"
+                  "bytes": "67b4a2050113acf07ea4b4bfbf3c614321f802764b29479bedd78845ededbbea"
                 }
               ]
             },
@@ -151,7 +151,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "34850e61dcbc2752cdf8a08280bd7f34c168dca79c66e347b50a1369ba6d39a7"
+                      "bytes": "67b4a2050113acf07ea4b4bfbf3c614321f802764b29479bedd78845ededbbea"
                     }
                   ]
                 },
@@ -176,7 +176,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "ae64334b1ad12d34951317d29861a07c7a0e49b67323be5a18bd811e50a61d33"
+                  "bytes": "b18f4f97ce5571236a7cbe680dfe9cc5c32b09e6e275d8deb0505b5e1ec24ca9"
                 }
               ]
             },
@@ -196,7 +196,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "ae64334b1ad12d34951317d29861a07c7a0e49b67323be5a18bd811e50a61d33"
+                      "bytes": "b18f4f97ce5571236a7cbe680dfe9cc5c32b09e6e275d8deb0505b5e1ec24ca9"
                     }
                   ]
                 },

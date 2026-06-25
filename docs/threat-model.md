@@ -1,7 +1,7 @@
 # Boundless Platform — STRIDE Threat Model
 
-**Version:** 1.0
-**Date:** June 2026
+**Version:** 1.1
+**Date:** June 2026 (rev. June 2026 after second Scout remediation)
 **Scope:** `boundless-events` + `boundless-profile` Soroban contracts and the off-chain orchestrator (`boundless-nestjs`)
 **Prepared by:** Boundless Engineering
 **Status:** Submitted for SDF Soroban Security Audit Program
@@ -152,6 +152,8 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | Tamp.4 | A malicious or compromised Stellar RPC node returns forged event data to the backend indexer, causing the platform to display incorrect state. | Backend event indexer, Nodies RPC |
 | Tamp.5 | The WASM hash in a `propose_upgrade` call is quietly replaced between proposal and application to install malicious contract logic. | Contract upgrade flow (`admin.rs`) |
 | Tamp.6 | An attacker intercepts and modifies a partially-signed multi-sig transaction in transit to change the operation parameters (e.g., new admin address). | Admin multi-sig signing workflow |
+| Tamp.7 | An integer underflow in `spend_credits` allows a builder to spend more credits than their balance, wrapping the counter and corrupting credits accounting across the platform. | `boundless-profile` contract, `credits.rs` |
+| Tamp.8 | An integer underflow in `remove_applicant` corrupts the applicant index (slot or count wraps to u32::MAX), causing subsequent lookups to find phantom applicants or block legitimate removals. | `boundless-events` contract, `storage.rs` |
 
 #### Repudiation
 
@@ -216,6 +218,8 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **Tamp.4** | The backend verifies event existence against the contract before acting (read-then-act). The Nodies RPC endpoint is managed and dedicated; the backend does not follow `_links` navigation. Soroban event payloads include the emitting contract ID; the indexer filters on the known contract address. |
 | **Tamp.5** | `propose_upgrade(wasm_hash, new_version)` stores the WASM hash on-chain. `apply_upgrade()` can only be called after the timelock elapses (~1 day) and re-verifies against the stored hash. The proposal is public on-chain; off-chain monitors can detect unexpected upgrade proposals. The admin multi-sig must authorize both steps. |
 | **Tamp.6** | Multi-sig transactions are built offline, inspected before signing, and signed independently by each signer. The `verify-multisig.sh` script validates the on-chain signer configuration. Future target state: hardware keys (Yubikey/Ledger) eliminate in-memory key exposure. |
+| **Tamp.7** | `spend_credits` uses `profile.credits.checked_sub(amount).ok_or(Error::InsufficientCredits)?`. The `checked_sub` returns `None` on underflow; `ok_or` converts it to a typed contract error. The operation reverts atomically -- no partial state is written. The separate `if profile.credits < amount` guard was redundant and has been removed, leaving a single authoritative check. Fixed in Scout remediation round 2 (`profile/credits.rs`). |
+| **Tamp.8** | `remove_applicant` now uses `slot.checked_sub(1).ok_or(Error::ApplicantNotApplied)?` and `count.checked_sub(1).ok_or(Error::EventNotFound)?` for all three arithmetic operations. Even though the `if slot == 0` guard above makes underflow structurally impossible, checked arithmetic makes the invariant explicit and contract-level: if the guard were ever removed or the code path changed, the checked operation would surface the error rather than silently wrapping. Fixed in Scout remediation round 2 (`events/storage.rs`). |
 | **Repud.1** | `select_winners` emits a `WinnersSelected` Soroban event containing the event ID, winner addresses, and amounts. This event is immutable on the Stellar ledger and publicly auditable on Stellar Expert. |
 | **Repud.2** | Every USDC release is an on-chain SAC `transfer` call. The transaction hash, sender, recipient, and amount are permanently recorded on the Stellar ledger. |
 | **Repud.3** | Every admin KYC action (sync, retrigger, override) is recorded by `AdminAuditService` inside a database transaction with the staff member's ID, action type, target user ID, timestamp, and decision reason. The audit log is append-only. |
@@ -270,10 +274,12 @@ All six STRIDE categories produced actionable threats. The most significant find
 
 ### Post-Modeling Changes
 
-Two issues surfaced during the modelling process that were not previously documented:
+Four issues surfaced during or directly after the modelling process:
 
 1. The orchestrator key's scope was not formally written down anywhere. This threat model prompted us to document the key's exact permissions and rotation procedure in the admin runbook.
-2. The audit log for KYC overrides did not originally include the `reason` field in the initial implementation. Reviewing the Repudiation category prompted us to confirm this was added and tested — it is present in `AdminKycActionsService.override()`.
+2. The audit log for KYC overrides did not originally include the `reason` field in the initial implementation. Reviewing the Repudiation category prompted us to confirm this was added and tested -- it is present in `AdminKycActionsService.override()`.
+3. **(v1.1)** A second Scout static analysis run after this document was first published identified two previously-undocumented integer underflow vectors: `profile/credits.rs` (Tamp.7) and `events/storage.rs` (Tamp.8). Both were fixed by converting bare `- 1` and `-= amount` operations to `checked_sub` with typed error returns. These threats have been added to Section 2 and Section 3 in this revision.
+4. **(v1.1)** The ENHANCEMENT category in the Scout report flagged ~50 profile contract functions for missing event emissions. Code review confirmed all state-mutating functions already emit events in their implementation modules; Scout cannot trace through function call chains. Documented as false positives.
 
 ### Living Document Commitment
 
@@ -316,8 +322,8 @@ This threat model will be revisited before mainnet launch (Tranche 3) and any ti
 |---|---|---|
 | SCF funded | Yes | SCF grant recipient; Tranche 2 submission |
 | Repo hygiene | Yes | `README.md`, `CONTRIBUTING.md`, `BACKLOG.md`, `docs/`, clean CI |
-| Integration tests | Yes | 15+ smoke scripts against live testnet; `cargo test` 97/97 passing |
-| Threat model | Yes | This document |
+| Integration tests | Yes | 15+ smoke scripts against live testnet; `cargo test --all` 226/226 passing (149 events + 77 profile) |
+| Threat model | Yes | This document (v1.1) |
 | Dataflow diagram | Yes | Section 1.2 above |
-| Tooling scan | Done | Scout (CoinFabrik) run June 2026; report at `docs/scout-audit-report.md` |
-| Remediation plan | Done | June 2026 Stellar-skill audit (all HIGH/MEDIUM closed) + Scout findings remediated; see `docs/audit-2026-06-stellar-skill.md`, `docs/scout-audit-report.md`, `BACKLOG.md` |
+| Tooling scan | Done | Scout (CoinFabrik) two runs June 2026; report at `docs/scout-audit-report.md` |
+| Remediation plan | Done | June 2026 Stellar-skill audit (all HIGH/MEDIUM closed); Scout round 1 (C-3, M-1, M-2 fixed); Scout round 2 (C-6, C-7 fixed -- integer underflows in `credits.rs` and `storage.rs`). 0 real CRITICAL or MEDIUM findings remaining. See `docs/scout-audit-report.md`, `BACKLOG.md`. |
