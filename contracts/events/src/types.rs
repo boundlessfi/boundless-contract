@@ -128,6 +128,10 @@ pub struct CreateEventParams {
     pub winner_distribution: Map<u32, u32>,
     pub application_credit_cost: u32,
     pub fee_bps_override: Option<u32>,
+    // Optional management authority. None => owner manages (legacy behavior).
+    // When set, this address authorizes select_winners + cancel instead of the
+    // owner, so funding source and management identity can differ.
+    pub manager: Option<Address>,
 }
 
 // ============================================================
@@ -208,6 +212,12 @@ pub enum DataKey {
     // Events
     NextEventId,
     Event(u64),
+
+    // Per-event management authority override. When present, this address
+    // (not event.owner) authorizes select_winners + cancel. Lets an org fund
+    // from any wallet (owner) while keeping management bound to its canonical
+    // wallet. Absent => management falls back to event.owner (legacy events).
+    EventManager(u64),
 
     // Per-event applicant list. Paged: ApplicantCount + ApplicantAt(idx).
     // Slot index (1-based) for O(1) membership / O(1) swap-remove. Slot of

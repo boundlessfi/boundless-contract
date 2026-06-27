@@ -172,8 +172,16 @@ pub fn claim_milestone(
         return Err(Error::InsufficientEscrow);
     }
 
-    // Move money.
-    escrow::release(env, &event.token, &recipient, amount);
+    // Move money. Crowdfunding recipients (builders) bear the platform fee: it
+    // is taken from each milestone payout here, because backers deposited their
+    // full pledge fee-free. Other pillars already took the fee at deposit, so
+    // they release the full amount. Either way the full `amount` leaves escrow.
+    if is_crowdfunding {
+        let bps = escrow::effective_fee_bps(env, event.fee_bps_override);
+        escrow::release_with_fee_at(env, &event.token, &recipient, amount, bps);
+    } else {
+        escrow::release(env, &event.token, &recipient, amount);
+    }
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     storage::mark_milestone_claimed(env, event_id, &recipient, milestone);
     if is_crowdfunding {

@@ -52,6 +52,14 @@ const MIN_CONTRIBUTION_STROOPS: i128 = 100_000_000_i128; // 10 * 10^7
 // ============================================================
 // CREATE EVENT
 // ============================================================
+/// The address authorized to manage an event (select winners, cancel). A
+/// per-event manager override takes precedence; otherwise management falls back
+/// to the event owner (legacy events created before manager support). This
+/// decouples the funding source (owner) from the operating identity (manager).
+fn resolve_manager(env: &Env, event_id: u64, owner: &Address) -> Address {
+    storage::get_event_manager(env, event_id).unwrap_or_else(|| owner.clone())
+}
+
 pub fn create_event(
     env: &Env,
     params: CreateEventParams,
@@ -153,6 +161,12 @@ pub fn create_event(
     };
     storage::set_event(env, id, &record);
 
+    // Record the management authority override when the owner delegates it (so
+    // an org can fund from any wallet but keep management on its own wallet).
+    if let Some(manager) = &params.manager {
+        storage::set_event_manager(env, id, manager);
+    }
+
     // Crowdfunding: pre-seat the builder as the sole winner at position 1.
     if is_crowdfunding {
         storage::append_winner(
@@ -181,6 +195,23 @@ pub fn create_event(
 
     idempotency::mark_seen(env, &op_id);
     Ok(id)
+}
+
+/// Re-assign (or set) the management authority for an event. Gated by the
+/// current manager (the override if present, else the owner), so an org can
+/// rotate its operating wallet but an outsider cannot hijack management.
+pub fn set_manager(env: &Env, event_id: u64, new_manager: Address) -> Result<(), Error> {
+    admin::require_not_paused(env)?;
+    let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    resolve_manager(env, event_id, &event.owner).require_auth();
+    storage::set_event_manager(env, event_id, &new_manager);
+    Ok(())
+}
+
+/// The current management authority for an event (override if set, else owner).
+pub fn get_manager(env: &Env, event_id: u64) -> Result<Address, Error> {
+    let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(resolve_manager(env, event_id, &event.owner))
 }
 
 // ============================================================
@@ -219,10 +250,18 @@ pub fn add_funds(
         }
     }
 
-    // Use the rate snapshotted at publish so add_funds matches the program's
-    // quoted rate even if the contract default changes mid-flight.
-    let effective_bps = escrow::effective_fee_bps(env, event.fee_bps_override);
-    let credited = escrow::deposit_with_fee_at(env, &event.token, &from, amount, effective_bps);
+    // Fee model is per-pillar. Crowdfunding backers pay EXACTLY their pledge:
+    // the platform fee is borne by the builder and taken at claim_milestone, so
+    // a cancelled campaign refunds backers in full. Every other pillar charges
+    // the fee on top here (the funder is the program owner/sponsor).
+    let credited = if matches!(event.pillar, Pillar::Crowdfunding) {
+        escrow::deposit_no_fee(env, &event.token, &from, amount)
+    } else {
+        // Rate snapshotted at publish so add_funds matches the program's quoted
+        // rate even if the contract default changes mid-flight.
+        let effective_bps = escrow::effective_fee_bps(env, event.fee_bps_override);
+        escrow::deposit_with_fee_at(env, &event.token, &from, amount, effective_bps)
+    };
     event.remaining_escrow = event.remaining_escrow.saturating_add(credited);
 
     if from != event.owner {
@@ -293,7 +332,8 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
         return Err(Error::CancellationAlreadyStarted);
     }
 
-    event.owner.require_auth();
+    // Management authority: the per-event manager override if set, else owner.
+    resolve_manager(env, event_id, &event.owner).require_auth();
 
     let remaining = event.remaining_escrow;
     let count = storage::contributor_count(env, event_id);
@@ -369,7 +409,8 @@ pub fn process_cancel_batch(
     if !matches!(event.status, EventStatus::Cancelling) {
         return Err(Error::CancellationNotStarted);
     }
-    event.owner.require_auth();
+    // Management authority: the per-event manager override if set, else owner.
+    resolve_manager(env, event_id, &event.owner).require_auth();
 
     let mut state =
         storage::get_cancellation_state(env, event_id).ok_or(Error::CancellationNotStarted)?;
@@ -431,7 +472,8 @@ pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<()
     if !matches!(event.status, EventStatus::Cancelling) {
         return Err(Error::CancellationNotStarted);
     }
-    event.owner.require_auth();
+    // Management authority: the per-event manager override if set, else owner.
+    resolve_manager(env, event_id, &event.owner).require_auth();
 
     let state =
         storage::get_cancellation_state(env, event_id).ok_or(Error::CancellationNotStarted)?;
@@ -590,7 +632,8 @@ pub fn select_winners(
         return Err(Error::InvalidPillar);
     }
 
-    event.owner.require_auth();
+    // Management authority: the per-event manager override if set, else owner.
+    resolve_manager(env, event_id, &event.owner).require_auth();
 
     // One-shot per event: detect a prior selection by an anchor row
     // (milestone == None). Crowdfunding's create_event seeds an anchor too,
@@ -647,7 +690,10 @@ pub fn select_winners(
             // First pass: compute per-winner amounts and verify total fits.
             let mut total_owed: i128 = 0;
             for spec in winners.iter() {
-                let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
+                let percent = event
+                    .winner_distribution
+                    .get(spec.position)
+                    .ok_or(Error::InvalidDistribution)? as i128;
                 let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
                 if amount <= 0 {
                     return Err(Error::InvalidDistribution);
@@ -661,7 +707,10 @@ pub fn select_winners(
             // Second pass: release per winner with all four profile-side calls.
             for (idx, spec) in winners.iter().enumerate() {
                 let sub_idx = idx as u8;
-                let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
+                let percent = event
+                    .winner_distribution
+                    .get(spec.position)
+                    .ok_or(Error::InvalidDistribution)? as i128;
                 let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
 
                 escrow::release(env, &event.token, &spec.recipient, amount);

@@ -37,6 +37,7 @@ struct Ctx<'a> {
     profile: ProfileContractClient<'a>,
     builder: Address,
     events_admin: Address,
+    fee_account: Address,
     token_addr: Address,
     token_admin: token::StellarAssetClient<'a>,
 }
@@ -81,6 +82,7 @@ fn setup<'a>() -> Ctx<'a> {
         profile,
         builder,
         events_admin,
+        fee_account,
         token_addr,
         token_admin,
     }
@@ -105,6 +107,7 @@ fn create_campaign(ctx: &Ctx, milestones: u32) -> u64 {
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op)
@@ -169,6 +172,7 @@ fn create_rejects_single_release_kind() {
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -190,6 +194,7 @@ fn create_rejects_missing_deadline() {
         winner_distribution: single_dist_100_at_1(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -214,6 +219,7 @@ fn create_rejects_distribution_with_multiple_positions() {
         winner_distribution: dist,
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -266,72 +272,72 @@ fn builder_top_up_does_not_appear_in_contributor_list() {
 // ============================================================
 
 #[test]
-fn claim_milestone_splits_evenly_across_remaining() {
-    // 3 milestones, escrow raised = 900 USDC. Expected payouts:
-    //   m0 -> 900 / 3 = 300, leaving 600.
-    //   m1 -> 600 / 2 = 300, leaving 300.
-    //   m2 -> 300 (final drains remainder), leaving 0.
+fn claim_milestone_splits_evenly_and_charges_fee_at_release() {
+    // 3 milestones, escrow raised = 900 USDC. The builder bears the 2.5% fee,
+    // taken from each payout (backers deposited their full pledge fee-free):
+    //   m0 -> 900/3 = 300 gross; builder +292.5, fee_account +7.5; leaves 600.
+    //   m1 -> 600/2 = 300 gross; builder +292.5, fee_account +7.5; leaves 300.
+    //   m2 -> 300 gross (final);  builder +292.5, fee_account +7.5; leaves 0.
+    // Builder nets 877.5 (= 900 * 0.975); platform collects 22.5 (= 900 * .025).
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
     let backer = Address::generate(&ctx.env);
     back(&ctx, id, &backer, 900_0000000_i128);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let fee_before = token.balance(&ctx.fee_account);
 
     let op_m0 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &0_u32, &op_m0);
-    assert_eq!(token.balance(&ctx.builder), 300_0000000_i128);
-    assert_eq!(
-        ctx.events.get_event(&id).remaining_escrow,
-        600_0000000_i128
-    );
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &0_u32, &op_m0);
+    assert_eq!(token.balance(&ctx.builder), 292_5000000_i128);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 7_5000000_i128);
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 600_0000000_i128);
 
     let op_m1 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.builder, &1_u32, &0_u32, &0_u32, &op_m1);
-    assert_eq!(token.balance(&ctx.builder), 600_0000000_i128);
-    assert_eq!(
-        ctx.events.get_event(&id).remaining_escrow,
-        300_0000000_i128
-    );
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &1_u32, &0_u32, &0_u32, &op_m1);
+    assert_eq!(token.balance(&ctx.builder), 585_0000000_i128);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 15_0000000_i128);
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 300_0000000_i128);
 
     let op_m2 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.builder, &2_u32, &0_u32, &0_u32, &op_m2);
-    assert_eq!(token.balance(&ctx.builder), 900_0000000_i128);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &2_u32, &0_u32, &0_u32, &op_m2);
+    assert_eq!(token.balance(&ctx.builder), 877_5000000_i128);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 22_5000000_i128);
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);
     assert_eq!(event.status, EventStatus::Completed);
 }
 
 #[test]
-fn claim_milestone_last_drains_dust_remainder() {
-    // 3 milestones, raised 100_000_001 stroops (just above MIN_CONTRIB and
-    // not divisible by 3). Expected payouts:
-    //   m0 -> 100_000_001 / 3 = 33_333_333, leaving 66_666_668.
-    //   m1 -> 66_666_668 / 2 = 33_333_334, leaving 33_333_334.
-    //   m2 -> 33_333_334 (final drains remainder), leaving 0.
+fn claim_milestone_last_drains_dust_with_fee() {
+    // 3 milestones, raised 100_000_001 stroops (just above MIN_CONTRIB and not
+    // divisible by 3). The builder nets the raised amount minus the 2.5% fee;
+    // the fee account collects the fee; together they drain escrow exactly so
+    // no dust is stranded, even with per-milestone rounding.
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
     let backer = Address::generate(&ctx.env);
     back(&ctx, id, &backer, 100_000_001_i128);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
-    let bal_before = token.balance(&ctx.builder);
+    let builder_before = token.balance(&ctx.builder);
+    let fee_before = token.balance(&ctx.fee_account);
 
-    let op_m0 = BytesN::random(&ctx.env);
-    ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op_m0);
-    let op_m1 = BytesN::random(&ctx.env);
-    ctx.events
-        .claim_milestone(&id, &ctx.builder, &1_u32, &0, &0, &op_m1);
-    let op_m2 = BytesN::random(&ctx.env);
-    ctx.events
-        .claim_milestone(&id, &ctx.builder, &2_u32, &0, &0, &op_m2);
+    for m in 0u32..3 {
+        let op = BytesN::random(&ctx.env);
+        ctx.events.claim_milestone(&id, &ctx.builder, &m, &0, &0, &op);
+    }
 
-    let bal_after = token.balance(&ctx.builder);
+    let builder_delta = token.balance(&ctx.builder) - builder_before;
+    let fee_delta = token.balance(&ctx.fee_account) - fee_before;
+    assert!(fee_delta > 0, "platform collects a fee at release");
     assert_eq!(
-        bal_after - bal_before,
+        builder_delta + fee_delta,
         100_000_001_i128,
-        "all raised funds paid out, no dust stranded"
+        "builder net + fee drains all raised funds, no dust stranded"
     );
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);
@@ -378,6 +384,57 @@ fn claim_milestone_with_empty_escrow_reverts() {
         .events
         .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op);
     assert!(res.is_err());
+}
+
+// ============================================================
+// fee model: backer pays exactly their pledge, creator bears the fee
+// ============================================================
+
+#[test]
+fn backer_pays_exactly_pledge_and_creator_bears_fee() {
+    // Regression for the fee-on-top bug: a backer holding EXACTLY their pledge
+    // must be able to fund. The old model pulled pledge + fee from the backer
+    // and reverted for a wallet that held only the pledge. Now the fee is borne
+    // by the builder and taken at release, so deposit pulls exactly the pledge.
+    let ctx = setup();
+    let id = create_campaign(&ctx, 1);
+
+    let backer = Address::generate(&ctx.env);
+    let pledge = 100_0000000_i128; // exactly 100 USDC, no slack for a fee
+    fund(&ctx, &backer, pledge);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let fee_before = token.balance(&ctx.fee_account);
+
+    let op = BytesN::random(&ctx.env);
+    ctx.events.add_funds(&id, &backer, &pledge, &op);
+
+    // Backer paid exactly their pledge; no fee taken at deposit.
+    assert_eq!(token.balance(&backer), 0, "backer pays exactly the pledge");
+    assert_eq!(
+        token.balance(&ctx.fee_account),
+        fee_before,
+        "no fee charged at deposit"
+    );
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, pledge);
+
+    // Single milestone: the builder claims and the fee is taken from the payout.
+    let claim = BytesN::random(&ctx.env);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &claim);
+
+    let fee = pledge * FEE_BPS as i128 / 10_000_i128; // 2.5 USDC
+    assert_eq!(
+        token.balance(&ctx.builder),
+        pledge - fee,
+        "builder nets pledge minus the fee"
+    );
+    assert_eq!(
+        token.balance(&ctx.fee_account) - fee_before,
+        fee,
+        "platform collects the fee at release"
+    );
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
 }
 
 // ============================================================

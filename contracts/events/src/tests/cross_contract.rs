@@ -1,8 +1,8 @@
 // boundless-events: cross-contract integration test.
 //
 // Deploys boundless-events + a real boundless-profile, wires them together,
-// creates a Bounty, and walks an applicant through apply / withdraw to verify
-// the cross-contract credit charging works end-to-end.
+// and exercises cross-contract flows (select_winners, submit, cancel, grants).
+// Bounty apply / withdraw coverage lives in tests/bounty_pillar.rs.
 //
 // Spec: boundless-platform-contract-prd.md Section 4; boundless-credits-reputation-prd.md Section 10.1.
 
@@ -115,104 +115,10 @@ fn create_bounty(ctx: &Ctx, application_credit_cost: u32) -> u64 {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost,
         fee_bps_override: None,
+        manager: None,
     };
     let op_id = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_id)
-}
-
-#[test]
-fn apply_charges_credits_via_profile() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    // Pre-apply: profile does not exist yet.
-    assert!(ctx.profile.get_profile(&ctx.applicant).is_none());
-
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-
-    // Profile should be bootstrapped and one credit lighter.
-    let profile = ctx.profile.get_profile(&ctx.applicant).expect("bootstrapped");
-    assert_eq!(profile.credits, BOOTSTRAP_CREDITS - 1);
-
-    // Applicant should be on the event's applicants list.
-    let applicants = ctx.events.get_applicants(&bounty_id);
-    assert_eq!(applicants.len(), 1);
-    assert_eq!(applicants.get(0).unwrap(), ctx.applicant);
-}
-
-#[test]
-fn duplicate_apply_reverts() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_a = BytesN::random(&ctx.env);
-    ctx.events.apply_to_bounty(&bounty_id, &ctx.applicant, &op_a);
-
-    let op_b = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_b);
-    assert!(res.is_err(), "second apply should revert");
-}
-
-#[test]
-fn withdraw_refunds_half_credits() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 2); // cost 2, refund 1
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
-    let after_apply = ctx
-        .profile
-        .get_profile(&ctx.applicant)
-        .expect("bootstrapped");
-    assert_eq!(after_apply.credits, BOOTSTRAP_CREDITS - 2);
-
-    let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
-
-    let after_wd = ctx.profile.get_profile(&ctx.applicant).expect("still exists");
-    // Refund is cost / 2 = 1
-    assert_eq!(after_wd.credits, BOOTSTRAP_CREDITS - 2 + 1);
-
-    // Applicant should be off the event's list.
-    let applicants = ctx.events.get_applicants(&bounty_id);
-    assert_eq!(applicants.len(), 0);
-}
-
-#[test]
-fn insufficient_credits_reverts() {
-    let ctx = setup();
-    // Cost 100 (the max), bootstrap is only 10. Apply should revert because
-    // InsufficientCredits bubbles up from profile.
-    let bounty_id = create_bounty(&ctx, 100);
-
-    let op_id = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-    assert!(res.is_err(), "apply with insufficient credits should revert");
-}
-
-#[test]
-fn replayed_apply_reverts_idempotently() {
-    let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
-
-    let op_id = BytesN::random(&ctx.env);
-    ctx.events.apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-
-    // Replay with the same op_id should revert (OpAlreadySeen on the events
-    // contract before any cross-contract call).
-    let res = ctx
-        .events
-        .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
-    assert!(res.is_err(), "replayed apply should revert");
 }
 
 // ============================================================
@@ -321,6 +227,7 @@ fn select_winners_rejects_duplicate_position() {
         winner_distribution: dist,
         application_credit_cost: 1,
         fee_bps_override: None,
+        manager: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let bounty_id = ctx.events.create_event(&params, &op_create);
@@ -366,6 +273,7 @@ fn select_winners_handles_multi_recipient_distribution() {
         winner_distribution: dist,
         application_credit_cost: 0, // free for this test
         fee_bps_override: None,
+        manager: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let bounty_id = ctx.events.create_event(&params, &op_create);
@@ -487,6 +395,7 @@ fn cancel_after_select_winners_refunds_only_remaining() {
         winner_distribution: dist,
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let bounty_id = ctx.events.create_event(&params, &op_create);
@@ -538,6 +447,7 @@ fn create_grant(ctx: &Ctx, n_milestones: u32) -> u64 {
         winner_distribution: dist,
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op_create = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_create)
@@ -705,6 +615,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         winner_distribution: dist,
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op_create = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op_create)
@@ -855,6 +766,7 @@ fn create_event_charges_override_rate_when_provided() {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: Some(override_bps),
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op);
@@ -892,6 +804,7 @@ fn add_funds_uses_event_override_not_global() {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: Some(override_bps),
+        manager: None,
     };
     let op_create = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op_create);
@@ -943,6 +856,7 @@ fn create_event_with_waiver_charges_no_fee() {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: Some(0),
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     ctx.events.create_event(&params, &op);
@@ -970,6 +884,7 @@ fn create_event_rejects_override_above_max_fee_bps() {
         application_credit_cost: 0,
         // 60% is above the MAX_FEE_BPS = 1000 cap (post L4 audit fix).
         fee_bps_override: Some(6000),
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_create_event(&params, &op);
@@ -997,6 +912,7 @@ fn create_event_omitted_override_falls_back_to_global_default() {
         winner_distribution: one_winner_distribution(&ctx.env),
         application_credit_cost: 0,
         fee_bps_override: None,
+        manager: None,
     };
     let op = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op);
@@ -1157,4 +1073,80 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
     let event_post = ctx.events.get_event(&bounty_id);
     assert_eq!(event_post.remaining_escrow, 0);
     assert_eq!(event_post.status, EventStatus::Completed);
+}
+
+// ============================================================
+// MANAGEMENT AUTHORITY (manager decoupled from funder/owner)
+// ============================================================
+fn create_bounty_with_manager(ctx: &Ctx, manager: &Address) -> u64 {
+    let params = CreateEventParams {
+        pillar: Pillar::Bounty,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget: 10_000_0000000_i128,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/events/draft/m"),
+        title: String::from_str(&ctx.env, "Managed Bounty"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: one_winner_distribution(&ctx.env),
+        application_credit_cost: 1,
+        fee_bps_override: None,
+        manager: Some(manager.clone()),
+    };
+    let op_id = BytesN::random(&ctx.env);
+    ctx.events.create_event(&params, &op_id)
+}
+
+#[test]
+fn manager_defaults_to_owner_and_override_is_recorded() {
+    let ctx = setup();
+
+    // No override: management falls back to the funder/owner (legacy behavior).
+    let default_id = create_bounty(&ctx, 1);
+    assert_eq!(ctx.events.get_manager(&default_id), ctx.owner);
+
+    // Override: management is the org wallet, distinct from the funder.
+    let manager = Address::generate(&ctx.env);
+    let managed_id = create_bounty_with_manager(&ctx, &manager);
+    assert_eq!(ctx.events.get_manager(&managed_id), manager);
+    assert_ne!(ctx.events.get_manager(&managed_id), ctx.owner);
+}
+
+#[test]
+fn manager_can_be_rotated() {
+    let ctx = setup();
+    let manager = Address::generate(&ctx.env);
+    let id = create_bounty_with_manager(&ctx, &manager);
+    assert_eq!(ctx.events.get_manager(&id), manager);
+
+    let manager2 = Address::generate(&ctx.env);
+    ctx.events.set_manager(&id, &manager2);
+    assert_eq!(ctx.events.get_manager(&id), manager2);
+}
+
+#[test]
+fn manager_override_can_select_winners() {
+    let ctx = setup();
+    let manager = Address::generate(&ctx.env);
+    let bounty_id = create_bounty_with_manager(&ctx, &manager);
+
+    let op_apply = BytesN::random(&ctx.env);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
+
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: ctx.applicant.clone(),
+            position: 1,
+            credit_earn: 0,
+            reputation_bump: 0,
+        },
+    ];
+    let op_select = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&bounty_id, &winners, &op_select);
+
+    // Managed event settled via the manager authority.
+    let event = ctx.events.get_event(&bounty_id);
+    assert_eq!(event.status, EventStatus::Completed);
 }

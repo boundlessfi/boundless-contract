@@ -32,8 +32,8 @@ pub fn id_base(env: &Env) -> u64 {
 
 pub fn next_event_id(env: &Env) -> u64 {
     let base = id_base(env);
-    let id = storage::get_next_event_id(env, base + 1);
-    storage::set_next_event_id(env, id + 1);
+    let id = storage::get_next_event_id(env, base.saturating_add(1));
+    storage::set_next_event_id(env, id.saturating_add(1));
     id
 }
 

@@ -214,6 +214,17 @@ impl EventsContract {
         event_ops::select_winners(&env, event_id, winners, op_id)
     }
 
+    // ============================================================
+    // MANAGEMENT AUTHORITY (manager != funder/owner)
+    // ============================================================
+    pub fn set_manager(env: Env, event_id: u64, new_manager: Address) -> Result<(), Error> {
+        event_ops::set_manager(&env, event_id, new_manager)
+    }
+
+    pub fn get_manager(env: Env, event_id: u64) -> Result<Address, Error> {
+        event_ops::get_manager(&env, event_id)
+    }
+
     pub fn claim_milestone(
         env: Env,
         event_id: u64,
