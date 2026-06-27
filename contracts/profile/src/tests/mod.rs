@@ -5,4 +5,6 @@
 mod admin;
 mod bootstrap;
 mod common;
+mod credits;
 mod earnings;
+mod reputation;
