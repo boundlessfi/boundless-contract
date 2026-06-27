@@ -1,265 +1,762 @@
-// boundless-profile: credits tests (#26).
+// boundless-profile: credits tests.
 //
-// Covers spend / earn / refund / admin_grant:
-//   - Happy path + each Error variant + edge cases + auth-rejection + idempotency.
+// Covers contracts/profile/src/credits.rs: bootstrap, spend, earn, refund,
+// admin_grant. Happy path + every Error variant reachable from this module
+// + edge cases + auth-rejection + idempotency.
+//
+// Issue: https://github.com/boundlessfi/boundless-contract/issues/26
 
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
-    Address, BytesN, String, Symbol,
+    testutils::{Address as _, BytesN as _, MockAuth, MockAuthInvoke},
+    Address, BytesN, IntoVal, String, Symbol,
 };
 
 use super::common::setup;
 use crate::errors::Error;
 
-const BOOTSTRAP: u32 = 10;
-
-fn reason(env: &soroban_sdk::Env) -> Symbol {
-    Symbol::new(env, "test")
+fn op_id(env: &soroban_sdk::Env) -> BytesN<32> {
+    BytesN::random(env)
 }
 
 // ============================================================
-// bootstrap
+// BOOTSTRAP
 // ============================================================
 
 #[test]
-fn bootstrap_creates_profile_with_initial_credits() {
-    let ctx = setup(BOOTSTRAP);
-    let ec = Address::generate(&ctx.env);
-    ctx.client.set_events_contract(&ec);
-
+fn bootstrap_creates_profile_with_default_credits() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
 
-    let p = ctx.client.get_profile(&user).unwrap();
-    assert_eq!(p.credits, BOOTSTRAP);
-    assert_eq!(p.reputation, 0);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+
+    let profile = ctx.client.get_profile(&user).expect("profile created");
+    assert_eq!(profile.credits, 10);
+    assert_eq!(profile.reputation, 0);
+    assert_eq!(profile.bootstrapped_at, ctx.env.ledger().timestamp());
 }
 
 #[test]
-fn bootstrap_is_idempotent() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
-
+fn bootstrap_is_idempotent_as_a_noop_on_existing_profile() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
 
-    let p = ctx.client.get_profile(&user).unwrap();
-    assert_eq!(p.credits, BOOTSTRAP);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    // Spend so we can tell a second bootstrap call didn't reset credits.
+    ctx.client
+        .spend_credits(&user, &4, &Symbol::new(&ctx.env, "spend"), &op_id(&ctx.env));
+
+    // A different op_id, same user: bootstrap sees the profile already
+    // exists and no-ops on the credits field.
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+
+    let profile = ctx.client.get_profile(&user).expect("profile still there");
+    assert_eq!(profile.credits, 6);
 }
 
 #[test]
-fn bootstrap_op_replay_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
-
+fn bootstrap_replayed_op_id_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    let op = BytesN::random(&ctx.env);
-    ctx.client.bootstrap(&user, &op);
-    assert!(ctx.client.try_bootstrap(&user, &op).is_err());
+    let id = op_id(&ctx.env);
+
+    ctx.client.bootstrap(&user, &id);
+    let err = ctx
+        .client
+        .try_bootstrap(&user, &id)
+        .err()
+        .expect("replay must fail")
+        .unwrap();
+    assert_eq!(err, Error::OpAlreadySeen);
+}
+
+#[test]
+fn bootstrap_without_events_contract_configured_reverts() {
+    let ctx = setup(10);
+    let user = Address::generate(&ctx.env);
+
+    let err = ctx
+        .client
+        .try_bootstrap(&user, &op_id(&ctx.env))
+        .err()
+        .expect("missing events contract must fail")
+        .unwrap();
+    assert_eq!(err, Error::EventsContractNotConfigured);
+}
+
+#[test]
+fn bootstrap_while_paused_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    ctx.client.pause();
+    let user = Address::generate(&ctx.env);
+
+    let err = ctx
+        .client
+        .try_bootstrap(&user, &op_id(&ctx.env))
+        .err()
+        .expect("paused must fail")
+        .unwrap();
+    assert_eq!(err, Error::Paused);
+}
+
+#[test]
+#[should_panic]
+fn bootstrap_called_by_non_events_contract_panics() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    let id = op_id(&ctx.env);
+
+    // Authorize a random address instead of the registered events
+    // contract. require_events_contract() calls events.require_auth(),
+    // which the host rejects because the wrong address is authorized.
+    let impostor = Address::generate(&ctx.env);
+    ctx.client
+        .mock_auths(&[MockAuth {
+            address: &impostor,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.client.address,
+                fn_name: "bootstrap",
+                args: (user.clone(), id.clone()).into_val(&ctx.env),
+                sub_invokes: &[],
+            },
+        }])
+        .bootstrap(&user, &id);
 }
 
 // ============================================================
-// spend_credits
+// SPEND
 // ============================================================
 
 #[test]
-fn spend_decrements_credits() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn spend_deducts_from_existing_profile() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
 
-    ctx.client.spend_credits(&user, &3_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
-    let p = ctx.client.get_profile(&user).unwrap();
-    assert_eq!(p.credits, BOOTSTRAP - 3);
+    ctx.client
+        .spend_credits(&user, &3, &Symbol::new(&ctx.env, "apply"), &op_id(&ctx.env));
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 7);
 }
 
 #[test]
-fn spend_zero_is_no_op() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn spend_zero_amount_is_a_noop_but_marks_op_seen() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    let id = op_id(&ctx.env);
 
-    ctx.client.spend_credits(&user, &0_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
-    assert_eq!(ctx.client.get_profile(&user).unwrap().credits, BOOTSTRAP);
+    ctx.client
+        .spend_credits(&user, &0, &Symbol::new(&ctx.env, "noop"), &id);
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 10);
+
+    // Same op_id replayed: still rejected even though the first call
+    // touched no balance, because mark_seen runs on the zero-amount path too.
+    let err = ctx
+        .client
+        .try_spend_credits(&user, &0, &Symbol::new(&ctx.env, "noop"), &id)
+        .err()
+        .expect("replay must fail")
+        .unwrap();
+    assert_eq!(err, Error::OpAlreadySeen);
 }
 
 #[test]
-fn spend_insufficient_credits_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn spend_exact_balance_to_zero_succeeds() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
 
-    let err = ctx.client
-        .try_spend_credits(&user, &(BOOTSTRAP + 1), &reason(&ctx.env), &BytesN::random(&ctx.env))
-        .err().unwrap().unwrap();
+    ctx.client.spend_credits(
+        &user,
+        &10,
+        &Symbol::new(&ctx.env, "apply"),
+        &op_id(&ctx.env),
+    );
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 0);
+}
+
+#[test]
+fn spend_more_than_balance_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+
+    let err = ctx
+        .client
+        .try_spend_credits(
+            &user,
+            &11,
+            &Symbol::new(&ctx.env, "apply"),
+            &op_id(&ctx.env),
+        )
+        .err()
+        .expect("overspend must fail")
+        .unwrap();
     assert_eq!(err, Error::InsufficientCredits);
+
+    // Balance unchanged after the revert.
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 10);
 }
 
 #[test]
-fn spend_on_missing_profile_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn spend_on_unbootstrapped_user_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    let err = ctx.client
-        .try_spend_credits(&user, &1_u32, &reason(&ctx.env), &BytesN::random(&ctx.env))
-        .err().unwrap().unwrap();
+
+    let err = ctx
+        .client
+        .try_spend_credits(&user, &1, &Symbol::new(&ctx.env, "apply"), &op_id(&ctx.env))
+        .err()
+        .expect("no profile must fail")
+        .unwrap();
     assert_eq!(err, Error::ProfileNotFound);
 }
 
 #[test]
-fn spend_op_replay_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn spend_replayed_op_id_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    let id = op_id(&ctx.env);
 
-    let op = BytesN::random(&ctx.env);
-    ctx.client.spend_credits(&user, &1_u32, &reason(&ctx.env), &op);
-    assert!(ctx.client.try_spend_credits(&user, &1_u32, &reason(&ctx.env), &op).is_err());
+    ctx.client
+        .spend_credits(&user, &2, &Symbol::new(&ctx.env, "apply"), &id);
+    let err = ctx
+        .client
+        .try_spend_credits(&user, &2, &Symbol::new(&ctx.env, "apply"), &id)
+        .err()
+        .expect("replay must fail")
+        .unwrap();
+    assert_eq!(err, Error::OpAlreadySeen);
+
+    // Only the first call's deduction applied.
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 8);
+}
+
+#[test]
+fn spend_while_paused_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    ctx.client.pause();
+
+    let err = ctx
+        .client
+        .try_spend_credits(&user, &1, &Symbol::new(&ctx.env, "apply"), &op_id(&ctx.env))
+        .err()
+        .expect("paused must fail")
+        .unwrap();
+    assert_eq!(err, Error::Paused);
+}
+
+#[test]
+fn spend_without_events_contract_configured_reverts() {
+    let ctx = setup(10);
+    let user = Address::generate(&ctx.env);
+
+    let err = ctx
+        .client
+        .try_spend_credits(&user, &1, &Symbol::new(&ctx.env, "apply"), &op_id(&ctx.env))
+        .err()
+        .expect("missing events contract must fail")
+        .unwrap();
+    assert_eq!(err, Error::EventsContractNotConfigured);
+}
+
+#[test]
+#[should_panic]
+fn spend_called_by_non_events_contract_panics() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+
+    let amount: u32 = 1;
+    let reason = Symbol::new(&ctx.env, "apply");
+    let id = op_id(&ctx.env);
+    let impostor = Address::generate(&ctx.env);
+    ctx.client
+        .mock_auths(&[MockAuth {
+            address: &impostor,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.client.address,
+                fn_name: "spend_credits",
+                args: (user.clone(), amount, reason.clone(), id.clone()).into_val(&ctx.env),
+                sub_invokes: &[],
+            },
+        }])
+        .spend_credits(&user, &amount, &reason, &id);
 }
 
 // ============================================================
-// earn_credits
+// EARN
 // ============================================================
 
 #[test]
-fn earn_increments_credits() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn earn_adds_to_existing_profile() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
 
-    ctx.client.earn_credits(&user, &5_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
-    assert_eq!(ctx.client.get_profile(&user).unwrap().credits, BOOTSTRAP + 5);
+    ctx.client
+        .earn_credits(&user, &5, &Symbol::new(&ctx.env, "win"), &op_id(&ctx.env));
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 15);
 }
 
 #[test]
-fn earn_saturates_at_max_u32() {
-    let ctx = setup(u32::MAX);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn earn_saturates_instead_of_overflowing() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
 
-    ctx.client.earn_credits(&user, &1_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
-    assert_eq!(ctx.client.get_profile(&user).unwrap().credits, u32::MAX);
+    ctx.client.earn_credits(
+        &user,
+        &u32::MAX,
+        &Symbol::new(&ctx.env, "win"),
+        &op_id(&ctx.env),
+    );
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, u32::MAX);
 }
 
 #[test]
-fn earn_on_missing_profile_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn earn_on_unbootstrapped_user_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    assert!(ctx.client.try_earn_credits(&user, &5_u32, &reason(&ctx.env), &BytesN::random(&ctx.env)).is_err());
+
+    let err = ctx
+        .client
+        .try_earn_credits(&user, &5, &Symbol::new(&ctx.env, "win"), &op_id(&ctx.env))
+        .err()
+        .expect("no profile must fail")
+        .unwrap();
+    assert_eq!(err, Error::ProfileNotFound);
 }
 
 #[test]
-fn earn_op_replay_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn earn_replayed_op_id_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    let id = op_id(&ctx.env);
 
-    let op = BytesN::random(&ctx.env);
-    ctx.client.earn_credits(&user, &5_u32, &reason(&ctx.env), &op);
-    assert!(ctx.client.try_earn_credits(&user, &5_u32, &reason(&ctx.env), &op).is_err());
+    ctx.client
+        .earn_credits(&user, &5, &Symbol::new(&ctx.env, "win"), &id);
+    let err = ctx
+        .client
+        .try_earn_credits(&user, &5, &Symbol::new(&ctx.env, "win"), &id)
+        .err()
+        .expect("replay must fail")
+        .unwrap();
+    assert_eq!(err, Error::OpAlreadySeen);
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 15);
+}
+
+#[test]
+fn earn_while_paused_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    ctx.client.pause();
+
+    let err = ctx
+        .client
+        .try_earn_credits(&user, &5, &Symbol::new(&ctx.env, "win"), &op_id(&ctx.env))
+        .err()
+        .expect("paused must fail")
+        .unwrap();
+    assert_eq!(err, Error::Paused);
+}
+
+#[test]
+fn earn_without_events_contract_configured_reverts() {
+    let ctx = setup(10);
+    let user = Address::generate(&ctx.env);
+
+    let err = ctx
+        .client
+        .try_earn_credits(&user, &5, &Symbol::new(&ctx.env, "win"), &op_id(&ctx.env))
+        .err()
+        .expect("missing events contract must fail")
+        .unwrap();
+    assert_eq!(err, Error::EventsContractNotConfigured);
+}
+
+#[test]
+#[should_panic]
+fn earn_called_by_non_events_contract_panics() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+
+    let amount: u32 = 5;
+    let reason = Symbol::new(&ctx.env, "win");
+    let id = op_id(&ctx.env);
+    let impostor = Address::generate(&ctx.env);
+    ctx.client
+        .mock_auths(&[MockAuth {
+            address: &impostor,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.client.address,
+                fn_name: "earn_credits",
+                args: (user.clone(), amount, reason.clone(), id.clone()).into_val(&ctx.env),
+                sub_invokes: &[],
+            },
+        }])
+        .earn_credits(&user, &amount, &reason, &id);
 }
 
 // ============================================================
-// refund_credits
+// REFUND
 // ============================================================
 
 #[test]
-fn refund_increments_credits() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn refund_adds_to_existing_profile() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    ctx.client
+        .spend_credits(&user, &6, &Symbol::new(&ctx.env, "apply"), &op_id(&ctx.env));
 
-    ctx.client.spend_credits(&user, &3_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
-    ctx.client.refund_credits(&user, &2_u32, &reason(&ctx.env), &BytesN::random(&ctx.env));
-    assert_eq!(ctx.client.get_profile(&user).unwrap().credits, BOOTSTRAP - 3 + 2);
+    ctx.client.refund_credits(
+        &user,
+        &6,
+        &Symbol::new(&ctx.env, "cancelled"),
+        &op_id(&ctx.env),
+    );
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 10);
 }
 
 #[test]
-fn refund_on_missing_profile_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn refund_saturates_instead_of_overflowing() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    assert!(ctx.client.try_refund_credits(&user, &1_u32, &reason(&ctx.env), &BytesN::random(&ctx.env)).is_err());
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+
+    ctx.client.refund_credits(
+        &user,
+        &u32::MAX,
+        &Symbol::new(&ctx.env, "cancelled"),
+        &op_id(&ctx.env),
+    );
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, u32::MAX);
 }
 
 #[test]
-fn refund_op_replay_reverts() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn refund_on_unbootstrapped_user_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
 
-    let op = BytesN::random(&ctx.env);
-    ctx.client.refund_credits(&user, &1_u32, &reason(&ctx.env), &op);
-    assert!(ctx.client.try_refund_credits(&user, &1_u32, &reason(&ctx.env), &op).is_err());
+    let err = ctx
+        .client
+        .try_refund_credits(
+            &user,
+            &5,
+            &Symbol::new(&ctx.env, "cancelled"),
+            &op_id(&ctx.env),
+        )
+        .err()
+        .expect("no profile must fail")
+        .unwrap();
+    assert_eq!(err, Error::ProfileNotFound);
+}
+
+#[test]
+fn refund_replayed_op_id_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    let id = op_id(&ctx.env);
+
+    ctx.client
+        .refund_credits(&user, &5, &Symbol::new(&ctx.env, "cancelled"), &id);
+    let err = ctx
+        .client
+        .try_refund_credits(&user, &5, &Symbol::new(&ctx.env, "cancelled"), &id)
+        .err()
+        .expect("replay must fail")
+        .unwrap();
+    assert_eq!(err, Error::OpAlreadySeen);
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 15);
+}
+
+#[test]
+fn refund_while_paused_reverts() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    ctx.client.pause();
+
+    let err = ctx
+        .client
+        .try_refund_credits(
+            &user,
+            &5,
+            &Symbol::new(&ctx.env, "cancelled"),
+            &op_id(&ctx.env),
+        )
+        .err()
+        .expect("paused must fail")
+        .unwrap();
+    assert_eq!(err, Error::Paused);
+}
+
+#[test]
+fn refund_without_events_contract_configured_reverts() {
+    let ctx = setup(10);
+    let user = Address::generate(&ctx.env);
+
+    let err = ctx
+        .client
+        .try_refund_credits(
+            &user,
+            &5,
+            &Symbol::new(&ctx.env, "cancelled"),
+            &op_id(&ctx.env),
+        )
+        .err()
+        .expect("missing events contract must fail")
+        .unwrap();
+    assert_eq!(err, Error::EventsContractNotConfigured);
+}
+
+#[test]
+#[should_panic]
+fn refund_called_by_non_events_contract_panics() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
+    let user = Address::generate(&ctx.env);
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+
+    let amount: u32 = 5;
+    let reason = Symbol::new(&ctx.env, "cancelled");
+    let id = op_id(&ctx.env);
+    let impostor = Address::generate(&ctx.env);
+    ctx.client
+        .mock_auths(&[MockAuth {
+            address: &impostor,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.client.address,
+                fn_name: "refund_credits",
+                args: (user.clone(), amount, reason.clone(), id.clone()).into_val(&ctx.env),
+                sub_invokes: &[],
+            },
+        }])
+        .refund_credits(&user, &amount, &reason, &id);
 }
 
 // ============================================================
-// admin_grant_credits
+// ADMIN_GRANT
 // ============================================================
 
 #[test]
-fn admin_grant_increments_credits_on_existing_profile() {
-    let ctx = setup(BOOTSTRAP);
-    ctx.client.set_events_contract(&Address::generate(&ctx.env));
+fn admin_grant_adds_to_existing_profile() {
+    let ctx = setup(10);
+    let events = Address::generate(&ctx.env);
+    ctx.client.set_events_contract(&events);
     let user = Address::generate(&ctx.env);
-    ctx.client.bootstrap(&user, &BytesN::random(&ctx.env));
+    ctx.client.bootstrap(&user, &op_id(&ctx.env));
+    // user now has credits = 10 from bootstrap
 
-    let reason_str = String::from_str(&ctx.env, "campaign bonus");
-    ctx.client.admin_grant_credits(&user, &50_u32, &reason_str, &BytesN::random(&ctx.env));
-    assert_eq!(ctx.client.get_profile(&user).unwrap().credits, BOOTSTRAP + 50);
+    ctx.client.admin_grant_credits(
+        &user,
+        &7,
+        &String::from_str(&ctx.env, "support credit"),
+        &op_id(&ctx.env),
+    );
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 17);
+
+    ctx.client.admin_grant_credits(
+        &user,
+        &3,
+        &String::from_str(&ctx.env, "extra support credit"),
+        &op_id(&ctx.env),
+    );
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 20);
 }
 
 #[test]
-fn admin_grant_creates_profile_when_missing() {
-    let ctx = setup(BOOTSTRAP);
+fn admin_grant_bootstraps_profile_for_unknown_user() {
+    let ctx = setup(10);
     let user = Address::generate(&ctx.env);
+    assert!(ctx.client.get_profile(&user).is_none());
 
-    let reason_str = String::from_str(&ctx.env, "first grant");
-    ctx.client.admin_grant_credits(&user, &20_u32, &reason_str, &BytesN::random(&ctx.env));
-    let p = ctx.client.get_profile(&user).unwrap();
-    assert_eq!(p.credits, BOOTSTRAP + 20);
+    ctx.client.admin_grant_credits(
+        &user,
+        &5,
+        &String::from_str(&ctx.env, "manual grant"),
+        &op_id(&ctx.env),
+    );
+
+    // Default bootstrap credits (10) + granted amount (5), since admin_grant
+    // bootstraps a fresh Profile (seeded with the default) before adding.
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 15);
+}
+
+#[test]
+fn admin_grant_saturates_instead_of_overflowing() {
+    let ctx = setup(10);
+    let user = Address::generate(&ctx.env);
+    ctx.client.admin_grant_credits(
+        &user,
+        &u32::MAX,
+        &String::from_str(&ctx.env, "manual grant"),
+        &op_id(&ctx.env),
+    );
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, u32::MAX);
 }
 
 #[test]
 fn admin_grant_empty_reason_reverts() {
-    let ctx = setup(BOOTSTRAP);
+    let ctx = setup(10);
     let user = Address::generate(&ctx.env);
-    let empty = String::from_str(&ctx.env, "");
-    let err = ctx.client
-        .try_admin_grant_credits(&user, &10_u32, &empty, &BytesN::random(&ctx.env))
-        .err().unwrap().unwrap();
+
+    let err = ctx
+        .client
+        .try_admin_grant_credits(&user, &5, &String::from_str(&ctx.env, ""), &op_id(&ctx.env))
+        .err()
+        .expect("empty reason must fail")
+        .unwrap();
     assert_eq!(err, Error::ReasonRequired);
+
+    // Nothing was bootstrapped on the revert path.
+    assert!(ctx.client.get_profile(&user).is_none());
 }
 
 #[test]
-fn admin_grant_requires_admin_auth() {
-    let ctx = setup(BOOTSTRAP);
+fn admin_grant_replayed_op_id_reverts() {
+    let ctx = setup(10);
     let user = Address::generate(&ctx.env);
-    let reason_str = String::from_str(&ctx.env, "grant");
-    ctx.client.admin_grant_credits(&user, &5_u32, &reason_str, &BytesN::random(&ctx.env));
-    let auths = ctx.env.auths();
-    assert!(auths.iter().any(|(addr, _)| *addr == ctx.admin));
+    let id = op_id(&ctx.env);
+
+    ctx.client
+        .admin_grant_credits(&user, &5, &String::from_str(&ctx.env, "manual grant"), &id);
+    let err = ctx
+        .client
+        .try_admin_grant_credits(&user, &5, &String::from_str(&ctx.env, "manual grant"), &id)
+        .err()
+        .expect("replay must fail")
+        .unwrap();
+    assert_eq!(err, Error::OpAlreadySeen);
+
+    let profile = ctx.client.get_profile(&user).unwrap();
+    assert_eq!(profile.credits, 15);
 }
 
 #[test]
-fn admin_grant_op_replay_reverts() {
-    let ctx = setup(BOOTSTRAP);
+fn admin_grant_while_paused_reverts() {
+    let ctx = setup(10);
+    ctx.client.pause();
     let user = Address::generate(&ctx.env);
-    let reason_str = String::from_str(&ctx.env, "grant");
-    let op = BytesN::random(&ctx.env);
-    ctx.client.admin_grant_credits(&user, &5_u32, &reason_str, &op);
-    assert!(ctx.client.try_admin_grant_credits(&user, &5_u32, &reason_str, &op).is_err());
+
+    let err = ctx
+        .client
+        .try_admin_grant_credits(
+            &user,
+            &5,
+            &String::from_str(&ctx.env, "manual grant"),
+            &op_id(&ctx.env),
+        )
+        .err()
+        .expect("paused must fail")
+        .unwrap();
+    assert_eq!(err, Error::Paused);
+}
+
+#[test]
+#[should_panic]
+fn admin_grant_called_by_non_admin_panics() {
+    let ctx = setup(10);
+    let user = Address::generate(&ctx.env);
+    let amount: u32 = 5;
+    let reason = String::from_str(&ctx.env, "manual grant");
+    let id = op_id(&ctx.env);
+
+    // Authorize a random address instead of the configured admin.
+    // require_admin() calls admin.require_auth(), which the host rejects.
+    let impostor = Address::generate(&ctx.env);
+    ctx.client
+        .mock_auths(&[MockAuth {
+            address: &impostor,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.client.address,
+                fn_name: "admin_grant_credits",
+                args: (user.clone(), amount, reason.clone(), id.clone()).into_val(&ctx.env),
+                sub_invokes: &[],
+            },
+        }])
+        .admin_grant_credits(&user, &amount, &reason, &id);
 }
