@@ -41,9 +41,6 @@ pub fn next_event_id(env: &Env) -> u64 {
 /// the events contract and the profile contract never share an OpSeen marker.
 pub mod tag {
     pub const BOOTSTRAP: u8 = 0xB0;
-    pub const SPEND_CREDITS: u8 = 0xC1;
-    pub const REFUND_CREDITS: u8 = 0xC2;
-    pub const EARN_CREDITS: u8 = 0xC3;
     pub const BUMP_REP: u8 = 0xD1;
     pub const SLASH_REP: u8 = 0xD2;
     pub const REGISTER_EARNINGS: u8 = 0xE1;
@@ -64,12 +61,7 @@ pub fn derive_child(env: &Env, parent: &BytesN<32>, op_tag: u8) -> BytesN<32> {
 /// Same as `derive_child` but also XORs a sub-index into the second byte, so
 /// per-winner cross-contract calls within select_winners get unique op_ids
 /// even when the same op_tag is reused across winners.
-pub fn derive_child_indexed(
-    env: &Env,
-    parent: &BytesN<32>,
-    op_tag: u8,
-    sub_idx: u8,
-) -> BytesN<32> {
+pub fn derive_child_indexed(env: &Env, parent: &BytesN<32>, op_tag: u8, sub_idx: u8) -> BytesN<32> {
     let mut payload = parent.to_array();
     payload[0] ^= op_tag;
     payload[1] ^= sub_idx;

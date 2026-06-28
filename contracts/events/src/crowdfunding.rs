@@ -27,11 +27,7 @@ use soroban_sdk::{Address, Env};
 use crate::errors::Error;
 use crate::types::{EventRecord, ReleaseKind};
 
-pub fn validate_create(
-    _env: &Env,
-    record: &EventRecord,
-    _owner: &Address,
-) -> Result<(), Error> {
+pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Result<(), Error> {
     // Multi(n) required.
     match record.release_kind {
         ReleaseKind::Multi(n) if n > 0 => {}
@@ -54,16 +50,6 @@ pub fn validate_create(
         .ok_or(Error::InvalidDistribution)?;
     if percent != 100 {
         return Err(Error::DistributionMismatch);
-    }
-
-    // L7 (2026-06 audit): crowdfunding has no apply flow. A nonzero
-    // application_credit_cost would silently never be charged; rejecting
-    // here keeps wallet UIs and indexers from displaying a misleading
-    // value. Reuse Error::InvalidPillar to stay inside the contracterror
-    // 50-variant cap (a dedicated InvalidApplicationCreditCost would push
-    // the events contract over).
-    if record.application_credit_cost != 0 {
-        return Err(Error::InvalidPillar);
     }
 
     Ok(())

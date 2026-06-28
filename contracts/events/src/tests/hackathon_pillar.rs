@@ -1,12 +1,12 @@
 // boundless-events: hackathon pillar tests.
 //
 // Covers the Pillar::Hackathon paths end-to-end against a real
-// boundless-profile so the cross-contract credit / reputation / earnings
-// side-effects of select_winners are exercised, not mocked:
+// boundless-profile so the cross-contract reputation / earnings side-effects
+// of select_winners are exercised, not mocked:
 //
 //   - create_event validation: Hackathon requires ReleaseKind::Single and a
 //     future deadline; the full budget is escrowed (fee taken at deposit).
-//   - submit: open submission model — no prior apply, no credit charge.
+//   - submit: open submission model with no prior apply.
 //     deadline gate, re-submit, idempotency, withdraw.
 //   - select_winners distribution: single-recipient sweep and multi-position
 //     split. Each split test asserts BOTH recipient and fee-account deltas
@@ -31,7 +31,6 @@ use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
-const BOOTSTRAP_CREDITS: u32 = 10;
 const FEE_BPS: u32 = 250;
 
 // 10k USDC at 7 decimals.
@@ -56,7 +55,7 @@ fn setup<'a>() -> Ctx<'a> {
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
-    let profile_id = env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
+    let profile_id = env.register(ProfileContract, (profile_admin.clone(),));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     let events_admin = Address::generate(&env);
@@ -125,7 +124,6 @@ fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, u32>, deadline: Option<u64>) 
         title: String::from_str(&ctx.env, "Test Hackathon"),
         deadline,
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -159,7 +157,10 @@ fn create_deposits_full_budget_and_takes_fee_at_deposit() {
     );
 
     // Owner paid budget + fee; fee account received the deposit-time fee.
-    assert_eq!(owner_before - token.balance(&ctx.owner), TOTAL_BUDGET + FEE_AMOUNT);
+    assert_eq!(
+        owner_before - token.balance(&ctx.owner),
+        TOTAL_BUDGET + FEE_AMOUNT
+    );
     assert_eq!(token.balance(&ctx.fee_account), FEE_AMOUNT);
 }
 
@@ -176,7 +177,6 @@ fn create_rejects_multi_release_kind() {
         title: String::from_str(&ctx.env, "Bad Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_winner_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -198,7 +198,6 @@ fn create_rejects_missing_deadline() {
         title: String::from_str(&ctx.env, "Hackathon"),
         deadline: None,
         winner_distribution: single_winner_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -222,7 +221,6 @@ fn create_rejects_past_deadline() {
         // Equal-to-now is not in the future; create_event rejects it.
         deadline: Some(ctx.env.ledger().timestamp()),
         winner_distribution: single_winner_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -332,7 +330,6 @@ fn select_winners_single_recipient_sweeps_escrow() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
     ];
@@ -344,9 +341,8 @@ fn select_winners_single_recipient_sweeps_escrow() {
     assert_eq!(token.balance(&ctx.applicant) - winner_before, TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 
-    // Profile: fresh winner is bootstrapped then earns the win credits.
+    // Profile: fresh winner is bootstrapped then bumped for the win.
     let p = ctx.profile.get_profile(&ctx.applicant).unwrap();
-    assert_eq!(p.credits, BOOTSTRAP_CREDITS + 20);
     assert_eq!(p.reputation, 50);
     assert_eq!(
         ctx.profile.get_earnings(&ctx.applicant, &ctx.token_addr),
@@ -386,19 +382,16 @@ fn select_winners_multi_position_splits_by_distribution() {
         WinnerSpec {
             recipient: first.clone(),
             position: 1,
-            credit_earn: 30,
             reputation_bump: 60,
         },
         WinnerSpec {
             recipient: second.clone(),
             position: 2,
-            credit_earn: 20,
             reputation_bump: 40,
         },
         WinnerSpec {
             recipient: third.clone(),
             position: 3,
-            credit_earn: 10,
             reputation_bump: 20,
         },
     ];
@@ -420,11 +413,8 @@ fn select_winners_multi_position_splits_by_distribution() {
     let p1 = ctx.profile.get_profile(&first).unwrap();
     let p2 = ctx.profile.get_profile(&second).unwrap();
     let p3 = ctx.profile.get_profile(&third).unwrap();
-    assert_eq!(p1.credits, BOOTSTRAP_CREDITS + 30);
     assert_eq!(p1.reputation, 60);
-    assert_eq!(p2.credits, BOOTSTRAP_CREDITS + 20);
     assert_eq!(p2.reputation, 40);
-    assert_eq!(p3.credits, BOOTSTRAP_CREDITS + 10);
     assert_eq!(p3.reputation, 20);
 
     // 50 + 30 + 20 == 100 -> escrow fully drained -> Completed.
@@ -459,7 +449,6 @@ fn select_winners_position_not_in_distribution_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 2,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -480,13 +469,11 @@ fn select_winners_duplicate_position_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
         WinnerSpec {
             recipient: other,
             position: 1, // duplicate
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -508,7 +495,6 @@ fn select_winners_second_call_reverts_winners_already_selected() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -524,7 +510,6 @@ fn select_winners_second_call_reverts_winners_already_selected() {
         WinnerSpec {
             recipient: second,
             position: 2,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -543,7 +528,6 @@ fn select_winners_replayed_op_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -562,7 +546,6 @@ fn select_winners_on_missing_event_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -581,7 +564,6 @@ fn select_winners_on_completed_event_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -595,13 +577,15 @@ fn select_winners_on_completed_event_reverts() {
         WinnerSpec {
             recipient: again,
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
     let op2 = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &more, &op2);
-    assert!(res.is_err(), "select_winners on a Completed event must revert");
+    assert!(
+        res.is_err(),
+        "select_winners on a Completed event must revert"
+    );
 }
 
 #[test]
@@ -617,7 +601,6 @@ fn select_winners_demands_owner_auth() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -626,7 +609,10 @@ fn select_winners_demands_owner_auth() {
 
     let auths = ctx.env.auths();
     let owner_required = auths.iter().any(|(addr, _)| *addr == ctx.owner);
-    assert!(owner_required, "select_winners must demand the event owner's auth");
+    assert!(
+        owner_required,
+        "select_winners must demand the event owner's auth"
+    );
     // Sanity: a random non-owner address was never asked to authorize.
     assert!(
         !auths.iter().any(|(addr, _)| *addr == ctx.events_admin),
@@ -646,7 +632,7 @@ fn claim_milestone_on_single_release_hackathon_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.applicant, &0_u32, &0_u32, &0_u32, &op);
+        .try_claim_milestone(&id, &ctx.applicant, &0_u32, &0_u32, &op);
     assert!(
         res.is_err(),
         "claim_milestone must reject a Single-release hackathon"

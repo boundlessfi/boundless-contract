@@ -20,9 +20,7 @@ use soroban_sdk::{Address, BytesN, Env};
 use soroban_sdk::String;
 
 use crate::errors::Error;
-use crate::types::{
-    DataKey, PendingAdmin, PendingEventsContract, PendingUpgrade, Profile,
-};
+use crate::types::{DataKey, PendingAdmin, PendingEventsContract, PendingUpgrade, Profile};
 
 // ============================================================
 // TTL CONSTANTS (mainnet cadence ~5s/ledger)
@@ -78,9 +76,7 @@ pub fn get_events_contract(env: &Env) -> Option<Address> {
 }
 
 pub fn set_events_contract(env: &Env, addr: &Address) {
-    env.storage()
-        .instance()
-        .set(&DataKey::EventsContract, addr);
+    env.storage().instance().set(&DataKey::EventsContract, addr);
 }
 
 pub fn get_pending_events_contract(env: &Env) -> Option<PendingEventsContract> {
@@ -99,19 +95,6 @@ pub fn clear_pending_events_contract(env: &Env) {
     env.storage()
         .instance()
         .remove(&DataKey::PendingEventsContract);
-}
-
-pub fn get_default_bootstrap_credits(env: &Env) -> u32 {
-    env.storage()
-        .instance()
-        .get(&DataKey::DefaultBootstrapCredits)
-        .unwrap_or(0)
-}
-
-pub fn set_default_bootstrap_credits(env: &Env, amount: u32) {
-    env.storage()
-        .instance()
-        .set(&DataKey::DefaultBootstrapCredits, &amount);
 }
 
 pub fn is_paused(env: &Env) -> bool {

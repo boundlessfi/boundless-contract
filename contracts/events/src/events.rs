@@ -54,7 +54,6 @@ pub struct OwnerResidualRefunded {
 pub struct Applied {
     pub event_id: u64,
     pub applicant: Address,
-    pub credit_cost: u32,
 }
 
 #[contractevent]
@@ -169,4 +168,3 @@ pub struct Migrated {
     pub from_version: String,
     pub to_version: String,
 }
-

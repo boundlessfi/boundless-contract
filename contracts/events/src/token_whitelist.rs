@@ -33,6 +33,7 @@ pub fn register(env: &Env, token: Address) -> Result<(), Error> {
     admin::require_admin(env)?;
 
     storage::set_token_supported(env, &token, true);
+    storage::append_supported_token(env, &token);
     storage::touch_instance(env);
     evt::TokenRegistered {
         token: token.clone(),
@@ -44,6 +45,7 @@ pub fn register(env: &Env, token: Address) -> Result<(), Error> {
 pub fn deregister(env: &Env, token: Address) -> Result<(), Error> {
     admin::require_admin(env)?;
     storage::set_token_supported(env, &token, false);
+    storage::remove_supported_token(env, &token);
     storage::touch_instance(env);
     evt::TokenDeregistered {
         token: token.clone(),

@@ -19,7 +19,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "bytes": "ae766f8c5d1579609bbbc00409255b53b4336a93727f5dfc59df7d391b5f436e"
+                  "bytes": "47082bc8856d2f3714dd8367c26f31f931b71e6a256305a7f5fe4d1d0e045001"
                 }
               ]
             }
@@ -49,7 +49,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "ae766f8c5d1579609bbbc00409255b53b4336a93727f5dfc59df7d391b5f436e"
+                  "bytes": "47082bc8856d2f3714dd8367c26f31f931b71e6a256305a7f5fe4d1d0e045001"
                 }
               ]
             },
@@ -69,7 +69,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "ae766f8c5d1579609bbbc00409255b53b4336a93727f5dfc59df7d391b5f436e"
+                      "bytes": "47082bc8856d2f3714dd8367c26f31f931b71e6a256305a7f5fe4d1d0e045001"
                     }
                   ]
                 },
@@ -131,14 +131,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "credits"
-                      },
-                      "val": {
-                        "u32": 30
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "reputation"
                       },
                       "val": {
@@ -193,18 +185,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "DefaultBootstrapCredits"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u32": 30
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "DeploymentSeq"
                             }
                           ]
@@ -234,7 +214,7 @@
                           ]
                         },
                         "val": {
-                          "string": "0.2.0"
+                          "string": "1.0.0"
                         }
                       }
                     ]
@@ -318,14 +298,6 @@
             ],
             "data": {
               "map": [
-                {
-                  "key": {
-                    "symbol": "initial_credits"
-                  },
-                  "val": {
-                    "u32": 30
-                  }
-                },
                 {
                   "key": {
                     "symbol": "user"

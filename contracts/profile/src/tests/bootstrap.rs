@@ -17,7 +17,7 @@ use crate::errors::Error;
 
 #[test]
 fn bootstrap_self_creates_profile_for_caller() {
-    let ctx = setup(30);
+    let ctx = setup();
     let user = Address::generate(&ctx.env);
     let op_id = BytesN::random(&ctx.env);
 
@@ -25,7 +25,6 @@ fn bootstrap_self_creates_profile_for_caller() {
     ctx.client.bootstrap_self(&user, &op_id);
 
     let profile = ctx.client.get_profile(&user).expect("profile created");
-    assert_eq!(profile.credits, 30);
     assert_eq!(profile.reputation, 0);
 }
 
@@ -35,7 +34,7 @@ fn bootstrap_self_demands_the_callers_own_auth_not_admin() {
     // USER's own authorization — no admin or other privileged key can create a
     // profile on someone's behalf. mock_all_auths lets the call through, but
     // env.auths() records whose auth the contract actually demanded.
-    let ctx = setup(30);
+    let ctx = setup();
     let user = Address::generate(&ctx.env);
     let op_id = BytesN::random(&ctx.env);
 
@@ -54,20 +53,21 @@ fn bootstrap_self_demands_the_callers_own_auth_not_admin() {
 
 #[test]
 fn bootstrap_self_is_idempotent_for_existing_profile() {
-    let ctx = setup(30);
+    let ctx = setup();
     let user = Address::generate(&ctx.env);
 
     ctx.client.bootstrap_self(&user, &BytesN::random(&ctx.env));
-    // Second bootstrap (fresh op_id) when the profile already exists is a
-    // no-op — credits are not re-granted.
+    let before = ctx.client.get_profile(&user).expect("profile created");
+
+    // Second bootstrap (fresh op_id) when the profile already exists is a no-op.
     ctx.client.bootstrap_self(&user, &BytesN::random(&ctx.env));
 
-    assert_eq!(ctx.client.get_profile(&user).unwrap().credits, 30);
+    assert_eq!(ctx.client.get_profile(&user), Some(before));
 }
 
 #[test]
 fn bootstrap_self_rejects_a_replayed_op_id() {
-    let ctx = setup(30);
+    let ctx = setup();
     let user = Address::generate(&ctx.env);
     let op_id = BytesN::random(&ctx.env);
 

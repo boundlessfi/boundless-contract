@@ -67,11 +67,12 @@ esac
 
 build_contract() {
     echo "Building $CONTRACT_KIND..."
-    # Testnet profile builds enable the `testnet` feature → zero upgrade timelock
-    # for fast iteration. Mainnet (and any non-testnet build) MUST omit it; the
-    # default keeps the full audit-mandated timelock, so this fails safe.
-    if [ "$NETWORK" = "testnet" ] && [ "$CONTRACT_KIND" = "profile" ]; then
-        stellar contract build --package boundless-profile --features testnet
+    # Testnet builds enable the `testnet` feature → zero upgrade timelock for
+    # fast iteration. Both events and profile expose this feature. Mainnet (and
+    # any non-testnet build) MUST omit it; the default keeps the full
+    # audit-mandated timelock, so this fails safe.
+    if [ "$NETWORK" = "testnet" ]; then
+        stellar contract build --package "boundless-$CONTRACT_KIND" --features testnet
     else
         stellar contract build
     fi

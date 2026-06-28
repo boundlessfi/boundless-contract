@@ -43,7 +43,7 @@ pub enum Error {
     ApplicantNotApplied = 41,
     SubmissionNotFound = 42,
     SubmissionAlreadyExists = 43,
-    InsufficientCredits = 44,
+    // 44 (InsufficientCredits) retired with on-chain credits; left as a gap.
 
     // Winners
     NoSubmissions = 50,
@@ -77,7 +77,6 @@ pub enum Error {
     UpgradeTimelockNotElapsed = 67,
     UpgradeProposalExpired = 68,
     MigrationAlreadyApplied = 69,
-
 
     // Pause
     Paused = 70,

@@ -38,7 +38,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "bytes": "4183ab1307bc01fcfb6047cd080a6162df6e7a89a754c9f4a18a9c58c071a388"
+                  "bytes": "b8125b83e68fe28e85baca1e2ec0a919ca913b1a6f437b7a032cc4a2c037bd5f"
                 }
               ]
             }
@@ -102,7 +102,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "4183ab1307bc01fcfb6047cd080a6162df6e7a89a754c9f4a18a9c58c071a388"
+                  "bytes": "b8125b83e68fe28e85baca1e2ec0a919ca913b1a6f437b7a032cc4a2c037bd5f"
                 }
               ]
             },
@@ -122,7 +122,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "4183ab1307bc01fcfb6047cd080a6162df6e7a89a754c9f4a18a9c58c071a388"
+                      "bytes": "b8125b83e68fe28e85baca1e2ec0a919ca913b1a6f437b7a032cc4a2c037bd5f"
                     }
                   ]
                 },
@@ -184,14 +184,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "credits"
-                      },
-                      "val": {
-                        "u32": 10
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "reputation"
                       },
                       "val": {
@@ -246,18 +238,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "DefaultBootstrapCredits"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u32": 10
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "DeploymentSeq"
                             }
                           ]
@@ -299,7 +279,7 @@
                           ]
                         },
                         "val": {
-                          "string": "0.2.0"
+                          "string": "1.0.0"
                         }
                       }
                     ]

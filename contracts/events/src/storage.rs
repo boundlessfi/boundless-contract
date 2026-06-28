@@ -185,6 +185,91 @@ pub fn set_token_supported(env: &Env, token: &Address, supported: bool) {
         .set(&DataKey::SupportedToken(token.clone()), &supported);
 }
 
+// Enumerable whitelist index, kept in lockstep with the SupportedToken bool by
+// register/deregister. Mirrors the applicant index (count + at + slot, append
+// to tail, swap-with-last removal) but is global rather than per-event, so the
+// full whitelist can be read from state instead of replaying events.
+pub fn supported_token_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::SupportedTokenCount)
+        .unwrap_or(0)
+}
+
+pub fn supported_token_at(env: &Env, idx: u32) -> Option<Address> {
+    env.storage()
+        .instance()
+        .get(&DataKey::SupportedTokenAt(idx))
+}
+
+pub fn supported_token_slot(env: &Env, token: &Address) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::SupportedTokenSlot(token.clone()))
+        .unwrap_or(0)
+}
+
+/// Append a token to the enumerable index. Idempotent: a token already indexed
+/// is left untouched (so re-registering does not duplicate it).
+pub fn append_supported_token(env: &Env, token: &Address) {
+    if supported_token_slot(env, token) != 0 {
+        return;
+    }
+    let cur = supported_token_count(env);
+    env.storage()
+        .instance()
+        .set(&DataKey::SupportedTokenAt(cur), token);
+    let slot = cur.saturating_add(1);
+    env.storage()
+        .instance()
+        .set(&DataKey::SupportedTokenSlot(token.clone()), &slot);
+    env.storage()
+        .instance()
+        .set(&DataKey::SupportedTokenCount, &slot);
+}
+
+/// Remove a token from the enumerable index via swap-with-last. Idempotent: a
+/// token not in the index is a no-op.
+pub fn remove_supported_token(env: &Env, token: &Address) {
+    let slot = supported_token_slot(env, token);
+    if slot == 0 {
+        return;
+    }
+    let idx = slot.saturating_sub(1);
+    let count = supported_token_count(env);
+    let last_idx = count.saturating_sub(1);
+
+    // Move the last entry into the freed slot, unless we removed the tail.
+    if idx != last_idx {
+        if let Some(last) = supported_token_at(env, last_idx) {
+            env.storage()
+                .instance()
+                .set(&DataKey::SupportedTokenAt(idx), &last);
+            env.storage()
+                .instance()
+                .set(&DataKey::SupportedTokenSlot(last), &slot);
+        }
+    }
+
+    env.storage()
+        .instance()
+        .remove(&DataKey::SupportedTokenAt(last_idx));
+    env.storage()
+        .instance()
+        .remove(&DataKey::SupportedTokenSlot(token.clone()));
+
+    let new_count = count.saturating_sub(1);
+    if new_count == 0 {
+        env.storage()
+            .instance()
+            .remove(&DataKey::SupportedTokenCount);
+    } else {
+        env.storage()
+            .instance()
+            .set(&DataKey::SupportedTokenCount, &new_count);
+    }
+}
+
 // ============================================================
 // EVENT RECORD (persistent)
 // ============================================================

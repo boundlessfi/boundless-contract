@@ -126,7 +126,7 @@ cmd_deploy_profile() {
 
     cmd_build_release
 
-    local wasm="target/wasm32-unknown-unknown/release/boundless_profile.wasm"
+    local wasm="target/wasm32v1-none/release/boundless_profile.wasm"
     [ -f "$wasm" ] || err "missing wasm: $wasm"
 
     info "Deploying boundless-profile..."
@@ -137,7 +137,7 @@ cmd_deploy_profile() {
         --wasm "$wasm" \
         -- \
         --admin "$(stellar keys address "$INITIAL_ADMIN_KEY")" \
-        --bootstrap_credits "$BOOTSTRAP_PROFILE_CREDITS")
+        --default_bootstrap_credits "$BOOTSTRAP_PROFILE_CREDITS")
 
     ok "profile_contract=$profile_id"
     deployment_set profile_contract "$profile_id"
@@ -163,7 +163,7 @@ cmd_deploy_events() {
 
     cmd_build_release
 
-    local wasm="target/wasm32-unknown-unknown/release/boundless_events.wasm"
+    local wasm="target/wasm32v1-none/release/boundless_events.wasm"
     [ -f "$wasm" ] || err "missing wasm: $wasm"
 
     info "Deploying boundless-events..."
