@@ -217,7 +217,7 @@ pub fn propose_upgrade(
     // soroban contracterror 50-variant cap (a dedicated InvalidVersion
     // would push us over). Off-chain monitors should treat InvalidPillar
     // on propose_upgrade as "bad version label."
-    if new_version.len() == 0 {
+    if new_version.is_empty() {
         return Err(Error::InvalidPillar);
     }
     let now = env.ledger().sequence();
