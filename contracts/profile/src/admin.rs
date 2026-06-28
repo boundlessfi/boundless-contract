@@ -23,7 +23,7 @@ const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
-pub const INITIAL_VERSION: &str = "0.2.0";
+pub const INITIAL_VERSION: &str = "1.0.0";
 
 // Events-contract rotation timelock: minimum delay between propose and
 // accept so off-chain monitoring has a window to react to a malicious
@@ -36,17 +36,12 @@ const EVENTS_CONTRACT_TIMELOCK_LEDGERS: u32 = 17_280;
 // be re-issued. Matches PENDING_TTL_LEDGERS for symmetry with admin rotation.
 const PENDING_EVENTS_CONTRACT_TTL_LEDGERS: u32 = 120_960;
 
-pub fn initialize(env: &Env, admin: Address, default_bootstrap_credits: u32) {
-    if env
-        .storage()
-        .instance()
-        .has(&crate::types::DataKey::Admin)
-    {
+pub fn initialize(env: &Env, admin: Address) {
+    if env.storage().instance().has(&crate::types::DataKey::Admin) {
         panic_with_error!(env, Error::AlreadyInitialized);
     }
 
     storage::set_admin(env, &admin);
-    storage::set_default_bootstrap_credits(env, default_bootstrap_credits);
     storage::set_paused(env, false);
     storage::set_deployment_seq(env, env.ledger().sequence());
     storage::set_version(env, &String::from_str(env, INITIAL_VERSION));
@@ -54,10 +49,6 @@ pub fn initialize(env: &Env, admin: Address, default_bootstrap_credits: u32) {
 
     evt::AdminUpdated {
         new_admin: admin.clone(),
-    }
-    .publish(env);
-    evt::BootstrapAmountSet {
-        new_amount: default_bootstrap_credits,
     }
     .publish(env);
 }
@@ -183,17 +174,6 @@ pub fn cancel_pending_events_contract(env: &Env) -> Result<(), Error> {
         cancelled_at_ledger: env.ledger().sequence(),
     }
     .publish(env);
-    Ok(())
-}
-
-// ============================================================
-// CONFIG
-// ============================================================
-pub fn set_default_bootstrap_credits(env: &Env, new_amount: u32) -> Result<(), Error> {
-    require_admin(env)?;
-    storage::set_default_bootstrap_credits(env, new_amount);
-    storage::touch_instance(env);
-    evt::BootstrapAmountSet { new_amount }.publish(env);
     Ok(())
 }
 
@@ -342,8 +322,7 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 // READS
 // ============================================================
 pub fn get_admin(env: &Env) -> Address {
-    storage::get_admin(env)
-        .unwrap_or_else(|_| panic_with_error!(env, Error::NotInitialized))
+    storage::get_admin(env).unwrap_or_else(|_| panic_with_error!(env, Error::NotInitialized))
 }
 
 pub fn get_events_contract(env: &Env) -> Option<Address> {
@@ -354,17 +333,12 @@ pub fn get_pending_events_contract(env: &Env) -> Option<PendingEventsContract> {
     storage::get_pending_events_contract(env)
 }
 
-pub fn get_default_bootstrap_credits(env: &Env) -> u32 {
-    storage::get_default_bootstrap_credits(env)
-}
-
 pub fn is_paused(env: &Env) -> bool {
     storage::is_paused(env)
 }
 
 pub fn get_version(env: &Env) -> String {
-    storage::get_version(env)
-        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+    storage::get_version(env).unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
 }
 
 pub fn get_pending_upgrade(env: &Env) -> Option<PendingUpgrade> {
@@ -399,4 +373,3 @@ pub fn require_not_paused(env: &Env) -> Result<(), Error> {
     }
     Ok(())
 }
-

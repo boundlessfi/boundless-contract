@@ -45,7 +45,7 @@ fn reputation_of(ctx: &TestCtx, user: &Address) -> u64 {
 /// address is mocked-authed by `setup`, so subsequent bump/slash calls
 /// satisfy `require_events_contract`.
 fn setup_with_user<'a>() -> (TestCtx<'a>, Address) {
-    let ctx = setup(10);
+    let ctx = setup();
     let events = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events);
 
@@ -115,7 +115,7 @@ fn bump_zero_delta_is_noop_but_marks_seen() {
 fn bump_reverts_when_events_contract_not_configured() {
     // No set_events_contract: the events-contract auth guard is the first
     // check and rejects before anything else.
-    let ctx = setup(10);
+    let ctx = setup();
     let user = Address::generate(&ctx.env);
 
     let err = ctx
@@ -143,7 +143,7 @@ fn bump_reverts_when_paused() {
 
 #[test]
 fn bump_reverts_when_profile_not_found() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events);
 
@@ -235,7 +235,7 @@ fn slash_zero_delta_is_noop() {
 
 #[test]
 fn slash_reverts_when_events_contract_not_configured() {
-    let ctx = setup(10);
+    let ctx = setup();
     let user = Address::generate(&ctx.env);
 
     let err = ctx
@@ -263,7 +263,7 @@ fn slash_reverts_when_paused() {
 
 #[test]
 fn slash_reverts_when_profile_not_found() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events);
 
@@ -372,7 +372,7 @@ fn admin_slash_reverts_when_paused() {
 
 #[test]
 fn admin_slash_reverts_when_profile_not_found() {
-    let ctx = setup(10);
+    let ctx = setup();
     // No events contract needed: admin_slash is admin-gated, not events-gated.
     let ghost = Address::generate(&ctx.env);
 

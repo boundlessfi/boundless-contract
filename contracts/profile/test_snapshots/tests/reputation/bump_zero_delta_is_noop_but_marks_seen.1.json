@@ -38,7 +38,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "bytes": "5c8c213f7fa8bada31bb3b4595f0581abcf9cc36741be969388e40544136a837"
+                  "bytes": "aeaf9db62aa6a4961ee7c9603e64d2dc65b86b879de6e05f77548154cca68932"
                 }
               ]
             }
@@ -66,7 +66,7 @@
                   "symbol": "win"
                 },
                 {
-                  "bytes": "9b0388888846a8d434f35658712438052d4b88367409a503c9d0b2bee552d916"
+                  "bytes": "e3ac39353e0bb68b22282353a9adb99df426c109d853cc4c532a75ab4e69c22b"
                 }
               ]
             }
@@ -131,7 +131,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "5c8c213f7fa8bada31bb3b4595f0581abcf9cc36741be969388e40544136a837"
+                  "bytes": "aeaf9db62aa6a4961ee7c9603e64d2dc65b86b879de6e05f77548154cca68932"
                 }
               ]
             },
@@ -151,7 +151,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "5c8c213f7fa8bada31bb3b4595f0581abcf9cc36741be969388e40544136a837"
+                      "bytes": "aeaf9db62aa6a4961ee7c9603e64d2dc65b86b879de6e05f77548154cca68932"
                     }
                   ]
                 },
@@ -176,7 +176,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "9b0388888846a8d434f35658712438052d4b88367409a503c9d0b2bee552d916"
+                  "bytes": "e3ac39353e0bb68b22282353a9adb99df426c109d853cc4c532a75ab4e69c22b"
                 }
               ]
             },
@@ -196,7 +196,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "9b0388888846a8d434f35658712438052d4b88367409a503c9d0b2bee552d916"
+                      "bytes": "e3ac39353e0bb68b22282353a9adb99df426c109d853cc4c532a75ab4e69c22b"
                     }
                   ]
                 },
@@ -258,14 +258,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "credits"
-                      },
-                      "val": {
-                        "u32": 10
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "reputation"
                       },
                       "val": {
@@ -320,18 +312,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "DefaultBootstrapCredits"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u32": 10
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "DeploymentSeq"
                             }
                           ]
@@ -373,7 +353,7 @@
                           ]
                         },
                         "val": {
-                          "string": "0.2.0"
+                          "string": "1.0.0"
                         }
                       }
                     ]

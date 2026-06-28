@@ -22,7 +22,7 @@ pub enum Error {
     PendingEventsContractTimelock = 17,
 
     ProfileNotFound = 10,
-    InsufficientCredits = 11,
+    // 11 (InsufficientCredits) retired with on-chain credits; left as a gap.
     InvalidAmount = 12,
     ReasonRequired = 13,
 

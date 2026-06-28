@@ -2,9 +2,9 @@
 //
 // boundless-profile
 //
-// Per-user credits + reputation + per-token earnings. Mutated almost
-// exclusively by the events contract; admin can grant credits and slash
-// reputation directly with audited reasons.
+// Per-user reputation + per-token earnings. Mutated almost exclusively by the
+// events contract; admin can slash reputation directly with audited reasons.
+// Credits were removed (2026-06) and now live in an off-chain ledger.
 //
 // Spec: boundless-credits-reputation-prd.md
 #![no_std]
@@ -12,7 +12,7 @@
 use soroban_sdk::{contract, contractimpl, contractmeta, Address, BytesN, Env, String, Symbol};
 
 mod admin;
-mod credits;
+mod bootstrap;
 mod earnings;
 mod errors;
 mod events;
@@ -27,10 +27,10 @@ mod tests;
 use crate::errors::Error;
 use crate::types::{PendingEventsContract, PendingUpgrade, Profile};
 
-contractmeta!(key = "version", val = "0.1.0");
+contractmeta!(key = "version", val = "0.2.0");
 contractmeta!(
     key = "description",
-    val = "Boundless profile contract: credits + reputation"
+    val = "Boundless profile contract: reputation + earnings"
 );
 contractmeta!(key = "license", val = "MIT");
 
@@ -42,8 +42,8 @@ impl ProfileContract {
     // ============================================================
     // CONSTRUCTOR
     // ============================================================
-    pub fn __constructor(env: Env, admin: Address, default_bootstrap_credits: u32) {
-        admin::initialize(&env, admin, default_bootstrap_credits);
+    pub fn __constructor(env: Env, admin: Address) {
+        admin::initialize(&env, admin);
     }
 
     // ============================================================
@@ -71,10 +71,6 @@ impl ProfileContract {
 
     pub fn cancel_pending_events_contract(env: Env) -> Result<(), Error> {
         admin::cancel_pending_events_contract(&env)
-    }
-
-    pub fn set_default_bootstrap_credits(env: Env, new_amount: u32) -> Result<(), Error> {
-        admin::set_default_bootstrap_credits(&env, new_amount)
     }
 
     pub fn pause(env: Env) -> Result<(), Error> {
@@ -109,51 +105,14 @@ impl ProfileContract {
     // BOOTSTRAP
     // ============================================================
     pub fn bootstrap(env: Env, user: Address, op_id: BytesN<32>) -> Result<(), Error> {
-        credits::bootstrap(&env, user, op_id)
+        bootstrap::bootstrap(&env, user, op_id)
     }
 
     /// Self-service profile creation: the user authorizes their own bootstrap
     /// (no admin key, no events-contract dependency). Called at onboarding so
     /// every user has a profile before they participate.
-    pub fn bootstrap_self(
-        env: Env,
-        user: Address,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        credits::bootstrap_self(&env, user, op_id)
-    }
-
-    // ============================================================
-    // CREDITS
-    // ============================================================
-    pub fn spend_credits(
-        env: Env,
-        user: Address,
-        amount: u32,
-        reason: Symbol,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        credits::spend(&env, user, amount, reason, op_id)
-    }
-
-    pub fn earn_credits(
-        env: Env,
-        user: Address,
-        amount: u32,
-        reason: Symbol,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        credits::earn(&env, user, amount, reason, op_id)
-    }
-
-    pub fn refund_credits(
-        env: Env,
-        user: Address,
-        amount: u32,
-        reason: Symbol,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        credits::refund(&env, user, amount, reason, op_id)
+    pub fn bootstrap_self(env: Env, user: Address, op_id: BytesN<32>) -> Result<(), Error> {
+        bootstrap::bootstrap_self(&env, user, op_id)
     }
 
     // ============================================================
@@ -195,16 +154,6 @@ impl ProfileContract {
     // ============================================================
     // ADMIN-DIRECT MUTATIONS
     // ============================================================
-    pub fn admin_grant_credits(
-        env: Env,
-        user: Address,
-        amount: u32,
-        reason: String,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        credits::admin_grant(&env, user, amount, reason, op_id)
-    }
-
     pub fn admin_slash_reputation(
         env: Env,
         user: Address,
@@ -236,10 +185,6 @@ impl ProfileContract {
 
     pub fn get_pending_events_contract(env: Env) -> Option<PendingEventsContract> {
         admin::get_pending_events_contract(&env)
-    }
-
-    pub fn get_default_bootstrap_credits(env: Env) -> u32 {
-        admin::get_default_bootstrap_credits(&env)
     }
 
     pub fn is_paused(env: Env) -> bool {

@@ -37,7 +37,6 @@ use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
-const BOOTSTRAP_CREDITS: u32 = 10;
 const FEE_BPS: u32 = 250;
 
 // 10 USDC at 7 decimals = 100_000_000 stroops. Mirrors the contract constant.
@@ -62,8 +61,7 @@ fn setup<'a>() -> Ctx<'a> {
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
-    let profile_id =
-        env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
+    let profile_id = env.register(ProfileContract, (profile_admin.clone(),));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     let events_admin = Address::generate(&env);
@@ -119,7 +117,6 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         title: String::from_str(&ctx.env, "Contrib Hack"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -241,9 +238,7 @@ fn replayed_add_funds_reverts() {
     let op = BytesN::random(&ctx.env);
     ctx.events.add_funds(&id, &partner, &MIN_CONTRIB, &op);
 
-    let res = ctx
-        .events
-        .try_add_funds(&id, &partner, &MIN_CONTRIB, &op);
+    let res = ctx.events.try_add_funds(&id, &partner, &MIN_CONTRIB, &op);
     assert!(res.is_err(), "replayed add_funds should revert");
 }
 
@@ -286,7 +281,8 @@ fn multiple_top_ups_from_same_contributor_aggregate_and_dont_duplicate_list() {
     let op_a = BytesN::random(&ctx.env);
     ctx.events.add_funds(&id, &partner, &MIN_CONTRIB, &op_a);
     let op_b = BytesN::random(&ctx.env);
-    ctx.events.add_funds(&id, &partner, &(MIN_CONTRIB * 2), &op_b);
+    ctx.events
+        .add_funds(&id, &partner, &(MIN_CONTRIB * 2), &op_b);
 
     let list = ctx.events.get_contributors(&id);
     assert_eq!(list.len(), 1, "contributor list de-dupes");
@@ -382,7 +378,6 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
         title: String::from_str(&ctx.env, "Boundary Cancel"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -410,7 +405,6 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
         WinnerSpec {
             recipient: winner_a.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
     ];

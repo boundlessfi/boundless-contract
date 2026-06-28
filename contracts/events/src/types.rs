@@ -107,7 +107,6 @@ pub struct EventRecord {
     pub created_at: u64,
     pub deadline: Option<u64>,
     pub winner_distribution: Map<u32, u32>,
-    pub application_credit_cost: u32,
     pub fee_bps_override: Option<u32>,
 }
 
@@ -126,7 +125,6 @@ pub struct CreateEventParams {
     pub title: String,
     pub deadline: Option<u64>,
     pub winner_distribution: Map<u32, u32>,
-    pub application_credit_cost: u32,
     pub fee_bps_override: Option<u32>,
     // Optional management authority. None => owner manages (legacy behavior).
     // When set, this address authorizes select_winners + cancel instead of the
@@ -178,16 +176,15 @@ pub struct Winner {
 // ============================================================
 // WINNER SELECTION SPEC
 //
-// Input to select_winners. The orchestrator computes credit_earn and
-// reputation_bump off-chain per the policy tables in
-// boundless-credits-reputation-prd.md Section 9; the contract just records.
+// Input to select_winners. The orchestrator computes reputation_bump off-chain
+// per the policy tables in boundless-credits-reputation-prd.md Section 9; the
+// contract just records.
 // ============================================================
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WinnerSpec {
     pub recipient: Address,
     pub position: u32,
-    pub credit_earn: u32,
     pub reputation_bump: u32,
 }
 
@@ -277,6 +274,18 @@ pub enum DataKey {
 
     // Idempotency
     OpSeen(BytesN<32>),
+
+    // Enumerable whitelist index (parallels the SupportedToken bool above).
+    // Lets the full whitelist be read authoritatively from state via
+    // supported_token_count + supported_token_at, instead of replaying the
+    // ephemeral TokenRegistered / TokenDeregistered events (which the RPC only
+    // retains for a short window). Appended here to keep existing keys stable.
+    //   SupportedTokenCount     -> u32 number of whitelisted tokens
+    //   SupportedTokenAt(idx)   -> Address at slot idx, idx in [0, count)
+    //   SupportedTokenSlot(addr)-> u32 1-based slot; 0 means absent
+    SupportedTokenCount,
+    SupportedTokenAt(u32),
+    SupportedTokenSlot(Address),
 }
 
 // ============================================================

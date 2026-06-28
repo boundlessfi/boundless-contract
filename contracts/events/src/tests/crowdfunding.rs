@@ -24,7 +24,6 @@ use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
-const BOOTSTRAP_CREDITS: u32 = 10;
 const FEE_BPS: u32 = 250;
 
 // Builder's stated funding goal (informational only on-chain).
@@ -47,8 +46,7 @@ fn setup<'a>() -> Ctx<'a> {
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
-    let profile_id =
-        env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
+    let profile_id = env.register(ProfileContract, (profile_admin.clone(),));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     let events_admin = Address::generate(&env);
@@ -105,7 +103,6 @@ fn create_campaign(ctx: &Ctx, milestones: u32) -> u64 {
         title: String::from_str(&ctx.env, "Open-Source Crawler"),
         deadline: Some(ctx.env.ledger().timestamp() + 30 * 86_400),
         winner_distribution: single_dist_100_at_1(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -170,7 +167,6 @@ fn create_rejects_single_release_kind() {
         title: String::from_str(&ctx.env, "Bad CF"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist_100_at_1(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -192,7 +188,6 @@ fn create_rejects_missing_deadline() {
         title: String::from_str(&ctx.env, "Bad CF"),
         deadline: None,
         winner_distribution: single_dist_100_at_1(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -217,7 +212,6 @@ fn create_rejects_distribution_with_multiple_positions() {
         title: String::from_str(&ctx.env, "Bad CF"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -289,23 +283,29 @@ fn claim_milestone_splits_evenly_and_charges_fee_at_release() {
 
     let op_m0 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &0_u32, &op_m0);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &op_m0);
     assert_eq!(token.balance(&ctx.builder), 292_5000000_i128);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 7_5000000_i128);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 600_0000000_i128);
 
     let op_m1 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &1_u32, &0_u32, &0_u32, &op_m1);
+        .claim_milestone(&id, &ctx.builder, &1_u32, &0_u32, &op_m1);
     assert_eq!(token.balance(&ctx.builder), 585_0000000_i128);
-    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 15_0000000_i128);
+    assert_eq!(
+        token.balance(&ctx.fee_account) - fee_before,
+        15_0000000_i128
+    );
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 300_0000000_i128);
 
     let op_m2 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &2_u32, &0_u32, &0_u32, &op_m2);
+        .claim_milestone(&id, &ctx.builder, &2_u32, &0_u32, &op_m2);
     assert_eq!(token.balance(&ctx.builder), 877_5000000_i128);
-    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 22_5000000_i128);
+    assert_eq!(
+        token.balance(&ctx.fee_account) - fee_before,
+        22_5000000_i128
+    );
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);
     assert_eq!(event.status, EventStatus::Completed);
@@ -328,7 +328,7 @@ fn claim_milestone_last_drains_dust_with_fee() {
 
     for m in 0u32..3 {
         let op = BytesN::random(&ctx.env);
-        ctx.events.claim_milestone(&id, &ctx.builder, &m, &0, &0, &op);
+        ctx.events.claim_milestone(&id, &ctx.builder, &m, &0, &op);
     }
 
     let builder_delta = token.balance(&ctx.builder) - builder_before;
@@ -353,11 +353,11 @@ fn claim_milestone_replay_reverts() {
 
     let op = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
 
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op);
+        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
     assert!(res.is_err());
 }
 
@@ -371,7 +371,7 @@ fn claim_milestone_out_of_range_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.builder, &2_u32, &0, &0, &op);
+        .try_claim_milestone(&id, &ctx.builder, &2_u32, &0, &op);
     assert!(res.is_err());
 }
 
@@ -382,7 +382,7 @@ fn claim_milestone_with_empty_escrow_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op);
+        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
     assert!(res.is_err());
 }
 
@@ -421,7 +421,7 @@ fn backer_pays_exactly_pledge_and_creator_bears_fee() {
     // Single milestone: the builder claims and the fee is taken from the payout.
     let claim = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &claim);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &claim);
 
     let fee = pledge * FEE_BPS as i128 / 10_000_i128; // 2.5 USDC
     assert_eq!(
@@ -449,7 +449,6 @@ fn select_winners_on_crowdfunding_reverts() {
     let spec = WinnerSpec {
         recipient: ctx.builder.clone(),
         position: 1,
-        credit_earn: 0,
         reputation_bump: 0,
     };
     let mut winners = SorobanVec::new(&ctx.env);
@@ -533,7 +532,7 @@ fn cancel_after_partial_claim_pro_rates_remaining() {
 
     let op_m0 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op_m0);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op_m0);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let p1_before = token.balance(&p1);
@@ -569,7 +568,7 @@ fn crowdfunding_claim_milestone_requires_admin_auth() {
 
     let op = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &0, &op);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
 
     let auths = ctx.env.auths();
     let admin_required = auths.iter().any(|(addr, _)| *addr == ctx.events_admin);

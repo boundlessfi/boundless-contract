@@ -13,15 +13,12 @@ pub struct TestCtx<'a> {
     pub client: ProfileContractClient<'a>,
 }
 
-pub fn setup<'a>(default_bootstrap_credits: u32) -> TestCtx<'a> {
+pub fn setup<'a>() -> TestCtx<'a> {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
 
-    let contract_id = env.register(
-        ProfileContract,
-        (admin.clone(), default_bootstrap_credits),
-    );
+    let contract_id = env.register(ProfileContract, (admin.clone(),));
     let client = ProfileContractClient::new(&env, &contract_id);
 
     TestCtx { env, admin, client }

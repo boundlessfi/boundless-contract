@@ -38,7 +38,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "bytes": "f5ab9f3f1f561309cb7cc5ce37c269398016712e7b32dd622fd6bbe319965ed2"
+                  "bytes": "69e67e1876c5f2f5d9da0f66b4d83ec42c5c0599500386440d880ada0920c3b8"
                 }
               ]
             }
@@ -67,7 +67,7 @@
                   "symbol": "win"
                 },
                 {
-                  "bytes": "505b4ac46813c42151dd88605cd0d32f4d90d9117d1d00c671347657ede5b52e"
+                  "bytes": "3a9d2f365405176a582d6a6e2a44e6ef72d33db18bfd4335fb4b6aac0e7f26b5"
                 }
               ]
             }
@@ -131,7 +131,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "505b4ac46813c42151dd88605cd0d32f4d90d9117d1d00c671347657ede5b52e"
+                  "bytes": "3a9d2f365405176a582d6a6e2a44e6ef72d33db18bfd4335fb4b6aac0e7f26b5"
                 }
               ]
             },
@@ -151,7 +151,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "505b4ac46813c42151dd88605cd0d32f4d90d9117d1d00c671347657ede5b52e"
+                      "bytes": "3a9d2f365405176a582d6a6e2a44e6ef72d33db18bfd4335fb4b6aac0e7f26b5"
                     }
                   ]
                 },
@@ -176,7 +176,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "f5ab9f3f1f561309cb7cc5ce37c269398016712e7b32dd622fd6bbe319965ed2"
+                  "bytes": "69e67e1876c5f2f5d9da0f66b4d83ec42c5c0599500386440d880ada0920c3b8"
                 }
               ]
             },
@@ -196,7 +196,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "f5ab9f3f1f561309cb7cc5ce37c269398016712e7b32dd622fd6bbe319965ed2"
+                      "bytes": "69e67e1876c5f2f5d9da0f66b4d83ec42c5c0599500386440d880ada0920c3b8"
                     }
                   ]
                 },
@@ -258,14 +258,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "credits"
-                      },
-                      "val": {
-                        "u32": 10
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "reputation"
                       },
                       "val": {
@@ -320,18 +312,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "DefaultBootstrapCredits"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u32": 10
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "DeploymentSeq"
                             }
                           ]
@@ -373,7 +353,7 @@
                           ]
                         },
                         "val": {
-                          "string": "0.2.0"
+                          "string": "1.0.0"
                         }
                       }
                     ]

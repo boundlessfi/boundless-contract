@@ -2,9 +2,10 @@
 //
 // Spec: boundless-platform-contract-prd.md Sections 6.3, 7.
 //
-// Bounties use ReleaseKind::Single. Apply / submit are gated by credits.
+// Bounties use ReleaseKind::Single. Credits (apply cost / refunds) are handled
+// off-chain; the contract only records applicants and ensures their profile.
 
-use soroban_sdk::{Address, BytesN, Env, Symbol};
+use soroban_sdk::{Address, BytesN, Env};
 
 use crate::admin;
 use crate::errors::Error;
@@ -15,11 +16,7 @@ use crate::profile_client;
 use crate::storage;
 use crate::types::{EventRecord, EventStatus, Pillar, ReleaseKind};
 
-pub fn validate_create(
-    _env: &Env,
-    record: &EventRecord,
-    _owner: &Address,
-) -> Result<(), Error> {
+pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Result<(), Error> {
     if !matches!(record.release_kind, ReleaseKind::Single) {
         return Err(Error::InvalidReleaseKind);
     }
@@ -43,27 +40,18 @@ pub fn apply(
 
     applicant.require_auth();
 
-    // append_applicant returns Err on duplicate or cap exceeded; both are
-    // caught here so we don't bill credits before reserving the slot.
+    // append_applicant returns Err on duplicate or cap exceeded.
     storage::append_applicant(env, bounty_id, &applicant, MAX_APPLICANTS_PER_EVENT)?;
 
-    // Cross-contract: bootstrap (idempotent), then spend credits.
+    // Cross-contract: ensure the applicant has a profile (idempotent). Credits
+    // are charged off-chain now, so there is no on-chain spend here.
     let profile = profile_client::client(env);
     let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
     profile.bootstrap(&applicant, &bootstrap_op);
 
-    let spend_op = idempotency::derive_child(env, &op_id, tag::SPEND_CREDITS);
-    profile.spend_credits(
-        &applicant,
-        &event.application_credit_cost,
-        &Symbol::new(env, "apply"),
-        &spend_op,
-    );
-
     evt::Applied {
         event_id: bounty_id,
         applicant,
-        credit_cost: event.application_credit_cost,
     }
     .publish(env);
 
@@ -97,18 +85,7 @@ pub fn withdraw_application(
     // the prior O(n) linear scan even at the cap.
     storage::remove_applicant(env, bounty_id, &applicant)?;
 
-    // Cross-contract: refund 50% of the application credit cost.
-    let refund = event.application_credit_cost / 2;
-    if refund > 0 {
-        let profile = profile_client::client(env);
-        let refund_op = idempotency::derive_child(env, &op_id, tag::REFUND_CREDITS);
-        profile.refund_credits(
-            &applicant,
-            &refund,
-            &Symbol::new(env, "wd_refund"),
-            &refund_op,
-        );
-    }
+    // Credits (including any withdrawal refund) are handled off-chain.
 
     evt::ApplicationWithdrawn {
         event_id: bounty_id,

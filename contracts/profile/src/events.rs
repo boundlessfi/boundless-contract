@@ -11,28 +11,6 @@ use soroban_sdk::{contractevent, Address, BytesN, String, Symbol};
 #[contractevent]
 pub struct ProfileBootstrapped {
     pub user: Address,
-    pub initial_credits: u32,
-}
-
-#[contractevent]
-pub struct CreditsSpent {
-    pub user: Address,
-    pub amount: u32,
-    pub reason: Symbol,
-}
-
-#[contractevent]
-pub struct CreditsEarned {
-    pub user: Address,
-    pub amount: u32,
-    pub reason: Symbol,
-}
-
-#[contractevent]
-pub struct CreditsRefunded {
-    pub user: Address,
-    pub amount: u32,
-    pub reason: Symbol,
 }
 
 #[contractevent]
@@ -54,13 +32,6 @@ pub struct EarningsRegistered {
     pub user: Address,
     pub token: Address,
     pub amount: i128,
-}
-
-#[contractevent]
-pub struct AdminCreditsGranted {
-    pub user: Address,
-    pub amount: u32,
-    pub reason: String,
 }
 
 #[contractevent]
@@ -95,11 +66,6 @@ pub struct PendingEventsContractSet {
 #[contractevent]
 pub struct EventsRotationCancelled {
     pub cancelled_at_ledger: u32,
-}
-
-#[contractevent]
-pub struct BootstrapAmountSet {
-    pub new_amount: u32,
 }
 
 #[contractevent]

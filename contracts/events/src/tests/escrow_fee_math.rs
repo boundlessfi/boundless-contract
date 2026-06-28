@@ -21,7 +21,6 @@ use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
-const BOOTSTRAP_CREDITS: u32 = 10;
 const FEE_BPS: u32 = 250; // 2.5%
 const TOTAL_BUDGET: i128 = 1_000_0000000_i128; // 1000 USDC at 7 decimals
 
@@ -42,8 +41,7 @@ fn setup_with_bps<'a>(fee_bps: u32) -> Ctx<'a> {
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
-    let profile_id =
-        env.register(ProfileContract, (profile_admin.clone(), BOOTSTRAP_CREDITS));
+    let profile_id = env.register(ProfileContract, (profile_admin.clone(),));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     let events_admin = Address::generate(&env);
@@ -104,7 +102,6 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         title: String::from_str(&ctx.env, "Fee Math Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -123,7 +120,6 @@ fn create_hackathon_with_override(ctx: &Ctx, override_bps: u32) -> u64 {
         title: String::from_str(&ctx.env, "Override BPS Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: Some(override_bps),
         manager: None,
     };
@@ -142,7 +138,6 @@ fn create_hackathon_with_dist(ctx: &Ctx, dist: Map<u32, u32>) -> u64 {
         title: String::from_str(&ctx.env, "Dist Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -161,7 +156,6 @@ fn create_grant(ctx: &Ctx, milestones: u32) -> u64 {
         title: String::from_str(&ctx.env, "Grant Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -234,7 +228,6 @@ fn override_bps_above_max_rejected() {
         title: String::from_str(&ctx.env, "Bad Override"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: Some(1001), // MAX_FEE_BPS = 1000
         manager: None,
     };
@@ -274,7 +267,6 @@ fn fee_rounds_down_non_divisible_amount() {
         title: String::from_str(&ctx.env, "Tiny"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -305,7 +297,6 @@ fn fee_rounding_on_odd_amounts() {
         title: String::from_str(&ctx.env, "Odd"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -398,7 +389,6 @@ fn single_release_pays_full_escrow_for_100_percent() {
         WinnerSpec {
             recipient: winner.clone(),
             position: 1,
-            credit_earn: 10,
             reputation_bump: 50,
         },
     ];
@@ -427,9 +417,21 @@ fn multi_position_split_pays_correct_amounts() {
     let w3 = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w1.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
-        WinnerSpec { recipient: w2.clone(), position: 2, credit_earn: 10, reputation_bump: 30 },
-        WinnerSpec { recipient: w3.clone(), position: 3, credit_earn: 10, reputation_bump: 20 },
+        WinnerSpec {
+            recipient: w1.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
+        WinnerSpec {
+            recipient: w2.clone(),
+            position: 2,
+            reputation_bump: 30
+        },
+        WinnerSpec {
+            recipient: w3.clone(),
+            position: 3,
+            reputation_bump: 20
+        },
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
@@ -459,9 +461,21 @@ fn three_way_33_33_34_split_rounding() {
     let w3 = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w1.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
-        WinnerSpec { recipient: w2.clone(), position: 2, credit_earn: 10, reputation_bump: 30 },
-        WinnerSpec { recipient: w3.clone(), position: 3, credit_earn: 10, reputation_bump: 20 },
+        WinnerSpec {
+            recipient: w1.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
+        WinnerSpec {
+            recipient: w2.clone(),
+            position: 2,
+            reputation_bump: 30
+        },
+        WinnerSpec {
+            recipient: w3.clone(),
+            position: 3,
+            reputation_bump: 20
+        },
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
@@ -492,7 +506,11 @@ fn partial_position_fill_leaves_residual_escrow() {
     let w1 = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w1.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: w1.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
@@ -501,7 +519,10 @@ fn partial_position_fill_leaves_residual_escrow() {
     assert_eq!(token.balance(&w1), TOTAL_BUDGET * 60 / 100);
 
     let event = ctx.events.get_event(&id);
-    assert_eq!(event.remaining_escrow, TOTAL_BUDGET - TOTAL_BUDGET * 60 / 100);
+    assert_eq!(
+        event.remaining_escrow,
+        TOTAL_BUDGET - TOTAL_BUDGET * 60 / 100
+    );
 }
 
 // ============================================================
@@ -527,7 +548,11 @@ fn partner_funds_grow_winner_payout() {
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: winner.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: winner.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
@@ -549,7 +574,11 @@ fn grant_milestone_pays_floored_per_milestone() {
     let recipient = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: recipient.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: recipient.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op_sel = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_sel);
@@ -562,17 +591,17 @@ fn grant_milestone_pays_floored_per_milestone() {
 
     // Milestone 0
     let op_m0 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &recipient, &0, &10, &50, &op_m0);
+    ctx.events.claim_milestone(&id, &recipient, &0, &50, &op_m0);
     assert_eq!(token.balance(&recipient), per_milestone);
 
     // Milestone 1
     let op_m1 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &recipient, &1, &10, &50, &op_m1);
+    ctx.events.claim_milestone(&id, &recipient, &1, &50, &op_m1);
     assert_eq!(token.balance(&recipient), per_milestone * 2);
 
     // Milestone 2 (last): sweep — pays total_share - already_paid
     let op_m2 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &recipient, &2, &10, &50, &op_m2);
+    ctx.events.claim_milestone(&id, &recipient, &2, &50, &op_m2);
     assert_eq!(
         token.balance(&recipient),
         TOTAL_BUDGET,
@@ -591,17 +620,23 @@ fn grant_milestone_double_claim_rejected() {
     let recipient = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: recipient.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: recipient.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op_sel = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_sel);
 
     let op_m0 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &recipient, &0, &10, &50, &op_m0);
+    ctx.events.claim_milestone(&id, &recipient, &0, &50, &op_m0);
 
     // Same milestone again → MilestoneAlreadyClaimed
     let op_m0_dup = BytesN::random(&ctx.env);
-    let res = ctx.events.try_claim_milestone(&id, &recipient, &0, &10, &50, &op_m0_dup);
+    let res = ctx
+        .events
+        .try_claim_milestone(&id, &recipient, &0, &50, &op_m0_dup);
     assert!(res.is_err(), "double claim_milestone must revert");
 }
 
@@ -614,14 +649,20 @@ fn grant_milestone_out_of_range_rejected() {
     let recipient = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: recipient.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: recipient.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op_sel = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_sel);
 
     // Milestone 2 is out-of-range for Multi(2) (valid: 0, 1)
     let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_claim_milestone(&id, &recipient, &2, &10, &50, &op);
+    let res = ctx
+        .events
+        .try_claim_milestone(&id, &recipient, &2, &50, &op);
     assert!(res.is_err(), "milestone >= total_milestones must revert");
 }
 
@@ -646,7 +687,6 @@ fn crowdfunding_dynamic_milestone_split() {
         title: String::from_str(&ctx.env, "Crowd Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -672,18 +712,24 @@ fn crowdfunding_dynamic_milestone_split() {
 
     // M0: amount = 900 / 3 = 300, net = 300 - fee
     let op_m0 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.owner, &0, &10, &50, &op_m0);
+    ctx.events.claim_milestone(&id, &ctx.owner, &0, &50, &op_m0);
     assert_eq!(token.balance(&ctx.owner) - owner_before, net_per_milestone);
 
     // M1: remaining = 600 / 2 = 300, net = 300 - fee
     let op_m1 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.owner, &1, &10, &50, &op_m1);
-    assert_eq!(token.balance(&ctx.owner) - owner_before, net_per_milestone * 2);
+    ctx.events.claim_milestone(&id, &ctx.owner, &1, &50, &op_m1);
+    assert_eq!(
+        token.balance(&ctx.owner) - owner_before,
+        net_per_milestone * 2
+    );
 
     // M2: remaining = 300 / 1 = 300, net = 300 - fee
     let op_m2 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.owner, &2, &10, &50, &op_m2);
-    assert_eq!(token.balance(&ctx.owner) - owner_before, net_per_milestone * 3);
+    ctx.events.claim_milestone(&id, &ctx.owner, &2, &50, &op_m2);
+    assert_eq!(
+        token.balance(&ctx.owner) - owner_before,
+        net_per_milestone * 3
+    );
 
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);
@@ -711,7 +757,6 @@ fn crowdfunding_dynamic_rounding_no_dust() {
         title: String::from_str(&ctx.env, "Dust Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -725,17 +770,17 @@ fn crowdfunding_dynamic_rounding_no_dust() {
     ctx.events.add_funds(&id, &backer, &raised, &op_fund);
 
     let op_m0 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.owner, &0, &10, &50, &op_m0);
+    ctx.events.claim_milestone(&id, &ctx.owner, &0, &50, &op_m0);
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 666_6666668);
 
     let op_m1 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.owner, &1, &10, &50, &op_m1);
+    ctx.events.claim_milestone(&id, &ctx.owner, &1, &50, &op_m1);
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 333_3333334);
 
     let op_m2 = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &ctx.owner, &2, &10, &50, &op_m2);
+    ctx.events.claim_milestone(&id, &ctx.owner, &2, &50, &op_m2);
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);
 }
@@ -780,7 +825,6 @@ fn replayed_create_event_reverts() {
         title: String::from_str(&ctx.env, "Replay"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -799,7 +843,11 @@ fn replayed_select_winners_reverts() {
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: winner.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: winner.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
@@ -818,7 +866,11 @@ fn select_winners_on_nonexistent_event_reverts() {
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: winner.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: winner.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&999_u64, &winners, &op);
@@ -837,8 +889,16 @@ fn select_winners_duplicate_position_reverts() {
     let w2 = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w1.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
-        WinnerSpec { recipient: w2.clone(), position: 1, credit_earn: 10, reputation_bump: 30 },
+        WinnerSpec {
+            recipient: w1.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
+        WinnerSpec {
+            recipient: w2.clone(),
+            position: 1,
+            reputation_bump: 30
+        },
     ];
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &winners, &op);
@@ -853,7 +913,11 @@ fn select_winners_invalid_position_reverts() {
     let w = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w.clone(), position: 99, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 99,
+            reputation_bump: 50
+        },
     ];
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &winners, &op);
@@ -879,7 +943,11 @@ fn select_winners_twice_reverts() {
     let w = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
 
     let op1 = BytesN::random(&ctx.env);
@@ -888,7 +956,10 @@ fn select_winners_twice_reverts() {
     // Second selection on the same event → WinnersAlreadySelected
     let op2 = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &winners, &op2);
-    assert!(res.is_err(), "second select_winners on same event must revert");
+    assert!(
+        res.is_err(),
+        "second select_winners on same event must revert"
+    );
 }
 
 // ============================================================
@@ -911,7 +982,6 @@ fn large_budget_fee_does_not_overflow() {
         title: String::from_str(&ctx.env, "Big"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: single_dist(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -970,11 +1040,18 @@ fn select_winners_on_cancelled_event_reverts() {
     let w = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &winners, &op);
-    assert!(res.is_err(), "select_winners on cancelled event must revert");
+    assert!(
+        res.is_err(),
+        "select_winners on cancelled event must revert"
+    );
 }
 
 // ============================================================
@@ -1001,7 +1078,11 @@ fn fee_and_winner_balances_consistent() {
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: winner.clone(), position: 1, credit_earn: 10, reputation_bump: 50 },
+        WinnerSpec {
+            recipient: winner.clone(),
+            position: 1,
+            reputation_bump: 50
+        },
     ];
     let op_sel = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_sel);

@@ -18,11 +18,7 @@ use crate::profile_client;
 use crate::storage;
 use crate::types::{EventRecord, EventStatus, Pillar, ReleaseKind, Winner};
 
-pub fn validate_create(
-    _env: &Env,
-    record: &EventRecord,
-    _owner: &Address,
-) -> Result<(), Error> {
+pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Result<(), Error> {
     match record.release_kind {
         ReleaseKind::Multi(n) if n > 0 => Ok(()),
         _ => Err(Error::InvalidReleaseKind),
@@ -48,9 +44,9 @@ pub fn validate_create(
 //   picks up any rounding remainder, so the total paid equals what was
 //   raised exactly.
 //
-// Each call: token release + bootstrap (idempotent) + earn_credits +
-// bump_reputation + register_earnings. Marks the event Completed when
-// the last milestone for the last recipient drains remaining_escrow.
+// Each call: token release + bootstrap (idempotent) + bump_reputation +
+// register_earnings. Marks the event Completed when the last milestone for
+// the last recipient drains remaining_escrow.
 //
 // Auth: event.owner for grants (organization-controlled); for crowdfunding
 // the owner is the builder, so the off-chain layer routes claim_milestone
@@ -66,7 +62,6 @@ pub fn claim_milestone(
     event_id: u64,
     recipient: Address,
     milestone: u32,
-    credit_earn: u32,
     reputation_bump: u32,
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
@@ -123,8 +118,7 @@ pub fn claim_milestone(
         match w.milestone {
             None => winner_position = Some(w.position),
             Some(_) => {
-                already_claimed_for_recipient =
-                    already_claimed_for_recipient.saturating_add(1);
+                already_claimed_for_recipient = already_claimed_for_recipient.saturating_add(1);
                 already_paid_to_recipient = already_paid_to_recipient.saturating_add(w.amount);
             }
         }
@@ -195,9 +189,6 @@ pub fn claim_milestone(
 
     let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
     profile.bootstrap(&recipient, &bootstrap_op);
-
-    let earn_op = idempotency::derive_child(env, &op_id, tag::EARN_CREDITS);
-    profile.earn_credits(&recipient, &credit_earn, &reason, &earn_op);
 
     let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
     profile.bump_reputation(&recipient, &reputation_bump, &reason, &rep_op);

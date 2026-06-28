@@ -38,7 +38,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "bytes": "38e93777522a31e99a5a2a282cc4f34392c7d58678a3685346caa86e97286eed"
+                  "bytes": "541c185b12ea8b10c8c0f9c0559a51897fae0c5cd25dcfb0bfc54df0047f6371"
                 }
               ]
             }
@@ -66,7 +66,7 @@
                   "symbol": "win"
                 },
                 {
-                  "bytes": "473f081b78a3de955d0b767471be8e8e3df54e19a5aef76ad7381efc0bebb118"
+                  "bytes": "4e7f2679b80ba85869005d851ff32fddce532bc3ccfbb31967d796fc0679b882"
                 }
               ]
             }
@@ -94,7 +94,7 @@
                   "string": "fraud"
                 },
                 {
-                  "bytes": "a965ee230079a61962109f8daa6edc0e47ec5df6b4d48f4d631df4229b1863d9"
+                  "bytes": "2b706f270696299977b69fbf0bb55494299f8e0f40ba253f3c7ea52a05efa755"
                 }
               ]
             }
@@ -191,7 +191,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "38e93777522a31e99a5a2a282cc4f34392c7d58678a3685346caa86e97286eed"
+                  "bytes": "2b706f270696299977b69fbf0bb55494299f8e0f40ba253f3c7ea52a05efa755"
                 }
               ]
             },
@@ -211,7 +211,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "38e93777522a31e99a5a2a282cc4f34392c7d58678a3685346caa86e97286eed"
+                      "bytes": "2b706f270696299977b69fbf0bb55494299f8e0f40ba253f3c7ea52a05efa755"
                     }
                   ]
                 },
@@ -236,7 +236,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "473f081b78a3de955d0b767471be8e8e3df54e19a5aef76ad7381efc0bebb118"
+                  "bytes": "4e7f2679b80ba85869005d851ff32fddce532bc3ccfbb31967d796fc0679b882"
                 }
               ]
             },
@@ -256,7 +256,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "473f081b78a3de955d0b767471be8e8e3df54e19a5aef76ad7381efc0bebb118"
+                      "bytes": "4e7f2679b80ba85869005d851ff32fddce532bc3ccfbb31967d796fc0679b882"
                     }
                   ]
                 },
@@ -281,7 +281,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "a965ee230079a61962109f8daa6edc0e47ec5df6b4d48f4d631df4229b1863d9"
+                  "bytes": "541c185b12ea8b10c8c0f9c0559a51897fae0c5cd25dcfb0bfc54df0047f6371"
                 }
               ]
             },
@@ -301,7 +301,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "a965ee230079a61962109f8daa6edc0e47ec5df6b4d48f4d631df4229b1863d9"
+                      "bytes": "541c185b12ea8b10c8c0f9c0559a51897fae0c5cd25dcfb0bfc54df0047f6371"
                     }
                   ]
                 },
@@ -363,14 +363,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "credits"
-                      },
-                      "val": {
-                        "u32": 10
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "reputation"
                       },
                       "val": {
@@ -425,18 +417,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "DefaultBootstrapCredits"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u32": 10
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "DeploymentSeq"
                             }
                           ]
@@ -478,7 +458,7 @@
                           ]
                         },
                         "val": {
-                          "string": "0.2.0"
+                          "string": "1.0.0"
                         }
                       }
                     ]

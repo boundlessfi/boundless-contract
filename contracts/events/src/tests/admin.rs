@@ -22,7 +22,7 @@ fn initializes_with_expected_config() {
     assert_eq!(ctx.client.get_fee_bps(), 250);
     assert_eq!(ctx.client.get_profile_contract(), ctx.profile_contract);
     assert_eq!(ctx.client.is_paused(), false);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "0.2.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.0.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
@@ -101,7 +101,7 @@ fn apply_upgrade_before_timelock_reverts() {
         .expect("timelock blocks")
         .unwrap();
     assert_eq!(err, Error::UpgradeTimelockNotElapsed);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "0.2.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.0.0"));
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn cancel_pending_upgrade_clears_proposal() {
     ctx.client.cancel_pending_upgrade();
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     // Version unchanged.
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "0.2.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.0.0"));
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn migrate_marks_current_version_and_blocks_replay() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "0.2.0"))
+        Some(String::from_str(&ctx.env, "1.0.0"))
     );
 
     let err = ctx

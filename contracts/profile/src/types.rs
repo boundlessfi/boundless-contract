@@ -8,15 +8,13 @@ use soroban_sdk::{contracttype, Address, BytesN, String};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Profile {
     pub bootstrapped_at: u64,
-    pub credits: u32,
     pub reputation: u64,
 }
 
 impl Profile {
-    pub fn new(bootstrapped_at: u64, credits: u32) -> Self {
+    pub fn new(bootstrapped_at: u64) -> Self {
         Self {
             bootstrapped_at,
-            credits,
             reputation: 0,
         }
     }
@@ -24,9 +22,13 @@ impl Profile {
 
 // M4 (2026-06 audit): dropped wins_count, submissions_count,
 // applications_count, milestones_completed. They were never incremented
-// anywhere in the contract — off-chain indexers derive these counters from
-// the emitted events instead, which is cheaper and stays accurate without
-// a migration if the policy ever changes.
+// anywhere in the contract.
+//
+// 2026-06: dropped `credits`. Credits are now an off-chain ledger
+// (boundless-nestjs); the profile contract holds only reputation + earnings.
+// Removing the field changes the persisted Profile layout: existing on-chain
+// profiles must be re-bootstrapped or migrated before this version is applied.
+// See the mainnet-deploy-runbook before upgrading.
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,7 +70,6 @@ pub enum DataKey {
     PendingAdmin,
     EventsContract,
     PendingEventsContract,
-    DefaultBootstrapCredits,
     Paused,
     DeploymentSeq,
 

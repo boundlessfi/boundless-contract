@@ -19,20 +19,19 @@ const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
 #[test]
 fn initializes_with_expected_config() {
-    let ctx = setup(10);
+    let ctx = setup();
     assert_eq!(ctx.client.get_admin(), ctx.admin);
-    assert_eq!(ctx.client.get_default_bootstrap_credits(), 10);
     assert_eq!(ctx.client.is_paused(), false);
     assert_eq!(ctx.client.get_events_contract(), None);
     assert_eq!(ctx.client.get_pending_events_contract(), None);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "0.2.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.0.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
 
 #[test]
 fn pause_and_unpause_round_trip() {
-    let ctx = setup(10);
+    let ctx = setup();
     ctx.client.pause();
     assert_eq!(ctx.client.is_paused(), true);
     ctx.client.unpause();
@@ -45,7 +44,7 @@ fn pause_and_unpause_round_trip() {
 
 #[test]
 fn first_set_events_contract_succeeds() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events);
     assert_eq!(ctx.client.get_events_contract(), Some(events));
@@ -53,7 +52,7 @@ fn first_set_events_contract_succeeds() {
 
 #[test]
 fn second_set_events_contract_reverts_already_configured() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events_a = Address::generate(&ctx.env);
     let events_b = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events_a);
@@ -69,7 +68,7 @@ fn second_set_events_contract_reverts_already_configured() {
 
 #[test]
 fn propose_then_accept_after_timelock_swaps_events_contract() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events_a = Address::generate(&ctx.env);
     let events_b = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events_a);
@@ -96,7 +95,7 @@ fn propose_then_accept_after_timelock_swaps_events_contract() {
 
 #[test]
 fn accept_before_timelock_reverts() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events_a = Address::generate(&ctx.env);
     let events_b = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events_a);
@@ -115,7 +114,7 @@ fn accept_before_timelock_reverts() {
 
 #[test]
 fn accept_after_expiry_reverts_and_admin_must_cancel_to_prune() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events_a = Address::generate(&ctx.env);
     let events_b = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events_a);
@@ -145,7 +144,7 @@ fn accept_after_expiry_reverts_and_admin_must_cancel_to_prune() {
 
 #[test]
 fn cancel_pending_clears_proposal() {
-    let ctx = setup(10);
+    let ctx = setup();
     let events_a = Address::generate(&ctx.env);
     let events_b = Address::generate(&ctx.env);
     ctx.client.set_events_contract(&events_a);
@@ -160,7 +159,7 @@ fn cancel_pending_clears_proposal() {
 
 #[test]
 fn cancel_with_no_pending_reverts() {
-    let ctx = setup(10);
+    let ctx = setup();
     let err = ctx
         .client
         .try_cancel_pending_events_contract()
@@ -176,7 +175,7 @@ fn cancel_with_no_pending_reverts() {
 
 #[test]
 fn propose_upgrade_records_pending() {
-    let ctx = setup(10);
+    let ctx = setup();
     let new_hash: BytesN<32> = BytesN::random(&ctx.env);
     let new_version = String::from_str(&ctx.env, "0.3.0");
     let before = ctx.env.ledger().sequence();
@@ -198,7 +197,7 @@ fn propose_upgrade_records_pending() {
 
 #[test]
 fn apply_upgrade_before_timelock_reverts_profile() {
-    let ctx = setup(10);
+    let ctx = setup();
     let new_hash: BytesN<32> = BytesN::random(&ctx.env);
     let new_version = String::from_str(&ctx.env, "0.3.0");
     ctx.client.propose_upgrade(&new_hash, &new_version);
@@ -214,7 +213,7 @@ fn apply_upgrade_before_timelock_reverts_profile() {
 
 #[test]
 fn apply_upgrade_after_expiry_reverts_profile() {
-    let ctx = setup(10);
+    let ctx = setup();
     let new_hash: BytesN<32> = BytesN::random(&ctx.env);
     let new_version = String::from_str(&ctx.env, "0.3.0");
     let start = ctx.env.ledger().sequence();
@@ -235,12 +234,12 @@ fn apply_upgrade_after_expiry_reverts_profile() {
 
 #[test]
 fn migrate_marks_version_and_blocks_replay_profile() {
-    let ctx = setup(10);
+    let ctx = setup();
 
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "0.2.0"))
+        Some(String::from_str(&ctx.env, "1.0.0"))
     );
 
     let err = ctx

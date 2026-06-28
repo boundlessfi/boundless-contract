@@ -23,7 +23,6 @@ use crate::{EventsContract, EventsContractClient};
 // directly and register it.
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
-const BOOTSTRAP_CREDITS: u32 = 10;
 const FEE_BPS: u32 = 250;
 
 struct Ctx<'a> {
@@ -44,10 +43,7 @@ fn setup<'a>() -> Ctx<'a> {
 
     // Deploy profile contract.
     let profile_admin = Address::generate(&env);
-    let profile_id = env.register(
-        ProfileContract,
-        (profile_admin.clone(), BOOTSTRAP_CREDITS),
-    );
+    let profile_id = env.register(ProfileContract, (profile_admin.clone(),));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
     // Deploy events contract pointing at profile.
@@ -102,7 +98,7 @@ fn one_winner_distribution(env: &Env) -> Map<u32, u32> {
     m
 }
 
-fn create_bounty(ctx: &Ctx, application_credit_cost: u32) -> u64 {
+fn create_bounty(ctx: &Ctx) -> u64 {
     let params = CreateEventParams {
         pillar: Pillar::Bounty,
         owner: ctx.owner.clone(),
@@ -113,7 +109,6 @@ fn create_bounty(ctx: &Ctx, application_credit_cost: u32) -> u64 {
         title: String::from_str(&ctx.env, "Test Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost,
         fee_bps_override: None,
         manager: None,
     };
@@ -131,7 +126,7 @@ const FEE_AMOUNT: i128 = (TOTAL_BUDGET * FEE_BPS as i128) / 10_000_i128;
 #[test]
 fn select_winners_pays_recipient_and_bumps_profile() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
+    let bounty_id = create_bounty(&ctx);
 
     // Applicant applies, getting bootstrapped.
     let op_apply = BytesN::random(&ctx.env);
@@ -144,7 +139,6 @@ fn select_winners_pays_recipient_and_bumps_profile() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
     ];
@@ -157,15 +151,12 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     // Fee account got the deposit-time fee.
     assert_eq!(token.balance(&ctx.fee_account), FEE_AMOUNT);
 
-    // Profile: credits = 10 (bootstrap) - 1 (apply) + 20 (win) = 29.
+    // Profile: the win bumps reputation (credits are off-chain now).
     let profile = ctx.profile.get_profile(&ctx.applicant).unwrap();
-    assert_eq!(profile.credits, BOOTSTRAP_CREDITS - 1 + 20);
     assert_eq!(profile.reputation, 50);
 
     // Earnings registered against the event's token.
-    let earnings = ctx
-        .profile
-        .get_earnings(&ctx.applicant, &ctx.token_addr);
+    let earnings = ctx.profile.get_earnings(&ctx.applicant, &ctx.token_addr);
     assert_eq!(earnings, TOTAL_BUDGET);
 
     // Event completed.
@@ -187,14 +178,13 @@ fn select_winners_pays_recipient_and_bumps_profile() {
 #[test]
 fn select_winners_requires_position_in_distribution() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 1);
+    let bounty_id = create_bounty(&ctx);
 
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 2, // distribution only has position 1
-            credit_earn: 20,
             reputation_bump: 50,
         },
     ];
@@ -225,7 +215,6 @@ fn select_winners_rejects_duplicate_position() {
         title: String::from_str(&ctx.env, "Test Bounty 2"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 1,
         fee_bps_override: None,
         manager: None,
     };
@@ -238,13 +227,11 @@ fn select_winners_rejects_duplicate_position() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
         WinnerSpec {
             recipient: other_recipient,
             position: 1, // duplicate
-            credit_earn: 10,
             reputation_bump: 25,
         },
     ];
@@ -271,7 +258,7 @@ fn select_winners_handles_multi_recipient_distribution() {
         title: String::from_str(&ctx.env, "Multi Winner"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0, // free for this test
+        // free for this test
         fee_bps_override: None,
         manager: None,
     };
@@ -285,13 +272,11 @@ fn select_winners_handles_multi_recipient_distribution() {
         WinnerSpec {
             recipient: winner_a.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
         WinnerSpec {
             recipient: winner_b.clone(),
             position: 2,
-            credit_earn: 10,
             reputation_bump: 25,
         },
     ];
@@ -306,9 +291,7 @@ fn select_winners_handles_multi_recipient_distribution() {
 
     let profile_a = ctx.profile.get_profile(&winner_a).unwrap();
     let profile_b = ctx.profile.get_profile(&winner_b).unwrap();
-    assert_eq!(profile_a.credits, BOOTSTRAP_CREDITS + 20);
     assert_eq!(profile_a.reputation, 50);
-    assert_eq!(profile_b.credits, BOOTSTRAP_CREDITS + 10);
     assert_eq!(profile_b.reputation, 25);
 
     let event = ctx.events.get_event(&bounty_id);
@@ -319,14 +302,13 @@ fn select_winners_handles_multi_recipient_distribution() {
 #[test]
 fn select_winners_replayed_reverts() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
+    let bounty_id = create_bounty(&ctx);
 
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
     ];
@@ -346,7 +328,7 @@ fn select_winners_replayed_reverts() {
 #[test]
 fn cancel_refunds_remaining_escrow_to_owner() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
+    let bounty_id = create_bounty(&ctx);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
@@ -364,15 +346,13 @@ fn cancel_refunds_remaining_escrow_to_owner() {
 #[test]
 fn cancel_already_cancelled_reverts() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
+    let bounty_id = create_bounty(&ctx);
 
     drive_cancel(&ctx.env, &ctx.events, bounty_id);
 
     // Second start_cancel on a Cancelled event must revert.
     let op_again = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_start_cancel(&bounty_id, &op_again);
+    let res = ctx.events.try_start_cancel(&bounty_id, &op_again);
     assert!(res.is_err(), "second cancel should revert");
 }
 
@@ -393,7 +373,6 @@ fn cancel_after_select_winners_refunds_only_remaining() {
         title: String::from_str(&ctx.env, "Partial Pay Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -407,7 +386,6 @@ fn cancel_after_select_winners_refunds_only_remaining() {
         WinnerSpec {
             recipient: winner_a.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
     ];
@@ -445,7 +423,6 @@ fn create_grant(ctx: &Ctx, n_milestones: u32) -> u64 {
         title: String::from_str(&ctx.env, "Test Grant"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -459,7 +436,7 @@ fn select_grant_winner(ctx: &Ctx, grant_id: u64, recipient: &Address) {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
-            credit_earn: 0, // ignored for Multi; payment-time bumps apply per milestone
+            // ignored for Multi; payment-time bumps apply per milestone
             reputation_bump: 0,
         },
     ];
@@ -479,15 +456,14 @@ fn claim_milestone_pays_per_milestone_amount() {
 
     let op_claim = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &0_u32, &3_u32, &5_u32, &op_claim);
+        .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op_claim);
 
     // Per-milestone amount: total_budget * 100% / 4 = TOTAL_BUDGET / 4
     let per_milestone = TOTAL_BUDGET / 4;
     assert_eq!(token.balance(&recipient) - recipient_before, per_milestone);
 
-    // Profile: bootstrap (10) + earn 3 = 13 credits, reputation 5.
+    // Profile: the milestone claim bumps reputation by 5 (credits off-chain).
     let profile = ctx.profile.get_profile(&recipient).unwrap();
-    assert_eq!(profile.credits, BOOTSTRAP_CREDITS + 3);
     assert_eq!(profile.reputation, 5);
 
     // Earnings registered.
@@ -509,19 +485,19 @@ fn claim_milestone_idempotent_per_recipient_and_milestone() {
 
     let op1 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &0_u32, &3_u32, &5_u32, &op1);
+        .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op1);
 
     // Same milestone, different op_id — should still revert.
     let op2 = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&grant_id, &recipient, &0_u32, &3_u32, &5_u32, &op2);
+        .try_claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op2);
     assert!(res.is_err(), "same milestone twice should revert");
 
     // Different milestone — should succeed.
     let op3 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &1_u32, &3_u32, &5_u32, &op3);
+        .claim_milestone(&grant_id, &recipient, &1_u32, &5_u32, &op3);
 }
 
 #[test]
@@ -535,41 +511,34 @@ fn claim_milestone_invalid_milestone_index_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&grant_id, &recipient, &4_u32, &3_u32, &5_u32, &op);
+        .try_claim_milestone(&grant_id, &recipient, &4_u32, &5_u32, &op);
     assert!(res.is_err(), "out-of-range milestone should revert");
 }
 
 #[test]
 fn claim_milestone_rejects_non_grant_events() {
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
+    let bounty_id = create_bounty(&ctx);
 
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
     let op_select = BytesN::random(&ctx.env);
-    ctx.events
-        .select_winners(&bounty_id, &winners, &op_select);
+    ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     // The bounty is Completed now anyway, but claim_milestone should reject
     // even an Active Single-release event. Recreate a Single bounty without
     // winners selected:
-    let bounty_id2 = create_bounty(&ctx, 0);
+    let bounty_id2 = create_bounty(&ctx);
     let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_claim_milestone(
-        &bounty_id2,
-        &ctx.applicant,
-        &0_u32,
-        &3_u32,
-        &5_u32,
-        &op,
-    );
+    let res = ctx
+        .events
+        .try_claim_milestone(&bounty_id2, &ctx.applicant, &0_u32, &5_u32, &op);
     assert!(res.is_err(), "claim on Single-release event should revert");
 }
 
@@ -582,14 +551,14 @@ fn claim_milestone_final_milestone_marks_event_completed() {
 
     let op_a = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &0_u32, &3_u32, &5_u32, &op_a);
+        .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op_a);
 
     let mid = ctx.events.get_event(&grant_id);
     assert_eq!(mid.status, EventStatus::Active);
 
     let op_b = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &1_u32, &3_u32, &5_u32, &op_b);
+        .claim_milestone(&grant_id, &recipient, &1_u32, &5_u32, &op_b);
 
     let after = ctx.events.get_event(&grant_id);
     assert_eq!(after.status, EventStatus::Completed);
@@ -613,7 +582,6 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         title: String::from_str(&ctx.env, "Test Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -639,20 +607,18 @@ fn hackathon_submit_creates_anchor_without_prior_apply() {
 #[test]
 fn bounty_submit_requires_prior_application() {
     let ctx = setup();
-    let id = create_bounty(&ctx, 1);
+    let id = create_bounty(&ctx);
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
     let op = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_submit(&id, &ctx.applicant, &uri, &op);
+    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
     assert!(res.is_err(), "submit before apply on bounty should revert");
 }
 
 #[test]
 fn bounty_submit_succeeds_after_apply() {
     let ctx = setup();
-    let id = create_bounty(&ctx, 1);
+    let id = create_bounty(&ctx);
 
     let op_apply = BytesN::random(&ctx.env);
     ctx.events.apply_to_bounty(&id, &ctx.applicant, &op_apply);
@@ -683,7 +649,10 @@ fn resubmit_preserves_original_submitted_at_and_updates_uri() {
 
     let second = ctx.events.get_submission(&id, &ctx.applicant);
     assert_eq!(second.content_uri, uri_b);
-    assert_eq!(second.submitted_at, first_time, "submitted_at must be preserved across re-submit");
+    assert_eq!(
+        second.submitted_at, first_time,
+        "submitted_at must be preserved across re-submit"
+    );
 }
 
 #[test]
@@ -695,9 +664,7 @@ fn submit_replayed_reverts() {
     let op = BytesN::random(&ctx.env);
     ctx.events.submit(&id, &ctx.applicant, &uri, &op);
 
-    let res = ctx
-        .events
-        .try_submit(&id, &ctx.applicant, &uri, &op);
+    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
     assert!(res.is_err(), "replayed submit should revert");
 }
 
@@ -711,8 +678,7 @@ fn withdraw_submission_removes_anchor() {
     ctx.events.submit(&id, &ctx.applicant, &uri, &op_submit);
 
     let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_submission(&id, &ctx.applicant, &op_wd);
+    ctx.events.withdraw_submission(&id, &ctx.applicant, &op_wd);
 
     let res = ctx.events.try_get_submission(&id, &ctx.applicant);
     assert!(res.is_err(), "withdrawn submission should not be readable");
@@ -727,7 +693,10 @@ fn withdraw_submission_without_submission_reverts() {
     let res = ctx
         .events
         .try_withdraw_submission(&id, &ctx.applicant, &op_wd);
-    assert!(res.is_err(), "withdraw without prior submission should revert");
+    assert!(
+        res.is_err(),
+        "withdraw without prior submission should revert"
+    );
 }
 
 // ============================================================
@@ -764,7 +733,6 @@ fn create_event_charges_override_rate_when_provided() {
         title: String::from_str(&ctx.env, "Hackathon at 1.5%"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: Some(override_bps),
         manager: None,
     };
@@ -802,7 +770,6 @@ fn add_funds_uses_event_override_not_global() {
         title: String::from_str(&ctx.env, "Promo Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: Some(override_bps),
         manager: None,
     };
@@ -854,7 +821,6 @@ fn create_event_with_waiver_charges_no_fee() {
         title: String::from_str(&ctx.env, "Comped Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: Some(0),
         manager: None,
     };
@@ -881,7 +847,6 @@ fn create_event_rejects_override_above_max_fee_bps() {
         title: String::from_str(&ctx.env, "Bad rate"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 0,
         // 60% is above the MAX_FEE_BPS = 1000 cap (post L4 audit fix).
         fee_bps_override: Some(6000),
         manager: None,
@@ -910,7 +875,6 @@ fn create_event_omitted_override_falls_back_to_global_default() {
         title: String::from_str(&ctx.env, "Default rate hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 0,
         fee_bps_override: None,
         manager: None,
     };
@@ -946,7 +910,6 @@ fn select_winners_rejects_second_call_winners_already_selected() {
         WinnerSpec {
             recipient: r2.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
@@ -988,7 +951,6 @@ fn grant_last_milestone_sweeps_rounding_residue() {
         &grant_id,
         &recipient,
         &0_u32,
-        &3_u32,
         &5_u32,
         &BytesN::random(&ctx.env),
     );
@@ -996,7 +958,6 @@ fn grant_last_milestone_sweeps_rounding_residue() {
         &grant_id,
         &recipient,
         &1_u32,
-        &3_u32,
         &5_u32,
         &BytesN::random(&ctx.env),
     );
@@ -1008,7 +969,6 @@ fn grant_last_milestone_sweeps_rounding_residue() {
         &grant_id,
         &recipient,
         &2_u32,
-        &3_u32,
         &5_u32,
         &BytesN::random(&ctx.env),
     );
@@ -1036,7 +996,7 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
     // (net of fees). Pre-audit this was capped at TOTAL_BUDGET and the
     // top-up would have stayed trapped until cancel.
     let ctx = setup();
-    let bounty_id = create_bounty(&ctx, 0);
+    let bounty_id = create_bounty(&ctx);
 
     let partner = Address::generate(&ctx.env);
     let token_admin = token::StellarAssetClient::new(&ctx.env, &ctx.token_addr);
@@ -1057,7 +1017,6 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 20,
             reputation_bump: 50,
         },
     ];
@@ -1089,7 +1048,6 @@ fn create_bounty_with_manager(ctx: &Ctx, manager: &Address) -> u64 {
         title: String::from_str(&ctx.env, "Managed Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        application_credit_cost: 1,
         fee_bps_override: None,
         manager: Some(manager.clone()),
     };
@@ -1102,7 +1060,7 @@ fn manager_defaults_to_owner_and_override_is_recorded() {
     let ctx = setup();
 
     // No override: management falls back to the funder/owner (legacy behavior).
-    let default_id = create_bounty(&ctx, 1);
+    let default_id = create_bounty(&ctx);
     assert_eq!(ctx.events.get_manager(&default_id), ctx.owner);
 
     // Override: management is the org wallet, distinct from the funder.
@@ -1139,7 +1097,6 @@ fn manager_override_can_select_winners() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
-            credit_earn: 0,
             reputation_bump: 0,
         },
     ];
