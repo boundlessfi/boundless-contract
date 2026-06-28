@@ -202,7 +202,7 @@ pub fn propose_upgrade(
     new_version: String,
 ) -> Result<(), Error> {
     require_admin(env)?;
-    if new_version.len() == 0 {
+    if new_version.is_empty() {
         // Reuse existing AdminCannotBeZero semantic for "empty input".
         return Err(Error::AdminCannotBeZero);
     }
