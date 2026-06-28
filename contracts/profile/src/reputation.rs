@@ -71,7 +71,7 @@ pub fn admin_slash(
     admin::require_not_paused(env)?;
     idempotency::require_unseen(env, &op_id)?;
 
-    if reason.len() == 0 {
+    if reason.is_empty() {
         return Err(Error::ReasonRequired);
     }
 
