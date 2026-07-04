@@ -1,102 +1,210 @@
-// boundless-events: token whitelist enumeration tests.
+// boundless-events: token whitelist tests (#27).
 //
-// The whitelist is readable from state (count + at) so the full set can be
-// recovered authoritatively, independent of ephemeral event retention.
+// Covers register_supported_token / deregister_supported_token /
+// is_supported_token + enforcement inside create_event.
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, BytesN as _},
+    Address, BytesN, Env, Map, String,
+};
 
-use super::common::{setup, TestCtx};
+use crate::errors::Error;
+use crate::types::{CreateEventParams, Pillar, ReleaseKind};
+use crate::{EventsContract, EventsContractClient};
 
-fn snapshot(ctx: &TestCtx<'_>) -> Vec<Address> {
-    let count = ctx.client.supported_token_count();
-    let mut out = Vec::new(&ctx.env);
-    let mut i = 0;
-    while i < count {
-        out.push_back(ctx.client.supported_token_at(&i).expect("indexed token"));
-        i += 1;
-    }
-    out
+const FEE_BPS: u32 = 250;
+
+struct Ctx<'a> {
+    env: Env,
+    admin: Address,
+    client: EventsContractClient<'a>,
 }
 
-fn has(set: &Vec<Address>, token: &Address) -> bool {
-    set.iter().any(|t| &t == token)
+fn setup<'a>() -> Ctx<'a> {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let fee_account = Address::generate(&env);
+    let profile = Address::generate(&env);
+    let id = env.register(
+        EventsContract,
+        (admin.clone(), fee_account.clone(), FEE_BPS, profile.clone()),
+    );
+    let client = EventsContractClient::new(&env, &id);
+    Ctx { env, admin, client }
+}
+
+fn new_token(env: &Env) -> Address {
+    let issuer = Address::generate(env);
+    env.register_stellar_asset_contract_v2(issuer).address()
+}
+
+fn single_dist(env: &Env) -> Map<u32, u32> {
+    let mut m = Map::new(env);
+    m.set(1, 100);
+    m
+}
+
+// ============================================================
+// register_supported_token
+// ============================================================
+
+#[test]
+fn register_makes_token_supported() {
+    let ctx = setup();
+    let tok = new_token(&ctx.env);
+    assert!(!ctx.client.is_supported_token(&tok));
+    ctx.client.register_supported_token(&tok);
+    assert!(ctx.client.is_supported_token(&tok));
 }
 
 #[test]
-fn register_indexes_the_token() {
-    let ctx = setup(250);
-    let token = Address::generate(&ctx.env);
-
-    ctx.client.register_supported_token(&token);
-
-    assert_eq!(ctx.client.supported_token_count(), 1);
-    assert_eq!(ctx.client.supported_token_at(&0), Some(token.clone()));
-    assert_eq!(ctx.client.supported_token_at(&1), None);
-    assert!(ctx.client.is_supported_token(&token));
+fn register_same_token_twice_is_idempotent() {
+    let ctx = setup();
+    let tok = new_token(&ctx.env);
+    ctx.client.register_supported_token(&tok);
+    ctx.client.register_supported_token(&tok);
+    assert!(ctx.client.is_supported_token(&tok));
 }
 
 #[test]
-fn register_is_idempotent_in_the_index() {
-    let ctx = setup(250);
-    let token = Address::generate(&ctx.env);
+fn register_requires_admin_auth() {
+    let ctx = setup();
+    let tok = new_token(&ctx.env);
+    ctx.client.register_supported_token(&tok);
+    let auths = ctx.env.auths();
+    assert!(auths.iter().any(|(addr, _)| *addr == ctx.admin));
+}
 
-    ctx.client.register_supported_token(&token);
-    ctx.client.register_supported_token(&token);
+// ============================================================
+// deregister_supported_token
+// ============================================================
 
-    assert_eq!(ctx.client.supported_token_count(), 1);
+#[test]
+fn deregister_removes_support() {
+    let ctx = setup();
+    let tok = new_token(&ctx.env);
+    ctx.client.register_supported_token(&tok);
+    ctx.client.deregister_supported_token(&tok);
+    assert!(!ctx.client.is_supported_token(&tok));
 }
 
 #[test]
-fn deregister_removes_from_the_index() {
-    let ctx = setup(250);
-    let token = Address::generate(&ctx.env);
-
-    ctx.client.register_supported_token(&token);
-    ctx.client.deregister_supported_token(&token);
-
-    assert_eq!(ctx.client.supported_token_count(), 0);
-    assert_eq!(ctx.client.supported_token_at(&0), None);
-    assert!(!ctx.client.is_supported_token(&token));
+fn deregister_unregistered_token_is_idempotent() {
+    let ctx = setup();
+    let tok = new_token(&ctx.env);
+    ctx.client.deregister_supported_token(&tok);
+    assert!(!ctx.client.is_supported_token(&tok));
 }
 
 #[test]
-fn deregister_unknown_token_is_a_noop() {
-    let ctx = setup(250);
-    let a = Address::generate(&ctx.env);
-    let b = Address::generate(&ctx.env);
+fn deregister_requires_admin_auth() {
+    let ctx = setup();
+    let tok = new_token(&ctx.env);
+    ctx.client.register_supported_token(&tok);
+    ctx.client.deregister_supported_token(&tok);
+    let auths = ctx.env.auths();
+    assert!(auths.iter().any(|(addr, _)| *addr == ctx.admin));
+}
+
+// ============================================================
+// Enforcement: create_event rejects unsupported token
+// ============================================================
+
+#[test]
+fn create_event_with_unsupported_token_reverts() {
+    let ctx = setup();
+    let owner = Address::generate(&ctx.env);
+    let params = CreateEventParams {
+        pillar: Pillar::Hackathon,
+        owner,
+        token: new_token(&ctx.env),
+        total_budget: 1_000_0000000_i128,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://example.com"),
+        title: String::from_str(&ctx.env, "Bad Token Hack"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: single_dist(&ctx.env),
+        fee_bps_override: None,
+        manager: None,
+    };
+    let err = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env))
+        .err().unwrap().unwrap();
+    assert_eq!(err, Error::TokenNotSupported);
+}
+
+#[test]
+fn create_event_with_deregistered_token_reverts() {
+    let ctx = setup();
+    let tok = new_token(&ctx.env);
+    ctx.client.register_supported_token(&tok);
+    ctx.client.deregister_supported_token(&tok);
+    let owner = Address::generate(&ctx.env);
+    let params = CreateEventParams {
+        pillar: Pillar::Hackathon,
+        owner,
+        token: tok,
+        total_budget: 1_000_0000000_i128,
+        release_kind: ReleaseKind::Single,
+        content_uri: String::from_str(&ctx.env, "https://example.com"),
+        title: String::from_str(&ctx.env, "Deregistered Token Hack"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: single_dist(&ctx.env),
+        fee_bps_override: None,
+        manager: None,
+    };
+    let err = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env))
+        .err().unwrap().unwrap();
+    assert_eq!(err, Error::TokenNotSupported);
+}
+
+// ============================================================
+// Negative auth: non-admin callers are rejected
+// ============================================================
+
+#[test]
+fn register_without_admin_auth_reverts() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let fee_account = Address::generate(&env);
+    let profile = Address::generate(&env);
+    let id = env.register(EventsContract, (admin.clone(), fee_account.clone(), FEE_BPS, profile));
+    let client = EventsContractClient::new(&env, &id);
+    let tok = Address::generate(&env);
+    assert!(client.try_register_supported_token(&tok).is_err());
+}
+
+#[test]
+fn deregister_without_admin_auth_reverts() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let fee_account = Address::generate(&env);
+    let profile = Address::generate(&env);
+    let id = env.register(EventsContract, (admin.clone(), fee_account.clone(), FEE_BPS, profile));
+    let client = EventsContractClient::new(&env, &id);
+    let tok = Address::generate(&env);
+    assert!(client.try_deregister_supported_token(&tok).is_err());
+}
+
+// ============================================================
+// Multiple tokens tracked independently
+// ============================================================
+
+#[test]
+fn multiple_tokens_registered_independently() {
+    let ctx = setup();
+    let a = new_token(&ctx.env);
+    let b = new_token(&ctx.env);
 
     ctx.client.register_supported_token(&a);
-    // `b` was never registered; removing it must not corrupt the index.
-    ctx.client.deregister_supported_token(&b);
-
-    assert_eq!(ctx.client.supported_token_count(), 1);
-    assert_eq!(ctx.client.supported_token_at(&0), Some(a));
-}
-
-#[test]
-fn enumerates_multiple_and_swap_removes_the_middle() {
-    let ctx = setup(250);
-    let a = Address::generate(&ctx.env);
-    let b = Address::generate(&ctx.env);
-    let c = Address::generate(&ctx.env);
-
-    ctx.client.register_supported_token(&a);
-    ctx.client.register_supported_token(&b);
-    ctx.client.register_supported_token(&c);
-    assert_eq!(ctx.client.supported_token_count(), 3);
-
-    // Remove the middle entry; swap-with-last keeps the set intact (order may
-    // change, membership must not).
-    ctx.client.deregister_supported_token(&b);
-    assert_eq!(ctx.client.supported_token_count(), 2);
-
-    let set = snapshot(&ctx);
-    assert!(has(&set, &a));
-    assert!(has(&set, &c));
-    assert!(!has(&set, &b));
     assert!(ctx.client.is_supported_token(&a));
     assert!(!ctx.client.is_supported_token(&b));
-    assert!(ctx.client.is_supported_token(&c));
+
+    ctx.client.register_supported_token(&b);
+    ctx.client.deregister_supported_token(&a);
+    assert!(!ctx.client.is_supported_token(&a));
+    assert!(ctx.client.is_supported_token(&b));
 }
