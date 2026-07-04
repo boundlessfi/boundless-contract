@@ -7,13 +7,19 @@ on:
     paths:
       - 'contracts/**'
       - '.github/workflows/verify-build.yml'
-  pull_request_target:
+  # Use pull_request (not pull_request_target): the check must run the workflow
+  # from the PR head so branch-filter changes take effect on the PR itself, and
+  # the build/test job needs no secrets, so the pull_request_target foot-gun
+  # (secrets + write token against PR head code) is avoided.
+  pull_request:
     branches:
       - main
       - develop
+      - testnet
     paths:
       - 'contracts/**'
       - '.github/workflows/verify-build.yml'
+      - '.github/workflows/rustfmt.yml'
   workflow_dispatch:
 
 permissions:
@@ -54,7 +60,9 @@ jobs:
 
   rustfmt:
     needs: build
-    if: success()
+    # On PRs the standalone rustfmt workflow posts the `rustfmt` check; this
+    # chained call (which fans out to deploy) runs only on push, never on a PR.
+    if: success() && github.event_name == 'push'
     uses: ./.github/workflows/rustfmt.yml
     secrets:
       STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
