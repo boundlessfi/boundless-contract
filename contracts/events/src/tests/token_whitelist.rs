@@ -131,8 +131,12 @@ fn create_event_with_unsupported_token_reverts() {
         fee_bps_override: None,
         manager: None,
     };
-    let err = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env))
-        .err().unwrap().unwrap();
+    let err = ctx
+        .client
+        .try_create_event(&params, &BytesN::random(&ctx.env))
+        .err()
+        .unwrap()
+        .unwrap();
     assert_eq!(err, Error::TokenNotSupported);
 }
 
@@ -156,8 +160,12 @@ fn create_event_with_deregistered_token_reverts() {
         fee_bps_override: None,
         manager: None,
     };
-    let err = ctx.client.try_create_event(&params, &BytesN::random(&ctx.env))
-        .err().unwrap().unwrap();
+    let err = ctx
+        .client
+        .try_create_event(&params, &BytesN::random(&ctx.env))
+        .err()
+        .unwrap()
+        .unwrap();
     assert_eq!(err, Error::TokenNotSupported);
 }
 
@@ -171,7 +179,10 @@ fn register_without_admin_auth_reverts() {
     let admin = Address::generate(&env);
     let fee_account = Address::generate(&env);
     let profile = Address::generate(&env);
-    let id = env.register(EventsContract, (admin.clone(), fee_account.clone(), FEE_BPS, profile));
+    let id = env.register(
+        EventsContract,
+        (admin.clone(), fee_account.clone(), FEE_BPS, profile),
+    );
     let client = EventsContractClient::new(&env, &id);
     let tok = Address::generate(&env);
     assert!(client.try_register_supported_token(&tok).is_err());
@@ -183,7 +194,10 @@ fn deregister_without_admin_auth_reverts() {
     let admin = Address::generate(&env);
     let fee_account = Address::generate(&env);
     let profile = Address::generate(&env);
-    let id = env.register(EventsContract, (admin.clone(), fee_account.clone(), FEE_BPS, profile));
+    let id = env.register(
+        EventsContract,
+        (admin.clone(), fee_account.clone(), FEE_BPS, profile),
+    );
     let client = EventsContractClient::new(&env, &id);
     let tok = Address::generate(&env);
     assert!(client.try_deregister_supported_token(&tok).is_err());

@@ -46,7 +46,12 @@ fn setup<'a>() -> Ctx<'a> {
     let fee_account = Address::generate(&env);
     let events_id = env.register(
         EventsContract,
-        (events_admin.clone(), fee_account.clone(), FEE_BPS, profile_id.clone()),
+        (
+            events_admin.clone(),
+            fee_account.clone(),
+            FEE_BPS,
+            profile_id.clone(),
+        ),
     );
     let events = EventsContractClient::new(&env, &events_id);
     profile.set_events_contract(&events_id);
@@ -61,7 +66,15 @@ fn setup<'a>() -> Ctx<'a> {
     token_admin.mint(&owner, &10_000_0000000_i128);
     events.register_supported_token(&token_addr);
 
-    Ctx { env, events, profile, owner, token_addr, token_admin, fee_account }
+    Ctx {
+        env,
+        events,
+        profile,
+        owner,
+        token_addr,
+        token_admin,
+        fee_account,
+    }
 }
 
 fn single_dist(env: &Env) -> Map<u32, u32> {
@@ -90,7 +103,8 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
 fn contribute(ctx: &Ctx, id: u64, who: &Address, amount: i128) {
     let fee = amount * FEE_BPS as i128 / 10_000;
     ctx.token_admin.mint(who, &(amount + fee));
-    ctx.events.add_funds(&id, who, &amount, &BytesN::random(&ctx.env));
+    ctx.events
+        .add_funds(&id, who, &amount, &BytesN::random(&ctx.env));
 }
 
 // ============================================================
@@ -119,8 +133,14 @@ fn owner_only_process_and_finalize_rejected_after_inline_settle() {
     let id = create_hackathon(&ctx);
     ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
 
-    assert!(ctx.events.try_process_cancel_batch(&id, &10_u32, &BytesN::random(&ctx.env)).is_err());
-    assert!(ctx.events.try_finalize_cancel(&id, &BytesN::random(&ctx.env)).is_err());
+    assert!(ctx
+        .events
+        .try_process_cancel_batch(&id, &10_u32, &BytesN::random(&ctx.env))
+        .is_err());
+    assert!(ctx
+        .events
+        .try_finalize_cancel(&id, &BytesN::random(&ctx.env))
+        .is_err());
 }
 
 // ============================================================
@@ -182,15 +202,24 @@ fn paged_cancel_processes_in_batches() {
     ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelling);
 
-    let left = ctx.events.process_cancel_batch(&id, &2_u32, &BytesN::random(&ctx.env));
+    let left = ctx
+        .events
+        .process_cancel_batch(&id, &2_u32, &BytesN::random(&ctx.env));
     assert_eq!(left, 3);
 
-    let left = ctx.events.process_cancel_batch(&id, &2_u32, &BytesN::random(&ctx.env));
+    let left = ctx
+        .events
+        .process_cancel_batch(&id, &2_u32, &BytesN::random(&ctx.env));
     assert_eq!(left, 1);
 
-    assert!(ctx.events.try_finalize_cancel(&id, &BytesN::random(&ctx.env)).is_err());
+    assert!(ctx
+        .events
+        .try_finalize_cancel(&id, &BytesN::random(&ctx.env))
+        .is_err());
 
-    let left = ctx.events.process_cancel_batch(&id, &2_u32, &BytesN::random(&ctx.env));
+    let left = ctx
+        .events
+        .process_cancel_batch(&id, &2_u32, &BytesN::random(&ctx.env));
     assert_eq!(left, 0);
 
     ctx.events.finalize_cancel(&id, &BytesN::random(&ctx.env));
@@ -244,9 +273,14 @@ fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
     let w = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
-        WinnerSpec { recipient: w.clone(), position: 1, reputation_bump: 0 },
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 1,
+            reputation_bump: 0
+        },
     ];
-    ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
+    ctx.events
+        .select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);
@@ -268,7 +302,10 @@ fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
 #[test]
 fn start_cancel_on_nonexistent_event_reverts() {
     let ctx = setup();
-    assert!(ctx.events.try_start_cancel(&999_u64, &BytesN::random(&ctx.env)).is_err());
+    assert!(ctx
+        .events
+        .try_start_cancel(&999_u64, &BytesN::random(&ctx.env))
+        .is_err());
 }
 
 #[test]
@@ -276,14 +313,20 @@ fn start_cancel_on_already_cancelled_reverts() {
     let ctx = setup();
     let id = create_hackathon(&ctx);
     drive_cancel(&ctx.env, &ctx.events, id);
-    assert!(ctx.events.try_start_cancel(&id, &BytesN::random(&ctx.env)).is_err());
+    assert!(ctx
+        .events
+        .try_start_cancel(&id, &BytesN::random(&ctx.env))
+        .is_err());
 }
 
 #[test]
 fn process_cancel_batch_without_start_reverts() {
     let ctx = setup();
     let id = create_hackathon(&ctx);
-    assert!(ctx.events.try_process_cancel_batch(&id, &5_u32, &BytesN::random(&ctx.env)).is_err());
+    assert!(ctx
+        .events
+        .try_process_cancel_batch(&id, &5_u32, &BytesN::random(&ctx.env))
+        .is_err());
 }
 
 #[test]
@@ -295,7 +338,10 @@ fn finalize_cancel_before_all_batches_reverts() {
         contribute(&ctx, id, &p, MIN_CONTRIB);
     }
     ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
-    assert!(ctx.events.try_finalize_cancel(&id, &BytesN::random(&ctx.env)).is_err());
+    assert!(ctx
+        .events
+        .try_finalize_cancel(&id, &BytesN::random(&ctx.env))
+        .is_err());
 }
 
 #[test]
@@ -319,5 +365,8 @@ fn add_funds_on_cancelling_event_reverts() {
     let p2 = Address::generate(&ctx.env);
     let fee = MIN_CONTRIB * FEE_BPS as i128 / 10_000;
     ctx.token_admin.mint(&p2, &(MIN_CONTRIB + fee));
-    assert!(ctx.events.try_add_funds(&id, &p2, &MIN_CONTRIB, &BytesN::random(&ctx.env)).is_err());
+    assert!(ctx
+        .events
+        .try_add_funds(&id, &p2, &MIN_CONTRIB, &BytesN::random(&ctx.env))
+        .is_err());
 }
