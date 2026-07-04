@@ -223,7 +223,7 @@
                   ]
                 },
                 {
-                  "bytes": "de4343d5eadf6f5f983c9482afde48c81fc23f4b4e6b49d0b34738423249d19b"
+                  "bytes": "0663c5bfa28e3c21f261ebe1b9492c81f6ca62c1b0d01f2479be2d31f37d72b7"
                 }
               ]
             }
@@ -298,7 +298,7 @@
                   ]
                 },
                 {
-                  "bytes": "5d0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                  "bytes": "5bd4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                 }
               ]
             }
@@ -475,7 +475,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "8c0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                  "bytes": "8ad4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                 }
               ]
             },
@@ -495,7 +495,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "8c0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                      "bytes": "8ad4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                     }
                   ]
                 },
@@ -520,7 +520,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "bc0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                  "bytes": "bad4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                 }
               ]
             },
@@ -540,7 +540,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "bc0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                      "bytes": "bad4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                     }
                   ]
                 },
@@ -565,7 +565,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "ed0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                  "bytes": "ebd4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                 }
               ]
             },
@@ -585,7 +585,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "ed0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                      "bytes": "ebd4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                     }
                   ]
                 },
@@ -742,7 +742,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.0.0"
+                          "string": "1.1.0"
                         }
                       }
                     ]
@@ -1110,7 +1110,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "5d0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                  "bytes": "0663c5bfa28e3c21f261ebe1b9492c81f6ca62c1b0d01f2479be2d31f37d72b7"
                 }
               ]
             },
@@ -1130,7 +1130,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "5d0be54aa17852ecd8053d958541777a6898ca5261e533f9d5e1ecde94916459"
+                      "bytes": "0663c5bfa28e3c21f261ebe1b9492c81f6ca62c1b0d01f2479be2d31f37d72b7"
                     }
                   ]
                 },
@@ -1155,7 +1155,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "de4343d5eadf6f5f983c9482afde48c81fc23f4b4e6b49d0b34738423249d19b"
+                  "bytes": "5bd4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                 }
               ]
             },
@@ -1175,7 +1175,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "de4343d5eadf6f5f983c9482afde48c81fc23f4b4e6b49d0b34738423249d19b"
+                      "bytes": "5bd4cd982a1a35a6b79c1f059fc11a9b9692de1284292e1aa0ca6a52f05edf9d"
                     }
                   ]
                 },
@@ -1363,7 +1363,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.0.0"
+                          "string": "1.1.0"
                         }
                       }
                     ]

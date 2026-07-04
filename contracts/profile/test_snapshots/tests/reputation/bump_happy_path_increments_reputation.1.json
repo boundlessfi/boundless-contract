@@ -38,7 +38,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "bytes": "8f63e3fcebb83342f3bc54d9656ffe4e9b13a32bb6ef25bba4b0cf2e5238e59c"
+                  "bytes": "0e7a3aa67e1bc3cbb149967a9a0321a217c1f79bee611cb2b7f6ad2f3f9c1594"
                 }
               ]
             }
@@ -67,7 +67,7 @@
                   "symbol": "win"
                 },
                 {
-                  "bytes": "f8f2f20be94e1af373f1fa825d7482749b3402b5399b8481286f8c6aeb5dd631"
+                  "bytes": "c9230cf931695933268bc0fac44d27beb4b0ef88b05bb0419e3b3f4f57e68899"
                 }
               ]
             }
@@ -131,7 +131,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "8f63e3fcebb83342f3bc54d9656ffe4e9b13a32bb6ef25bba4b0cf2e5238e59c"
+                  "bytes": "0e7a3aa67e1bc3cbb149967a9a0321a217c1f79bee611cb2b7f6ad2f3f9c1594"
                 }
               ]
             },
@@ -151,7 +151,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "8f63e3fcebb83342f3bc54d9656ffe4e9b13a32bb6ef25bba4b0cf2e5238e59c"
+                      "bytes": "0e7a3aa67e1bc3cbb149967a9a0321a217c1f79bee611cb2b7f6ad2f3f9c1594"
                     }
                   ]
                 },
@@ -176,7 +176,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "f8f2f20be94e1af373f1fa825d7482749b3402b5399b8481286f8c6aeb5dd631"
+                  "bytes": "c9230cf931695933268bc0fac44d27beb4b0ef88b05bb0419e3b3f4f57e68899"
                 }
               ]
             },
@@ -196,7 +196,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "f8f2f20be94e1af373f1fa825d7482749b3402b5399b8481286f8c6aeb5dd631"
+                      "bytes": "c9230cf931695933268bc0fac44d27beb4b0ef88b05bb0419e3b3f4f57e68899"
                     }
                   ]
                 },
@@ -353,7 +353,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.0.0"
+                          "string": "1.1.0"
                         }
                       }
                     ]

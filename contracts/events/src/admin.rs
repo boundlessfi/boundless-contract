@@ -38,7 +38,7 @@ const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 // Initial contract version. Written by __constructor and bumped on
 // apply_upgrade. Bump alongside any storage-layout or public-surface change
 // that warrants a migration entrypoint.
-pub const INITIAL_VERSION: &str = "1.0.0";
+pub const INITIAL_VERSION: &str = "1.1.0";
 
 // ============================================================
 // INITIALIZATION
@@ -343,10 +343,11 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     // helpers and call from inside the body.
     // ============================================================
 
-    // No-op for the initial 0.2.0 deploy. __constructor populates storage
-    // in the current shape, so admin can call migrate() once just to stamp
-    // the marker and unlock the audit trail (the Migrated event signals
-    // off-chain runbooks that the post-upgrade cleanup ran).
+    // No-op for the 1.0.0 -> 1.1.0 credit-removal upgrade: the contracts hold
+    // no events yet, so there are no EventRecord rows to rewrite. __constructor
+    // populates storage in the current shape, so admin can call migrate() once
+    // just to stamp the marker and unlock the audit trail (the Migrated event
+    // signals off-chain runbooks that the post-upgrade cleanup ran).
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);

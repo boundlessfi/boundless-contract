@@ -227,7 +227,7 @@
                   ]
                 },
                 {
-                  "bytes": "f6acf67795373863805f9c79d362e65907f6dd92ced30b1d81d038f2108663cc"
+                  "bytes": "bfb50efebec94116a6b35552b09f94289fba245e70e47893d0a030aeff615cf3"
                 }
               ]
             }
@@ -445,7 +445,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.0.0"
+                          "string": "1.1.0"
                         }
                       }
                     ]
@@ -680,7 +680,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "f6acf67795373863805f9c79d362e65907f6dd92ced30b1d81d038f2108663cc"
+                  "bytes": "bfb50efebec94116a6b35552b09f94289fba245e70e47893d0a030aeff615cf3"
                 }
               ]
             },
@@ -700,7 +700,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "f6acf67795373863805f9c79d362e65907f6dd92ced30b1d81d038f2108663cc"
+                      "bytes": "bfb50efebec94116a6b35552b09f94289fba245e70e47893d0a030aeff615cf3"
                     }
                   ]
                 },
@@ -888,7 +888,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.0.0"
+                          "string": "1.1.0"
                         }
                       }
                     ]

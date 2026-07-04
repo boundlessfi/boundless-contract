@@ -23,7 +23,7 @@ const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
-pub const INITIAL_VERSION: &str = "1.0.0";
+pub const INITIAL_VERSION: &str = "1.1.0";
 
 // Events-contract rotation timelock: minimum delay between propose and
 // accept so off-chain monitoring has a window to react to a malicious
@@ -304,9 +304,11 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     // grows past ~30 lines, then promote into a private fn below.
     // ============================================================
 
-    // No-op for the initial 0.2.0 deploy. __constructor populates storage
-    // in the current shape; admin still calls migrate() once after deploy
-    // so the audit trail records that the post-upgrade cleanup ran.
+    // No-op for the 1.0.0 -> 1.1.0 credit-removal upgrade: no Profile rows have
+    // been bootstrapped yet, so there is nothing to rewrite for the dropped
+    // `credits` field. __constructor populates storage in the current shape;
+    // admin still calls migrate() once after the upgrade so the audit trail
+    // records that the post-upgrade cleanup ran.
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);

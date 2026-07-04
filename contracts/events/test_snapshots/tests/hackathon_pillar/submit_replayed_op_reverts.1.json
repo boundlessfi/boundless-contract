@@ -223,7 +223,7 @@
                   ]
                 },
                 {
-                  "bytes": "1ae8fe178298c66fc0c006dff7437ee8bae9d292d2735bf3ac26f0afdfa8725e"
+                  "bytes": "ab07279ee6599de3e0dfd3d9a507903d8b99590e7e91139d4833276a88263cc2"
                 }
               ]
             }
@@ -272,7 +272,7 @@
                   "string": "ipfs://Qm.../v1.json"
                 },
                 {
-                  "bytes": "200bae73723e553a31bf9ec31e5d96436bee9631f7d361327691468e1c3c2e30"
+                  "bytes": "65c9d5296665e63683b9dc3905ec72e0e540b1485672dddf0fe5e9c4bc44714b"
                 }
               ]
             }
@@ -467,7 +467,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.0.0"
+                          "string": "1.1.0"
                         }
                       }
                     ]
@@ -776,7 +776,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "1ae8fe178298c66fc0c006dff7437ee8bae9d292d2735bf3ac26f0afdfa8725e"
+                  "bytes": "65c9d5296665e63683b9dc3905ec72e0e540b1485672dddf0fe5e9c4bc44714b"
                 }
               ]
             },
@@ -796,7 +796,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "1ae8fe178298c66fc0c006dff7437ee8bae9d292d2735bf3ac26f0afdfa8725e"
+                      "bytes": "65c9d5296665e63683b9dc3905ec72e0e540b1485672dddf0fe5e9c4bc44714b"
                     }
                   ]
                 },
@@ -821,7 +821,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "200bae73723e553a31bf9ec31e5d96436bee9631f7d361327691468e1c3c2e30"
+                  "bytes": "ab07279ee6599de3e0dfd3d9a507903d8b99590e7e91139d4833276a88263cc2"
                 }
               ]
             },
@@ -841,7 +841,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "200bae73723e553a31bf9ec31e5d96436bee9631f7d361327691468e1c3c2e30"
+                      "bytes": "ab07279ee6599de3e0dfd3d9a507903d8b99590e7e91139d4833276a88263cc2"
                     }
                   ]
                 },
@@ -1029,7 +1029,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.0.0"
+                          "string": "1.1.0"
                         }
                       }
                     ]

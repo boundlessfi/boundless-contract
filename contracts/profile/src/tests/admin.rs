@@ -24,7 +24,7 @@ fn initializes_with_expected_config() {
     assert_eq!(ctx.client.is_paused(), false);
     assert_eq!(ctx.client.get_events_contract(), None);
     assert_eq!(ctx.client.get_pending_events_contract(), None);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.0.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.1.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
@@ -239,7 +239,7 @@ fn migrate_marks_version_and_blocks_replay_profile() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "1.0.0"))
+        Some(String::from_str(&ctx.env, "1.1.0"))
     );
 
     let err = ctx
