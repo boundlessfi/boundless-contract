@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - testnet
   pull_request:
     branches:
       - main
