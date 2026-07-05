@@ -58,14 +58,3 @@ jobs:
 
       - name: Run tests
         run: cargo test --release
-
-  rustfmt:
-    needs: build
-    # On PRs the standalone rustfmt workflow posts the `rustfmt` check; this
-    # chained call (which fans out to deploy) runs only on push, never on a PR.
-    if: success() && github.event_name == 'push'
-    uses: ./.github/workflows/rustfmt.yml
-    secrets:
-      STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
-      SOROBAN_SECRET_KEY: ${{ secrets.SOROBAN_SECRET_KEY }}
-      CONTRACT_ID: ${{ secrets.CONTRACT_ID }}
