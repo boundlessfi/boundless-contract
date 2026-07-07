@@ -8,6 +8,15 @@ Part 5 (Common Pitfalls).
 Scope: `contracts/events` and `contracts/profile` source. Tests, deploy
 scripts, and off-chain runbooks are out of scope here; they get their own pass.
 
+> **Historical note (post-audit):** this report describes the contracts as
+> audited, at version 1.0.0, when the profile contract still held per-user
+> credit balances on-chain (`profile/src/credits.rs`, the `credits` field on
+> `Profile`, `application_credit_cost` on events). The 1.0.0 → 1.1.0 upgrade
+> (2026-06) removed on-chain credits; they are now an off-chain ledger in
+> boundless-nestjs, and the profile contract holds only reputation scores and
+> per-token earnings. Credit-related references below are accurate for the
+> code as audited and are preserved unedited.
+
 ## TL;DR
 
 Boundless ships solid Soroban hygiene: typed errors, typed `DataKey` keys,

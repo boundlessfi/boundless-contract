@@ -115,7 +115,6 @@ cmd_build_release() {
 
 cmd_deploy_profile() {
     require_env INITIAL_ADMIN_KEY
-    require_env BOOTSTRAP_PROFILE_CREDITS
     require_cli
     confirm_mainnet
     ensure_deployments_dir
@@ -136,8 +135,7 @@ cmd_deploy_profile() {
         --source "$INITIAL_ADMIN_KEY" \
         --wasm "$wasm" \
         -- \
-        --admin "$(stellar keys address "$INITIAL_ADMIN_KEY")" \
-        --default_bootstrap_credits "$BOOTSTRAP_PROFILE_CREDITS")
+        --admin "$(stellar keys address "$INITIAL_ADMIN_KEY")")
 
     ok "profile_contract=$profile_id"
     deployment_set profile_contract "$profile_id"

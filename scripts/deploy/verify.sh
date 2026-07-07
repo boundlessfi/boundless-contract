@@ -50,5 +50,4 @@ echo
 echo "==> on-chain profile contract state"
 echo "    admin:            $(stellar contract invoke --id "$PROFILE_ID" --source-account "$SOURCE" --network "$NETWORK" -- get_admin)"
 echo "    events_contract:  $(stellar contract invoke --id "$PROFILE_ID" --source-account "$SOURCE" --network "$NETWORK" -- get_events_contract)"
-echo "    default_credits:  $(stellar contract invoke --id "$PROFILE_ID" --source-account "$SOURCE" --network "$NETWORK" -- get_default_bootstrap_credits)"
 echo "    is_paused:        $(stellar contract invoke --id "$PROFILE_ID" --source-account "$SOURCE" --network "$NETWORK" -- is_paused)"

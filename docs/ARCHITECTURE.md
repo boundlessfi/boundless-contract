@@ -4,23 +4,24 @@
 
 There are two coherent ways to build a contract for a platform like Boundless:
 
-**Custody-only on-chain.** Contract holds money. Everything else (event records, submissions, winners, credits, reputation) lives off-chain in Postgres. The platform is the source of truth. Cheap to audit; useless for transparency; reintroduces all the trust we're trying to remove.
+**Custody-only on-chain.** Contract holds money. Everything else (event records, submissions, winners, reputation) lives off-chain in Postgres. The platform is the source of truth. Cheap to audit; useless for transparency; reintroduces all the trust we're trying to remove.
 
-**Custody plus the records that matter on-chain.** Contract holds money, event existence, key terms, submission anchors, winner records, credits, and reputation. The platform is the source of truth for everything that benefits from iteration speed (descriptions, KYC, role policies, AI) but cannot edit the things that demand transparency.
+**Custody plus the records that matter on-chain.** Contract holds money, event existence, key terms, submission anchors, winner records, and reputation. The platform is the source of truth for everything that benefits from iteration speed (descriptions, KYC, role policies, AI) but cannot edit the things that demand transparency.
 
 We took the second path. This document explains the boundary.
+
+The boundary has moved once: through contract version 1.0.0, per-user credit balances also lived on-chain in the profile contract. The 1.0.0 → 1.1.0 upgrade (2026-06) removed them. Credits are a product-pricing lever, not a settlement promise — they were being retuned at product speed, which is exactly the iteration-speed test above. They now live in an off-chain ledger in boundless-nestjs; the profile contract holds only reputation scores and per-token earnings.
 
 ## What goes on-chain
 
 | Family | Lives in | Why |
 |--------|----------|-----|
 | Event existence (id, owner, pillar, token, total_budget) | events contract | Organizers cannot quietly delete events that went badly. |
-| Event key terms (release_kind, deadline, winner_distribution, application_credit_cost) | events contract | These define what is owed to whom; mutating them off-chain would let the platform rewrite outcomes. |
+| Event key terms (release_kind, deadline, winner_distribution) | events contract | These define what is owed to whom; mutating them off-chain would let the platform rewrite outcomes. |
 | Submission anchors (applicant, content_uri, timestamp) | events contract | Tamper-proof participation history. |
 | Winner records (recipient, position, amount, milestone, paid_at) | events contract | The promise of "you won this much" has to be enforced by the chain. |
 | Escrow balance and fee withholding | events contract | The platform cannot hold the keys to event funds. |
 | Token whitelist | events contract | Admin-managed; on-chain so the whitelist is auditable. |
-| Credit balances | profile contract | The platform cannot mint or freeze credits. |
 | Reputation scores | profile contract | The platform cannot inflate or deflate reputation. |
 | Per-token earnings | profile contract | The promise of "you've earned this much" matches the chain's record of releases. |
 | Idempotency markers | both contracts (temporary storage with TTL) | Replay-safe state transitions across the orchestrator's retry surface. |
@@ -33,6 +34,7 @@ We took the second path. This document explains the boundary.
 | Draft state | Drafts never hit the contract. Only published events do. |
 | KYC tiers and verification details | PII. |
 | Role policies and per-event reviewer assignments | Iterate rapidly without contract upgrades. |
+| Credit balances and credit charges (application costs, refunds) | Off-chain ledger since the 1.1.0 upgrade (2026-06). Credits are pricing policy, not settlement; keeping them on-chain froze product tuning behind contract upgrades. |
 | Tier brackets and credit-discount rules | Off-chain policy that interprets on-chain scores; lets product tune without audit. |
 | AI features (organizer assist, judging assist, similarity detection) | Out of scope for any contract. |
 | Moderation queue, notifications, analytics, exports | None of these benefit from immutability. |
@@ -40,20 +42,21 @@ We took the second path. This document explains the boundary.
 
 ## Why two contracts and not one
 
-Soroban's compiled WASM size limit is 64 KB. The platform contract that holds events + escrow + multi-token + idempotency lands around 50 KB once all operation bodies are implemented. Adding credits and reputation operations would push it over.
+Soroban's compiled WASM size limit is 64 KB. The platform contract that holds events + escrow + multi-token + idempotency lands around 50 KB once all operation bodies are implemented. Adding reputation and earnings operations would push it over.
 
-The natural split line: events are per-event; profile is per-user. Cross-family operations (apply charges credits; select_winners bumps reputation) happen at the events-to-profile boundary, where the events contract calls the profile contract with explicit auth.
+The natural split line: events are per-event; profile is per-user. Cross-family operations (apply bootstraps the applicant's profile; select_winners bumps reputation and registers earnings) happen at the events-to-profile boundary, where the events contract calls the profile contract with explicit auth.
 
 Three contracts would have been over-engineering. Two contracts split is the smallest cut that keeps both under the ceiling while keeping cross-contract calls bounded.
 
 ## The cross-contract dance
 
 ```
-applicant.require_auth() in events contract
+event owner require_auth() in events contract (select_winners)
   events contract holds the binding for the profile contract address
-  events contract calls profile.spend_credits(applicant, cost, "apply", op_id)
+  events contract calls profile.bump_reputation(winner, delta, "win", child_op_id)
+  events contract calls profile.register_earnings(winner, token, amount, child_op_id)
   profile contract verifies events_contract.require_auth()
-  profile contract checks balance, debits, emits CreditsSpent
+  profile contract mutates reputation / earnings, emits events
 ```
 
 Users cannot call profile mutations directly. The profile contract verifies the caller is the registered events contract address (or admin for direct grants and slashes). The `events_contract` binding in the profile contract is two-step rotatable so the events contract can be upgraded or replaced without re-deploying profile.

@@ -71,7 +71,9 @@ export MULTISIG_THRESHOLD=2  # 2-of-3 to start; review at scale
 
 # Boundless platform constants
 export INITIAL_GLOBAL_FEE_BPS=250  # 2.5% Bounty default; overridden per event
-export BOOTSTRAP_PROFILE_CREDITS=10
+# (Contract 1.0.0 also required BOOTSTRAP_PROFILE_CREDITS here; the 1.1.0
+#  credit-removal upgrade moved credits to an off-chain ledger in
+#  boundless-nestjs, and the profile constructor now takes only --admin.)
 
 # USDC SAC address on Stellar mainnet (verify against Circle's documentation
 # at the time of deploy; this is the canonical Stellar Asset Contract for USDC).
@@ -92,8 +94,7 @@ PROFILE_ID=$(soroban contract deploy \
   --source $INITIAL_ADMIN_KEY \
   --wasm $PROFILE_WASM \
   -- \
-  --admin $(soroban keys address $INITIAL_ADMIN_KEY) \
-  --default_bootstrap_credits $BOOTSTRAP_PROFILE_CREDITS)
+  --admin $(soroban keys address $INITIAL_ADMIN_KEY))
 
 echo "PROFILE_ID=$PROFILE_ID" | tee -a deployments/mainnet.env
 ```

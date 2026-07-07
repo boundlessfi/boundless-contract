@@ -81,11 +81,10 @@ PROFILE_ID=$(stellar contract deploy \
   --wasm target/wasm32v1-none/release/boundless_profile.wasm \
   --source boundless-deployer --network testnet \
   -- \
-  --admin "$DEPLOYER" \
-  --default_bootstrap_credits 10)
+  --admin "$DEPLOYER")
 echo "PROFILE_ID=$PROFILE_ID"   # WRITE THIS DOWN  ‹drill: CA63ATN2…›
 ```
-> Constructor arg is **`--default_bootstrap_credits`** (not `--bootstrap_credits`). See Section 7.
+> Since the 1.1.0 credit-removal upgrade (2026-06) the profile constructor takes only `--admin`. Contract 1.0.0 additionally required `--default_bootstrap_credits`; credits now live in an off-chain ledger in boundless-nestjs. See Section 7.
 
 ### 4.3 Deploy the events contract
 ```bash
@@ -236,7 +235,7 @@ curl -s "https://horizon-testnet.stellar.org/accounts/<BOOT>" | jq '{signers,thr
 
 ## 7. Pre-mainnet code fixes (found during the drill)
 
-1. **`deploy_mainnet.sh` deploy-profile uses `--bootstrap_credits`**, but the profile constructor arg is **`--default_bootstrap_credits`**. As-is, the mainnet profile deploy would fail. Fix the flag in the script.
+1. ~~**`deploy_mainnet.sh` deploy-profile uses `--bootstrap_credits`**, but the profile constructor arg is **`--default_bootstrap_credits`**.~~ Overtaken by the 1.1.0 credit-removal upgrade (2026-06): the profile constructor no longer takes any credits argument (credits are an off-chain ledger in boundless-nestjs). Deploy scripts must pass only `--admin` when deploying profile from current source.
 2. **`INITIAL_VERSION` is still `0.2.0`** while the code now includes the supported-token enumeration. A fresh mainnet deploy would stamp `0.2.0` for a contract that differs from the audited `0.2.0` surface. Bump it (e.g. `1.0.0`) and update the upgrade-test fixtures + the runbook's expected-version checks.
 3. **Re-audit the supported-token enumeration** — it's new contract code added after the last audit; the mainnet pre-flight gate ("all critical/high resolved") must cover it.
 

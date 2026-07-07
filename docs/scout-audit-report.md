@@ -6,6 +6,14 @@
 **Scope:** `contracts/events` + `contracts/profile`
 **Command:** `cargo scout-audit` (run from workspace root)
 
+> **Historical note (post-scan):** this report describes the contracts as
+> scanned, at version 1.0.0, when per-user credit balances were still
+> on-chain (`profile/src/credits.rs`). The 1.0.0 → 1.1.0 upgrade (2026-06)
+> removed on-chain credits — they are now an off-chain ledger in
+> boundless-nestjs — so `credits.rs` and its findings (e.g. C-1 / C-6) no
+> longer have an on-chain counterpart. References below are preserved
+> unedited as the record of the scan.
+
 ---
 
 ## Summary

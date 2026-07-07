@@ -1,7 +1,7 @@
 # Boundless Platform — STRIDE Threat Model
 
-**Version:** 1.1
-**Date:** June 2026 (rev. June 2026 after second Scout remediation)
+**Version:** 1.2
+**Date:** July 2026 (rev. after the 1.1.0 credit-removal upgrade; prior rev. June 2026 after second Scout remediation)
 **Scope:** `boundless-events` + `boundless-profile` Soroban contracts and the off-chain orchestrator (`boundless-nestjs`)
 **Prepared by:** Boundless Engineering
 **Status:** Submitted for SDF Soroban Security Audit Program
@@ -19,7 +19,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | Component | Role |
 |---|---|
 | `boundless-events` | On-chain anchor for all event types. Manages escrow custody (deposit, lock, release, refund), event lifecycle, participant registration, submission anchoring, and winner selection for all four pillars (hackathon, bounty, grant, crowdfunding). |
-| `boundless-profile` | Per-user credits and reputation scores. Called cross-contract by `boundless-events` to charge credits on application and award reputation on win. |
+| `boundless-profile` | Per-user reputation scores and per-token earnings. Called cross-contract by `boundless-events` to bootstrap profiles on application, award reputation on win, and register earnings on payout. (Credit balances were on-chain here through contract 1.0.0; the 1.1.0 upgrade moved them to an off-chain ledger in `boundless-nestjs`.) |
 | `boundless-nestjs` | Off-chain orchestrator (NestJS). Holds rich content, user accounts, KYC state, and draft lifecycle. Builds and submits Stellar transactions via RPC. Houses the admin KYC workflow and the server-side admin co-signer. |
 | Frontend (`boundless`) | Next.js web app. Runs in the user's browser. Calls the backend API. No direct RPC calls; all chain interaction is mediated by the backend. |
 | Admin Portal | Staff-only Next.js app. Calls the backend admin API surface. Enforces step-up TOTP for sensitive mutations. |
@@ -69,8 +69,8 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
           ▼                                      ▼
  ┌──────────────────┐                ┌────────────────────┐
  │ boundless-events │──cross-contract│ boundless-profile  │
- │ (escrow, event   │───────────────▶│ (credits +         │
- │  lifecycle for   │                │  reputation)       │
+ │ (escrow, event   │───────────────▶│ (reputation +      │
+ │  lifecycle for   │                │  earnings)         │
  │  all 4 pillars)  │                └────────────────────┘
  └──────────────────┘
           │
@@ -108,7 +108,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | Store | Location | Contents | Sensitivity |
 |---|---|---|---|
 | PostgreSQL | Boundless servers | User accounts, event drafts, escrow op log, KYC status (no PII), audit log | Medium — no documents or keys |
-| Soroban contract storage | Stellar ledger | Event records, escrow balances, winner assignments, credits, reputation | Public by design — pseudonymous addresses only |
+| Soroban contract storage | Stellar ledger | Event records, escrow balances, winner assignments, reputation scores, per-token earnings | Public by design — pseudonymous addresses only |
 | Didit systems | Didit infrastructure | Identity documents, biometrics, verification decisions | High — held exclusively by Didit |
 | Admin multi-sig keys | Distributed (3 signers, separate machines) | Freighter wallet keys (software baseline) | Critical |
 | Backend environment | Server environment vars | JWT secret, encryption key, Didit API key, orchestrator signing key | High |
@@ -152,7 +152,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | Tamp.4 | A malicious or compromised Stellar RPC node returns forged event data to the backend indexer, causing the platform to display incorrect state. | Backend event indexer, Nodies RPC |
 | Tamp.5 | The WASM hash in a `propose_upgrade` call is quietly replaced between proposal and application to install malicious contract logic. | Contract upgrade flow (`admin.rs`) |
 | Tamp.6 | An attacker intercepts and modifies a partially-signed multi-sig transaction in transit to change the operation parameters (e.g., new admin address). | Admin multi-sig signing workflow |
-| Tamp.7 | An integer underflow in `spend_credits` allows a builder to spend more credits than their balance, wrapping the counter and corrupting credits accounting across the platform. | `boundless-profile` contract, `credits.rs` |
+| Tamp.7 | *(retired in 1.1.0)* An integer underflow in `spend_credits` allows a builder to spend more credits than their balance, wrapping the counter and corrupting credits accounting across the platform. | `boundless-profile` contract 1.0.0, `credits.rs` |
 | Tamp.8 | An integer underflow in `remove_applicant` corrupts the applicant index (slot or count wraps to u32::MAX), causing subsequent lookups to find phantom applicants or block legitimate removals. | `boundless-events` contract, `storage.rs` |
 
 #### Repudiation
@@ -195,7 +195,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | EoP.2 | A staff member with `kyc:read` (Tier 0) permission calls the `kyc:override` endpoint (Tier 2) to approve their own or a collaborator's KYC. | Backend admin KYC controller, `PolicyGuard` |
 | EoP.3 | An organizer calls `claim_milestone` on a crowdfunding event without the required admin co-authorization, attempting to claim funds early. | `boundless-events` contract, admin.require_auth() |
 | EoP.4 | A regular backend API user (builder/organizer) sends requests to the `/admin/v2/*` routes by crafting bearer tokens with elevated claims. | Backend admin API, `StaffAuthGuard` |
-| EoP.5 | An attacker calls `bootstrap_self` on `boundless-profile` with another user's address to create a profile and claim their credits. | `boundless-profile` contract |
+| EoP.5 | An attacker calls `bootstrap_self` on `boundless-profile` with another user's address to create or squat a profile record on their behalf. | `boundless-profile` contract |
 | EoP.6 | A malicious event owner calls `set_admin` or `propose_upgrade` directly, attempting to rotate the contract admin to an address they control. | `boundless-events` contract, `admin.rs` |
 | EoP.7 | The backend orchestrator key is used to approve a `claim_milestone` on behalf of an event where the organizer did not initiate the call, redirecting funds. | Backend orchestrator, `boundless-events` |
 
@@ -218,7 +218,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **Tamp.4** | The backend verifies event existence against the contract before acting (read-then-act). The Nodies RPC endpoint is managed and dedicated; the backend does not follow `_links` navigation. Soroban event payloads include the emitting contract ID; the indexer filters on the known contract address. |
 | **Tamp.5** | `propose_upgrade(wasm_hash, new_version)` stores the WASM hash on-chain. `apply_upgrade()` can only be called after the timelock elapses (~1 day) and re-verifies against the stored hash. The proposal is public on-chain; off-chain monitors can detect unexpected upgrade proposals. The admin multi-sig must authorize both steps. |
 | **Tamp.6** | Multi-sig transactions are built offline, inspected before signing, and signed independently by each signer. The `verify-multisig.sh` script validates the on-chain signer configuration. Future target state: hardware keys (Yubikey/Ledger) eliminate in-memory key exposure. |
-| **Tamp.7** | `spend_credits` uses `profile.credits.checked_sub(amount).ok_or(Error::InsufficientCredits)?`. The `checked_sub` returns `None` on underflow; `ok_or` converts it to a typed contract error. The operation reverts atomically -- no partial state is written. The separate `if profile.credits < amount` guard was redundant and has been removed, leaving a single authoritative check. Fixed in Scout remediation round 2 (`profile/credits.rs`). |
+| **Tamp.7** | Retired. In contract 1.0.0 this was mitigated with `profile.credits.checked_sub(amount).ok_or(Error::InsufficientCredits)?` (Scout remediation round 2). The 1.0.0 → 1.1.0 upgrade then removed on-chain credits entirely — `spend_credits` and `credits.rs` no longer exist, and credit accounting lives in the off-chain ledger in `boundless-nestjs`, where it is covered by that system's own controls. |
 | **Tamp.8** | `remove_applicant` now uses `slot.checked_sub(1).ok_or(Error::ApplicantNotApplied)?` and `count.checked_sub(1).ok_or(Error::EventNotFound)?` for all three arithmetic operations. Even though the `if slot == 0` guard above makes underflow structurally impossible, checked arithmetic makes the invariant explicit and contract-level: if the guard were ever removed or the code path changed, the checked operation would surface the error rather than silently wrapping. Fixed in Scout remediation round 2 (`events/storage.rs`). |
 | **Repud.1** | `select_winners` emits a `WinnersSelected` Soroban event containing the event ID, winner addresses, and amounts. This event is immutable on the Stellar ledger and publicly auditable on Stellar Expert. |
 | **Repud.2** | Every USDC release is an on-chain SAC `transfer` call. The transaction hash, sender, recipient, and amount are permanently recorded on the Stellar ledger. |
@@ -231,7 +231,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **Info.4** | Staff sessions use short-lived JWTs. Tier 2 actions require a fresh TOTP token. Admin workstations are on separate browser profiles from personal use. Future: hardware-backed staff keys. |
 | **Info.5** | The Didit webhook handler logs only the `session_id` and normalized status, never the full payload. Log levels are set to `error,warn,log` in production; raw request bodies are not logged. |
 | **Info.6** | The fee account is a Stellar G-address whose key is held by the admin multi-sig (same custody as the contract admin). Fee diversion requires compromising the multi-sig. |
-| **DoS.1** | Per-event applicant cap is 5,000 entries. The `apply` endpoint requires a valid JWT and KYC-approved status, raising the cost of bot registration significantly. Credit costs on application (`application_credit_cost`) are configurable per event, making spam economically prohibitive for events with non-zero credit costs. |
+| **DoS.1** | Per-event applicant cap is 5,000 entries. The `apply` endpoint requires a valid JWT and KYC-approved status, raising the cost of bot registration significantly. Per-event credit costs on application are enforced by the off-chain credit ledger at the API layer (since the 1.1.0 upgrade; previously on-chain via `application_credit_cost`), making spam economically prohibitive for events with non-zero credit costs. |
 | **DoS.2** | The paged cancel design (`start_cancel` / `process_cancel_batch(max_refunds=25)` / `finalize_cancel`) caps per-transaction refund work at 25 entries, well within Stellar ledger resource limits even at 5,000 contributors. |
 | **DoS.3** | `GlobalThrottlerGuard` applies per-IP rate limits globally. The backend runs behind a load balancer with DDoS protection at the infrastructure layer. |
 | **DoS.4** | Nodies is a managed, SLA-backed RPC provider. BullMQ queues buffer all async contract operations; if RPC is temporarily unavailable, jobs retry with exponential backoff and are not lost. The `DistributedLockService` prevents duplicate submissions during retry storms. |
@@ -280,6 +280,7 @@ Four issues surfaced during or directly after the modelling process:
 2. The audit log for KYC overrides did not originally include the `reason` field in the initial implementation. Reviewing the Repudiation category prompted us to confirm this was added and tested -- it is present in `AdminKycActionsService.override()`.
 3. **(v1.1)** A second Scout static analysis run after this document was first published identified two previously-undocumented integer underflow vectors: `profile/credits.rs` (Tamp.7) and `events/storage.rs` (Tamp.8). Both were fixed by converting bare `- 1` and `-= amount` operations to `checked_sub` with typed error returns. These threats have been added to Section 2 and Section 3 in this revision.
 4. **(v1.1)** The ENHANCEMENT category in the Scout report flagged ~50 profile contract functions for missing event emissions. Code review confirmed all state-mutating functions already emit events in their implementation modules; Scout cannot trace through function call chains. Documented as false positives.
+5. **(v1.2)** The 1.0.0 → 1.1.0 contract upgrade (2026-06) removed per-user credit balances from the profile contract; credits now live in an off-chain ledger in `boundless-nestjs`. Component descriptions, the dataflow diagram, and the data-store table were updated; Tamp.7 was marked retired (its subject code, `credits.rs`, no longer exists on-chain); EoP.5 and DoS.1 were reworded to match the post-upgrade surface. Credit-ledger threats are now in scope of the backend's threat surface (TB1), not the contract's.
 
 ### Living Document Commitment
 

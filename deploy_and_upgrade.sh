@@ -98,7 +98,7 @@ deploy_contract() {
     echo -e "${YELLOW}NOTE: This script does NOT pass constructor args.${NC}"
     echo "After the deploy succeeds, invoke the constructor manually per the runbook:"
     echo "  docs/mainnet-deploy-runbook.md (events: admin, fee_account, fee_bps, profile_contract)"
-    echo "  docs/mainnet-deploy-runbook.md (profile: admin, default_bootstrap_credits)"
+    echo "  docs/mainnet-deploy-runbook.md (profile: admin)"
     echo ""
 
     CONTRACT_ID=$(stellar contract deploy \

@@ -217,7 +217,8 @@ Open `.env.deploy` in your editor and set:
 | `ADMIN_IDENTITY` | The name of the Stellar CLI identity that will deploy and hold initial admin authority. Default is `boundless-admin`. This is the throwaway deployer per §E.0, NOT the final admin. Rename to `boundless-deployer` if the default name reads as misleading; the scripts only care about the value. |
 | `FEE_ACCOUNT` | The G-address that receives platform fees. **Separate account.** Not the deployer, not the multi-sig. Must hold a trustline for every token you register; the contract does not enforce this at registration. |
 | `FEE_BPS` | Platform fee in basis points (`100 = 1%`, `250 = 2.5%`). The `.env.deploy.example` template and `deploy.sh` validate the range as `[0, 1000]`, matching the contract's `MAX_FEE_BPS = 1000` (10%) cap per the 2026-06 audit (L4 finding). Values above 1000 are rejected at the script level before any deploy work happens. |
-| `BOOTSTRAP_CREDITS` | Starting credit balance assigned to newly-bootstrapped profiles. Default is 10 per the credits / reputation PRD. |
+
+> Contract versions up to 1.0.0 also required a `BOOTSTRAP_CREDITS` value for the profile constructor. The 1.1.0 credit-removal upgrade (2026-06) moved credits to an off-chain ledger in boundless-nestjs; the profile constructor now takes only `--admin`.
 
 `.env.deploy` is gitignored. Never commit a populated file.
 
@@ -268,7 +269,7 @@ The script `scripts/deploy/deploy.sh` does the whole deploy in one shot: builds 
 The script:
 
 - Aborts if `stellar` CLI is older than 26.0.0 (Rust 1.90.0 emits reference-types wasm that earlier CLIs reject at simulation time).
-- Aborts if any of `ADMIN_IDENTITY`, `FEE_ACCOUNT`, `FEE_BPS`, `BOOTSTRAP_CREDITS` is unset.
+- Aborts if any of `ADMIN_IDENTITY`, `FEE_ACCOUNT`, `FEE_BPS` is unset.
 - Aborts if `FEE_BPS` is outside `[0, 1000]` (matches the contract's `MAX_FEE_BPS = 1000` cap per audit L4; see Step 1).
 - Prints the profile contract id and events contract id on success.
 
@@ -281,7 +282,7 @@ BOUNDLESS_PROFILE_CONTRACT_ADDRESS=<profile id>
 
 Under the hood, the constructor invocations are:
 
-- `boundless-profile`: `--admin <DEPLOYER_ADDR> --default_bootstrap_credits <BOOTSTRAP_CREDITS>`.
+- `boundless-profile`: `--admin <DEPLOYER_ADDR>`.
 - `boundless-events`: `--admin <DEPLOYER_ADDR> --fee_account <FEE_ACCOUNT> --fee_bps <FEE_BPS> --profile_contract <PROFILE_ID>`.
 - Wiring call: `profile.set_events_contract --new_addr <EVENTS_ID>`.
 
@@ -319,7 +320,7 @@ Repeat for each token you support (USDC mandatory, native XLM SAC if you accept 
 The script reads `deployments/mainnet.json` and queries each contract for its full admin-visible state:
 
 - **Events:** `get_admin`, `get_fee_account`, `get_fee_bps`, `get_profile_contract`, `is_paused`.
-- **Profile:** `get_admin`, `get_events_contract`, `get_default_bootstrap_credits`, `is_paused`.
+- **Profile:** `get_admin`, `get_events_contract`, `is_paused`.
 
 Expected output at this point:
 
@@ -328,7 +329,6 @@ Expected output at this point:
 - `events.fee_bps` matches `.env.deploy`.
 - `events.profile_contract` matches the profile id.
 - `profile.events_contract` matches the events id.
-- `profile.default_bootstrap_credits` matches `.env.deploy`.
 - Both `is_paused` return `false`.
 
 If anything is wrong, fix it now. The deployer still has single-sig admin authority through Step 8; from Step 9 onward every fix needs two signatures.
@@ -465,7 +465,7 @@ After Step 12, the contracts are live, the multi-sig is admin on both, and there
 
 #### Recap of the whole sequence
 
-1. Configure `.env.deploy` (ADMIN_IDENTITY, FEE_ACCOUNT, FEE_BPS, BOOTSTRAP_CREDITS).
+1. Configure `.env.deploy` (ADMIN_IDENTITY, FEE_ACCOUNT, FEE_BPS).
 2. Generate the deployer identity (`stellar keys generate boundless-deployer`).
 3. Fund the deployer (~10 XLM).
 4. Run `./scripts/deploy/deploy.sh mainnet` (builds + deploys both contracts + wires `set_events_contract` + writes `deployments/mainnet.json`).

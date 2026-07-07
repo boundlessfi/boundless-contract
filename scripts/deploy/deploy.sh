@@ -10,7 +10,10 @@
 #   ADMIN_IDENTITY            stellar CLI identity name with admin authority
 #   FEE_ACCOUNT               Stellar G-address that receives fees
 #   FEE_BPS                   platform fee in basis points (e.g. 250 = 2.5%)
-#   BOOTSTRAP_CREDITS         starting credit balance for new profiles (e.g. 10)
+#
+# Contract 1.0.0 also required BOOTSTRAP_CREDITS; the 1.1.0 credit-removal
+# upgrade (2026-06) moved credits off-chain and the profile constructor now
+# takes only --admin.
 #
 # Spec: boundless-platform-contract-prd.md Section 12.2.
 
@@ -44,7 +47,6 @@ require() {
 require ADMIN_IDENTITY
 require FEE_ACCOUNT
 require FEE_BPS
-require BOOTSTRAP_CREDITS
 
 # Soroban host on Stellar testnet accepts WebAssembly emitted with the
 # reference-types extension; stellar-cli's local simulator only validates that
@@ -86,7 +88,6 @@ echo "    network:           $NETWORK"
 echo "    admin identity:    $ADMIN_IDENTITY ($ADMIN_ADDR)"
 echo "    fee account:       $FEE_ACCOUNT"
 echo "    fee bps:           $FEE_BPS"
-echo "    bootstrap credits: $BOOTSTRAP_CREDITS"
 echo
 
 # 1. Build both contracts. Testnet/futurenet enable the `testnet` feature →
@@ -117,8 +118,7 @@ PROFILE_ID=$(stellar contract deploy \
   --source "$ADMIN_IDENTITY" \
   --network "$NETWORK" \
   -- \
-  --admin "$ADMIN_ADDR" \
-  --default_bootstrap_credits "$BOOTSTRAP_CREDITS")
+  --admin "$ADMIN_ADDR")
 echo "    profile contract id: $PROFILE_ID"
 
 # 3. Deploy boundless-events pointing at the profile contract.
@@ -156,7 +156,6 @@ cat > "$DEPLOY_RECORD" <<EOF
   "admin_address": "$ADMIN_ADDR",
   "fee_account": "$FEE_ACCOUNT",
   "fee_bps": $FEE_BPS,
-  "bootstrap_credits": $BOOTSTRAP_CREDITS,
   "events_contract": "$EVENTS_ID",
   "profile_contract": "$PROFILE_ID"
 }

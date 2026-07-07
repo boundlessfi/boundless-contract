@@ -19,8 +19,9 @@ Pick once per environment and document.
 | **Admin identity** | both contracts' `admin` | controls `set_admin`, `set_fee_bps`, `pause`, `upgrade`, `register_supported_token`. **Use a Stellar multisig account for mainnet.** Testnet can be a single key. |
 | **Fee account** | events `fee_account` | G-address that receives the platform fee on every deposit. Must hold a trustline for every registered token. **Should be a separately-keyed account from admin.** |
 | **Fee bps** | events `fee_bps` | Basis points. 100 = 1%, 250 = 2.5%. Contract caps at 1000 (10%) per audit L4. |
-| **Bootstrap credits** | profile `default_bootstrap_credits` | u32. Initial credit balance for newly-created profiles. PRD default is 10. |
 | **USDC asset address** | events `register_supported_token` | Token contract (SAC) address. See Section 4. |
+
+> Contract versions up to 1.0.0 also took a `default_bootstrap_credits` constructor parameter on the profile contract. The 1.1.0 upgrade (2026-06) removed on-chain credits — they are now an off-chain ledger in boundless-nestjs — so the profile constructor takes only `admin`.
 
 Production values land in `deployments/<network>.json` after `deploy.sh` runs.
 
@@ -83,7 +84,6 @@ Required values:
 ADMIN_IDENTITY=boundless-admin
 FEE_ACCOUNT=G...                  # output of `stellar keys address boundless-fee`
 FEE_BPS=250                       # 2.5%
-BOOTSTRAP_CREDITS=10              # PRD default
 ```
 
 `.env.deploy` is gitignored. Do not commit.
@@ -271,5 +271,5 @@ Or, more cleanly, write a follow-up migration that drops the table.
 - `scripts/deploy/deploy.sh`, `register_token.sh`, `verify.sh`
 - `boundless-platform-contract-prd.md` Section 12 (deployment)
 - `boundless-payout-prd.md` Section 9.1 (orchestrator integration)
-- `boundless-credits-reputation-prd.md` Section 9 (bootstrap credit policy)
+- `boundless-credits-reputation-prd.md` Section 9 (credit policy — implemented as an off-chain ledger in boundless-nestjs since the 1.1.0 upgrade)
 - `.env.deploy.example` (per-network parameter template)
