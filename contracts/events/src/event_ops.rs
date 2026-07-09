@@ -22,7 +22,7 @@ use crate::types::{
 };
 
 const MAX_TITLE_LEN: u32 = 120;
-const MAX_WINNERS_PER_SELECT: u32 = 50;
+const MAX_WINNERS_PER_SELECT: u32 = 500;
 
 // Per-event list caps. Lifted from 100 to 5_000 once paged cancel landed:
 // start_cancel / process_cancel_batch / finalize_cancel split the refund
@@ -622,12 +622,9 @@ pub fn select_winners(
         return Err(Error::InvalidPillar);
     }
 
-    // Management authority: the per-event manager override if set, else owner.
     resolve_manager(env, event_id, &event.owner).require_auth();
 
-    // One-shot per event: detect a prior selection by an anchor row
-    // (milestone == None). Crowdfunding's create_event seeds an anchor too,
-    // but we returned above for crowdfunding.
+    // One‑shot check: no anchor row (milestone == None) already exists.
     let existing_count = storage::winner_count(env, event_id);
     for idx in 0..existing_count {
         if let Some(w) = storage::winner_at(env, event_id, idx) {
@@ -644,7 +641,7 @@ pub fn select_winners(
         return Err(Error::InvalidWinnerPosition);
     }
 
-    // Validate each position exists in distribution and no duplicates.
+    // Validate positions and duplicates (unchanged)
     let mut seen_positions: Vec<u32> = Vec::new(env);
     for spec in winners.iter() {
         let mut already = false;
@@ -663,21 +660,14 @@ pub fn select_winners(
         seen_positions.push_back(spec.position);
     }
 
-    let profile = profile_client::client(env);
-    let now = env.ledger().timestamp();
-    let reason_win = Symbol::new(env, "win");
-
+    // --- NEW BEHAVIOUR for ReleaseKind::Single ---
+    // Instead of paying out immediately, we store each winner with paid_at = None.
+    // The actual transfer happens later via claim_prize.
     match event.release_kind {
         ReleaseKind::Single => {
-            // M1: percent math is against the live escrow at select time
-            // (snapshotted before the first refund), so partner top-ups via
-            // add_funds flow into winner payouts rather than getting
-            // trapped until cancel. Snapshot once so each winner gets the
-            // intended share regardless of the order of releases inside
-            // this same call.
             let escrow_at_select = event.remaining_escrow;
 
-            // First pass: compute per-winner amounts and verify total fits.
+            // First pass: compute per‑winner amounts and verify total fits.
             let mut total_owed: i128 = 0;
             for spec in winners.iter() {
                 let percent = event
@@ -694,33 +684,13 @@ pub fn select_winners(
                 return Err(Error::InsufficientEscrow);
             }
 
-            // Second pass: release per winner with all four profile-side calls.
-            for (idx, spec) in winners.iter().enumerate() {
-                let sub_idx = idx as u8;
+            // Second pass: store winner records (no payments, no profile calls).
+            for spec in winners.iter() {
                 let percent = event
                     .winner_distribution
                     .get(spec.position)
                     .ok_or(Error::InvalidDistribution)? as i128;
                 let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
-
-                escrow::release(env, &event.token, &spec.recipient, amount);
-                event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
-
-                let bootstrap_op =
-                    idempotency::derive_child_indexed(env, &op_id, tag::BOOTSTRAP, sub_idx);
-                profile.bootstrap(&spec.recipient, &bootstrap_op);
-
-                let rep_op = idempotency::derive_child_indexed(env, &op_id, tag::BUMP_REP, sub_idx);
-                profile.bump_reputation(
-                    &spec.recipient,
-                    &spec.reputation_bump,
-                    &reason_win,
-                    &rep_op,
-                );
-
-                let earnings_op =
-                    idempotency::derive_child_indexed(env, &op_id, tag::REGISTER_EARNINGS, sub_idx);
-                profile.register_earnings(&spec.recipient, &event.token, &amount, &earnings_op);
 
                 storage::append_winner(
                     env,
@@ -728,28 +698,28 @@ pub fn select_winners(
                     &Winner {
                         recipient: spec.recipient.clone(),
                         position: spec.position,
-                        amount,
+                        amount,                     // now stores the actual amount
                         milestone: None,
-                        paid_at: Some(now),
+                        paid_at: None,              // ← not paid yet
                     },
                 );
 
-                evt::WinnerPaid {
+                evt::WinnerSelected {              // new event (not paid)
                     event_id,
                     recipient: spec.recipient.clone(),
                     position: spec.position,
                     amount,
-                    milestone: None,
                 }
                 .publish(env);
             }
 
-            if event.remaining_escrow == 0 {
-                event.status = EventStatus::Completed;
-            }
+            // Reset claimed count for this event (new storage key)
+            storage::set_claimed_winners_count(env, event_id, 0);
+
+            // Do NOT change remaining_escrow or status yet.
         }
         ReleaseKind::Multi(_) => {
-            // Grants: record winners but defer payment to claim_milestone.
+            // Grants: unchanged – store winners with amount=0, paid_at=None.
             for spec in winners.iter() {
                 storage::append_winner(
                     env,
@@ -766,12 +736,11 @@ pub fn select_winners(
         }
     }
 
-    let winners_count = winners.len();
     storage::set_event(env, event_id, &event);
 
     evt::WinnersSelected {
         event_id,
-        count: winners_count,
+        count: winners.len() as u32,
     }
     .publish(env);
 
@@ -779,6 +748,98 @@ pub fn select_winners(
     Ok(())
 }
 
+pub fn claim_prize(
+    env: &Env,
+    event_id: u64,
+    recipient: Address,
+    reputation_bump: u32,
+    op_id: BytesN<32>,
+) -> Result<(), Error> {
+    admin::require_not_paused(env)?;
+    idempotency::require_unseen(env, &op_id)?;
+
+    let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    if !matches!(event.status, EventStatus::Active) {
+        return Err(Error::EventNotActive);
+    }
+
+    // Only single‑release (bounty/competition) uses this. Grants use claim_milestone.
+    if !matches!(event.release_kind, ReleaseKind::Single) {
+        return Err(Error::InvalidReleaseKind);
+    }
+
+    recipient.require_auth();
+
+    // Find the winner record for this recipient that hasn't been paid.
+    let count = storage::winner_count(env, event_id);
+    let mut winner_record: Option<Winner> = None;
+    for idx in 0..count {
+        if let Some(w) = storage::winner_at(env, event_id, idx) {
+            if w.recipient == recipient && w.paid_at.is_none() && w.milestone.is_none() {
+                winner_record = Some(w);
+                break;
+            }
+        }
+    }
+    let winner = winner_record.ok_or(Error::WinnerNotFound)?;
+    let amount = winner.amount;
+    if amount <= 0 {
+        return Err(Error::InvalidDistribution);
+    }
+    if amount > event.remaining_escrow {
+        return Err(Error::InsufficientEscrow);
+    }
+
+    // --- Transfer ---
+    escrow::release(env, &event.token, &recipient, amount);
+    event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
+
+    // --- Profile calls (idempotent) ---
+    let profile = profile_client::client(env);
+    let reason = Symbol::new(env, "prize");
+
+    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    profile.bootstrap(&recipient, &bootstrap_op);
+
+    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
+    profile.bump_reputation(&recipient, &reputation_bump, &reason, &rep_op);
+
+    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
+    profile.register_earnings(&recipient, &event.token, &amount, &earnings_op);
+
+    // --- Mark this winner as paid (update the stored Winner record) ---
+    // We need to update the specific winner row. Since we don't have an index,
+    // we can find it again and overwrite. But we already have the record.
+    // Better: we can store winners as a vector and update in place by scanning again.
+    // For simplicity, we'll remove and re‑append? That would change order.
+    // Option 1: store winner index in a map? Or just update by scanning and replacing.
+    // We'll implement a helper: update_winner_paid(env, event_id, recipient, now)
+    // that scans and sets paid_at.
+    storage::update_winner_paid(env, event_id, &recipient, env.ledger().timestamp());
+
+    // --- Increment claimed count ---
+    let claimed = storage::get_claimed_winners_count(env, event_id);
+    let new_claimed = claimed.saturating_add(1);
+    storage::set_claimed_winners_count(env, event_id, new_claimed);
+
+    // If all winners have claimed, mark event Completed.
+    let total_winners = storage::winner_count(env, event_id);
+    if new_claimed == total_winners {
+        event.status = EventStatus::Completed;
+    }
+
+    storage::set_event(env, event_id, &event);
+
+    evt::PrizeClaimed {
+        event_id,
+        recipient,
+        amount,
+    }
+    .publish(env);
+
+    idempotency::mark_seen(env, &op_id);
+    Ok(())
+}
 // ============================================================
 // READS
 //
