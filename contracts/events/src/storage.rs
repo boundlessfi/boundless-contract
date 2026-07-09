@@ -461,6 +461,7 @@ pub fn remove_submission(env: &Env, id: u64, applicant: &Address) {
 // winner_at(id, idx)       -> Winner at slot idx.
 // append_winner(id, w)     -> append-only; select_winners and claim_milestone
 //                             never rewrite existing rows.
+// set_winner_at(id, idx, w) -> overwrite a winner at a specific index.
 // winners_snapshot(id,max) -> Vec view capped at `max`. Callers needing full
 //                             iteration should use the paged API.
 // ============================================================
@@ -494,6 +495,13 @@ pub fn append_winner(env: &Env, id: u64, w: &Winner) {
     touch_event_persistent(env, &count_key);
 }
 
+/// Overwrite a winner at a given index (used to mark paid status).
+pub fn set_winner_at(env: &Env, id: u64, idx: u32, winner: &Winner) {
+    let at_key = DataKey::EventWinnerAt(id, idx);
+    env.storage().persistent().set(&at_key, winner);
+    touch_event_persistent(env, &at_key);
+}
+
 pub fn winners_snapshot(env: &Env, id: u64, max: u32) -> Vec<Winner> {
     let count = winner_count(env, id);
     let upper = if count < max { count } else { max };
@@ -504,6 +512,39 @@ pub fn winners_snapshot(env: &Env, id: u64, max: u32) -> Vec<Winner> {
         }
     }
     out
+}
+
+// ============================================================
+// CLAIMED WINNERS COUNT (persistent)        // NEW SECTION
+// ============================================================
+pub fn set_claimed_winners_count(env: &Env, event_id: u64, count: u32) {
+    let key = DataKey::ClaimedWinnersCount(event_id);
+    env.storage().persistent().set(&key, &count);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_claimed_winners_count(env: &Env, event_id: u64) -> u32 {
+    let key = DataKey::ClaimedWinnersCount(event_id);
+    let n: Option<u32> = env.storage().persistent().get(&key);
+    if n.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    n.unwrap_or(0)
+}
+
+/// Scans the winner list for the given recipient and marks the first
+/// unpaid anchor (milestone == None) as paid.
+pub fn update_winner_paid(env: &Env, event_id: u64, recipient: &Address, paid_at: u64) {
+    let count = winner_count(env, event_id);
+    for idx in 0..count {
+        if let Some(mut w) = winner_at(env, event_id, idx) {
+            if &w.recipient == recipient && w.paid_at.is_none() && w.milestone.is_none() {
+                w.paid_at = Some(paid_at);
+                set_winner_at(env, event_id, idx, &w);
+                break;
+            }
+        }
+    }
 }
 
 // ============================================================
