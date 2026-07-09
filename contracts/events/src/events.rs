@@ -168,3 +168,18 @@ pub struct Migrated {
     pub from_version: String,
     pub to_version: String,
 }
+
+#[contractevent]
+pub struct WinnerSelected {
+    pub event_id: u64,
+    pub recipient: Address,
+    pub position: u32,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct PrizeClaimed {
+    pub event_id: u64,
+    pub recipient: Address,
+    pub amount: i128,
+}
