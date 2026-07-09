@@ -54,7 +54,8 @@ pub enum Error {
     InvalidMilestone = 55,
     InsufficientEscrow = 56,
     WinnersAlreadySelected = 90,
-
+    WinnerNotFound = 91,
+    
     // Contributions
     BelowMinimumContribution = 57,
     InvalidContributionAmount = 58,
