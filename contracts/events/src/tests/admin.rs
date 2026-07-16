@@ -1,5 +1,3 @@
-// boundless-events: admin tests.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -10,7 +8,6 @@ use soroban_sdk::{
 use super::common::setup;
 use crate::errors::Error;
 
-// Mirror the constants from admin.rs to keep timelock arithmetic readable.
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
@@ -40,7 +37,6 @@ fn pause_and_unpause_round_trip() {
 fn id_base_encodes_deployment_sequence() {
     let ctx = setup(250);
     let base = ctx.client.id_base();
-    // id_base should be (seq << 32); lower 32 bits zero.
     assert_eq!(base & 0xFFFF_FFFF, 0);
 }
 
@@ -83,7 +79,6 @@ fn propose_upgrade_rejects_empty_version() {
         .err()
         .expect("empty version rejected")
         .unwrap();
-    // Reuse of InvalidPillar documented in admin.rs.
     assert_eq!(err, Error::InvalidPillar);
 }
 
@@ -112,7 +107,6 @@ fn apply_upgrade_after_expiry_reverts() {
     let start = ctx.env.ledger().sequence();
     ctx.client.propose_upgrade(&new_hash, &new_version);
 
-    // Past the expiry.
     ctx.env.ledger().with_mut(|li| {
         li.sequence_number = start + PENDING_UPGRADE_TTL_LEDGERS + 1;
     });
@@ -136,7 +130,6 @@ fn cancel_pending_upgrade_clears_proposal() {
 
     ctx.client.cancel_pending_upgrade();
     assert_eq!(ctx.client.get_pending_upgrade(), None);
-    // Version unchanged.
     assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.1.0"));
 }
 

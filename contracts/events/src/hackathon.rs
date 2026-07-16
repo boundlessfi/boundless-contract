@@ -1,11 +1,3 @@
-// boundless-events: hackathon-specific behavior.
-//
-// Spec: boundless-platform-contract-prd.md Section 7.
-//
-// Hackathons use ReleaseKind::Single and require a submission deadline.
-// Open submission model: no per-applicant credit charge.
-//
-// Wired by create_event dispatch.
 #![allow(dead_code)]
 
 use soroban_sdk::{Address, Env};

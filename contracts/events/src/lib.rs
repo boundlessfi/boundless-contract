@@ -1,10 +1,4 @@
 // SPDX-License-Identifier: MIT
-//
-// boundless-events
-//
-// On-chain event records (Hackathon, Bounty, Grant) plus inlined escrow.
-// Companion: boundless-profile (credits + reputation).
-// Spec: boundless-platform-contract-prd.md
 #![no_std]
 
 use soroban_sdk::{contract, contractimpl, contractmeta, Address, BytesN, Env, String, Vec};
@@ -121,14 +115,10 @@ impl EventsContract {
         token_whitelist::is_supported(&env, &token)
     }
 
-    /// Number of whitelisted tokens. Paged enumeration: read this, then
-    /// supported_token_at(0..count) to recover the full whitelist from state
-    /// (no dependence on ephemeral TokenRegistered/TokenDeregistered events).
     pub fn supported_token_count(env: Env) -> u32 {
         storage::supported_token_count(&env)
     }
 
-    /// Whitelisted token at `index`, or None when `index >= count`.
     pub fn supported_token_at(env: Env, index: u32) -> Option<Address> {
         storage::supported_token_at(&env, index)
     }
@@ -339,7 +329,6 @@ impl EventsContract {
         admin::get_migrated_to_version(&env)
     }
 
-    // Internal helper exposed for off-chain inspection; emits no event.
     pub fn id_base(env: Env) -> u64 {
         idempotency::id_base(&env)
     }

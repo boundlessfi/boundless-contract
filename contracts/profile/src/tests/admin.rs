@@ -1,5 +1,3 @@
-// boundless-profile: admin tests.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -10,7 +8,6 @@ use soroban_sdk::{
 use super::common::setup;
 use crate::errors::Error;
 
-// Mirror the constants from admin.rs so the timelock tests stay readable.
 const EVENTS_CONTRACT_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_EVENTS_CONTRACT_TTL_LEDGERS: u32 = 120_960;
 
@@ -83,7 +80,6 @@ fn propose_then_accept_after_timelock_swaps_events_contract() {
     assert_eq!(pending.target, events_b);
     assert_eq!(pending.proposed_at_ledger, start);
 
-    // Advance past the timelock window.
     ctx.env.ledger().with_mut(|li| {
         li.sequence_number = start + EVENTS_CONTRACT_TIMELOCK_LEDGERS + 1;
     });
@@ -108,7 +104,6 @@ fn accept_before_timelock_reverts() {
         .expect("expected timelock to block")
         .unwrap();
     assert_eq!(err, Error::PendingEventsContractTimelock);
-    // Events contract unchanged.
     assert_eq!(ctx.client.get_events_contract(), Some(events_a));
 }
 
@@ -122,7 +117,6 @@ fn accept_after_expiry_reverts_and_admin_must_cancel_to_prune() {
     let start = ctx.env.ledger().sequence();
     ctx.client.propose_events_contract(&events_b);
 
-    // Advance past expiry.
     ctx.env.ledger().with_mut(|li| {
         li.sequence_number = start + PENDING_EVENTS_CONTRACT_TTL_LEDGERS + 1;
     });
@@ -134,7 +128,6 @@ fn accept_after_expiry_reverts_and_admin_must_cancel_to_prune() {
         .unwrap();
     assert_eq!(err, Error::PendingEventsContractExpired);
 
-    // The Err path reverts; the stale proposal stays put. Admin prunes it.
     assert!(ctx.client.get_pending_events_contract().is_some());
     assert_eq!(ctx.client.get_events_contract(), Some(events_a));
 

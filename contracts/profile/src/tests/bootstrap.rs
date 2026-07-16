@@ -1,10 +1,3 @@
-// boundless-profile: self-service bootstrap tests.
-//
-// `bootstrap_self` is the user-authorized profile-creation path used at
-// platform onboarding. Unlike `bootstrap` (events-contract-gated) it requires
-// NO admin key and NO events contract — the profile owner authorizes their own
-// creation. These tests pin that security property plus idempotency.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -30,10 +23,6 @@ fn bootstrap_self_creates_profile_for_caller() {
 
 #[test]
 fn bootstrap_self_demands_the_callers_own_auth_not_admin() {
-    // The security property the design rests on: bootstrap_self requires the
-    // USER's own authorization — no admin or other privileged key can create a
-    // profile on someone's behalf. mock_all_auths lets the call through, but
-    // env.auths() records whose auth the contract actually demanded.
     let ctx = setup();
     let user = Address::generate(&ctx.env);
     let op_id = BytesN::random(&ctx.env);
@@ -59,7 +48,6 @@ fn bootstrap_self_is_idempotent_for_existing_profile() {
     ctx.client.bootstrap_self(&user, &BytesN::random(&ctx.env));
     let before = ctx.client.get_profile(&user).expect("profile created");
 
-    // Second bootstrap (fresh op_id) when the profile already exists is a no-op.
     ctx.client.bootstrap_self(&user, &BytesN::random(&ctx.env));
 
     assert_eq!(ctx.client.get_profile(&user), Some(before));

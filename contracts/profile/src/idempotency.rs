@@ -1,5 +1,3 @@
-// boundless-profile: idempotency helpers.
-
 use soroban_sdk::{BytesN, Env};
 
 use crate::errors::Error;

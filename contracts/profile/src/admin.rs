@@ -1,9 +1,3 @@
-// boundless-profile: admin operations.
-//
-// Two-step rotations for both admin and events_contract.
-//
-// Spec: boundless-credits-reputation-prd.md Sections 5.5, 6.
-
 use soroban_sdk::{panic_with_error, Address, BytesN, Env, String};
 
 use crate::errors::Error;
@@ -11,12 +5,8 @@ use crate::events as evt;
 use crate::storage;
 use crate::types::{PendingAdmin, PendingEventsContract, PendingUpgrade};
 
-const PENDING_TTL_LEDGERS: u32 = 120_960; // 7 days at ~5 sec per ledger.
+const PENDING_TTL_LEDGERS: u32 = 120_960;
 
-// H6: timelocked upgrade windows. Match the events contract for consistency.
-// Testnet builds (`--features testnet`) zero the upgrade timelock for fast
-// iteration; the default build (mainnet + everything else) keeps the full
-// ~1-day timelock. Fail-safe: omitting the flag yields the secure value, never 0.
 #[cfg(not(feature = "testnet"))]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 #[cfg(feature = "testnet")]
@@ -25,15 +15,8 @@ const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
 pub const INITIAL_VERSION: &str = "1.1.0";
 
-// Events-contract rotation timelock: minimum delay between propose and
-// accept so off-chain monitoring has a window to react to a malicious
-// proposal. ~1 day at 5 sec per ledger.
-//
-// Spec: docs/audit-2026-06-stellar-skill.md, H5.
 const EVENTS_CONTRACT_TIMELOCK_LEDGERS: u32 = 17_280;
 
-// Maximum window between propose and accept. After this the proposal must
-// be re-issued. Matches PENDING_TTL_LEDGERS for symmetry with admin rotation.
 const PENDING_EVENTS_CONTRACT_TTL_LEDGERS: u32 = 120_960;
 
 pub fn initialize(env: &Env, admin: Address) {
@@ -88,15 +71,6 @@ pub fn accept_admin(env: &Env) -> Result<(), Error> {
 
 // ============================================================
 // EVENTS CONTRACT BINDING
-//
-// First-set is single-step (deploy bootstrap; there's no live contract to
-// rotate from). Subsequent rotations require propose + accept with a
-// timelock window so off-chain monitors have time to react to a malicious
-// or mistaken proposal before it lands. Closes audit finding H5 (the prior
-// single-step rotation was the single soft point in the auth chain for
-// every credit/reputation/earnings mutation).
-//
-// Spec: docs/audit-2026-06-stellar-skill.md, H5.
 // ============================================================
 pub fn set_events_contract(env: &Env, new_addr: Address) -> Result<(), Error> {
     require_admin(env)?;
@@ -138,14 +112,9 @@ pub fn accept_events_contract(env: &Env) -> Result<(), Error> {
         storage::get_pending_events_contract(env).ok_or(Error::PendingEventsContractMismatch)?;
     let now = env.ledger().sequence();
 
-    // Late finalize: proposal expired. We do NOT clear here because the
-    // Err return reverts every storage write in this tx anyway; the expired
-    // entry stays put and admin must call cancel_pending_events_contract to
-    // prune it before re-proposing.
     if now > pending.expires_at_ledger {
         return Err(Error::PendingEventsContractExpired);
     }
-    // Early finalize: still inside the timelock window.
     let earliest = pending
         .proposed_at_ledger
         .saturating_add(EVENTS_CONTRACT_TIMELOCK_LEDGERS);
@@ -203,7 +172,6 @@ pub fn propose_upgrade(
 ) -> Result<(), Error> {
     require_admin(env)?;
     if new_version.is_empty() {
-        // Reuse existing AdminCannotBeZero semantic for "empty input".
         return Err(Error::AdminCannotBeZero);
     }
     let now = env.ledger().sequence();
@@ -271,12 +239,6 @@ pub fn cancel_pending_upgrade(env: &Env) -> Result<(), Error> {
 
 // ============================================================
 // MIGRATE (post-upgrade one-shot; H6)
-//
-// Mirror of the events contract's migrate(). See contracts/events/src/admin.rs
-// for the full pattern + dispatch-block convention. The profile contract has
-// a simpler storage layout, so most upgrades will not need a migration body
-// here; the empty pass-through still stamps MigratedToVersion so off-chain
-// runbooks see a Migrated event.
 // ============================================================
 pub fn migrate(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
@@ -292,23 +254,7 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 
     // ============================================================
     // PER-(from -> to) MIGRATION DISPATCH
-    //
-    //     if from_version == String::from_str(env, "0.2.0")
-    //         && current == String::from_str(env, "0.3.0")
-    //     {
-    //         migrate_0_2_0_to_0_3_0(env)?;
-    //     }
-    //
-    // Soroban String only supports equality + length, so dispatch is via
-    // `String::from_str` + `==`. Keep bodies inline unless the migration
-    // grows past ~30 lines, then promote into a private fn below.
     // ============================================================
-
-    // No-op for the 1.0.0 -> 1.1.0 credit-removal upgrade: no Profile rows have
-    // been bootstrapped yet, so there is nothing to rewrite for the dropped
-    // `credits` field. __constructor populates storage in the current shape;
-    // admin still calls migrate() once after the upgrade so the audit trail
-    // records that the post-upgrade cleanup ran.
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);
@@ -367,8 +313,6 @@ pub fn require_events_contract(env: &Env) -> Result<(), Error> {
 }
 
 pub fn require_not_paused(env: &Env) -> Result<(), Error> {
-    // Every state-mutating operation runs this first; single touchpoint for
-    // bumping instance TTL on the hot path. Admin paths bump explicitly.
     storage::touch_instance(env);
     if storage::is_paused(env) {
         return Err(Error::Paused);

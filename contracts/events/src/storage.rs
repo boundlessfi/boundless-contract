@@ -1,22 +1,3 @@
-// boundless-events: storage helpers.
-//
-// Storage layout (after the 2026-06 audit, H1-H4):
-//
-//   instance()    — admin + config + token whitelist + NextEventId.
-//   persistent()  — per-event Event records, per-event paged lists
-//                   (applicants, contributors, winners), and per-submission
-//                   entries. Each persistent read/write bumps TTL.
-//   temporary()   — OpSeen idempotency markers.
-//
-// Per-event lists are kept as count + indexed-entry pairs (e.g.
-// EventApplicantCount + EventApplicantAt(idx) + EventApplicantSlot(addr))
-// so a single growable Vec never overflows the 64KB ledger-entry cap and
-// presence checks stay O(1).
-//
-// Cap policy (event_ops::MAX_*_PER_EVENT) enforced at append time so that
-// cancel_event refund passes stay inside Soroban's per-tx footprint budget.
-// Paging cancel_event is a P1 follow-up before lifting the caps.
-
 #![allow(dead_code)]
 
 use soroban_sdk::{Address, BytesN, Env, Vec};
@@ -185,10 +166,6 @@ pub fn set_token_supported(env: &Env, token: &Address, supported: bool) {
         .set(&DataKey::SupportedToken(token.clone()), &supported);
 }
 
-// Enumerable whitelist index, kept in lockstep with the SupportedToken bool by
-// register/deregister. Mirrors the applicant index (count + at + slot, append
-// to tail, swap-with-last removal) but is global rather than per-event, so the
-// full whitelist can be read from state instead of replaying events.
 pub fn supported_token_count(env: &Env) -> u32 {
     env.storage()
         .instance()
@@ -209,8 +186,6 @@ pub fn supported_token_slot(env: &Env, token: &Address) -> u32 {
         .unwrap_or(0)
 }
 
-/// Append a token to the enumerable index. Idempotent: a token already indexed
-/// is left untouched (so re-registering does not duplicate it).
 pub fn append_supported_token(env: &Env, token: &Address) {
     if supported_token_slot(env, token) != 0 {
         return;
@@ -228,8 +203,6 @@ pub fn append_supported_token(env: &Env, token: &Address) {
         .set(&DataKey::SupportedTokenCount, &slot);
 }
 
-/// Remove a token from the enumerable index via swap-with-last. Idempotent: a
-/// token not in the index is a no-op.
 pub fn remove_supported_token(env: &Env, token: &Address) {
     let slot = supported_token_slot(env, token);
     if slot == 0 {
@@ -239,7 +212,6 @@ pub fn remove_supported_token(env: &Env, token: &Address) {
     let count = supported_token_count(env);
     let last_idx = count.saturating_sub(1);
 
-    // Move the last entry into the freed slot, unless we removed the tail.
     if idx != last_idx {
         if let Some(last) = supported_token_at(env, last_idx) {
             env.storage()
@@ -299,7 +271,6 @@ pub fn set_event(env: &Env, id: u64, record: &EventRecord) {
     touch_event_persistent(env, &key);
 }
 
-// Per-event management authority override (side map; absent => owner manages).
 pub fn get_event_manager(env: &Env, id: u64) -> Option<Address> {
     let key = DataKey::EventManager(id);
     let m: Option<Address> = env.storage().persistent().get(&key);
@@ -317,18 +288,6 @@ pub fn set_event_manager(env: &Env, id: u64, manager: &Address) {
 
 // ============================================================
 // APPLICANTS (paged, persistent)
-//
-// applicant_count(id)        -> number of applicants in [0, count).
-// applicant_at(id, idx)      -> address at slot idx (Some only when idx < count).
-// applicant_slot(id, addr)   -> 1-based slot. 0 means absent. Stored 1-based
-//                               so a missing key (default 0) signals absence
-//                               without an Option round trip.
-// append_applicant(id, addr) -> appends to the tail. Returns the 1-based slot.
-//                               Fails with TooManyApplicants if cap is hit.
-// remove_applicant(id, addr) -> swap-with-last + decrement.
-// applicants_snapshot(id, max) -> Vec view capped at `max`; older callers
-//                                 that read the whole list should migrate
-//                                 to paged reads.
 // ============================================================
 pub fn applicant_count(env: &Env, id: u64) -> u32 {
     let key = DataKey::EventApplicantCount(id);
@@ -389,7 +348,6 @@ pub fn remove_applicant(env: &Env, id: u64, addr: &Address) -> Result<(), Error>
     let count = applicant_count(env, id);
     let last_idx = count.checked_sub(1).ok_or(Error::EventNotFound)?;
 
-    // If not the last entry, swap the last applicant into the freed slot.
     if idx != last_idx {
         let last_addr = applicant_at(env, id, last_idx).ok_or(Error::EventNotFound)?;
         let at_key = DataKey::EventApplicantAt(id, idx);
@@ -456,13 +414,6 @@ pub fn remove_submission(env: &Env, id: u64, applicant: &Address) {
 
 // ============================================================
 // WINNERS (paged, persistent)
-//
-// winner_count(id)         -> number of winner rows (anchors + per-milestone).
-// winner_at(id, idx)       -> Winner at slot idx.
-// append_winner(id, w)     -> append-only; select_winners and claim_milestone
-//                             never rewrite existing rows.
-// winners_snapshot(id,max) -> Vec view capped at `max`. Callers needing full
-//                             iteration should use the paged API.
 // ============================================================
 pub fn winner_count(env: &Env, id: u64) -> u32 {
     let key = DataKey::EventWinnerCount(id);
@@ -553,7 +504,7 @@ pub fn contributor_slot(env: &Env, id: u64, addr: &Address) -> u32 {
 
 pub fn append_contributor(env: &Env, id: u64, addr: &Address, cap: u32) -> Result<u32, Error> {
     if contributor_slot(env, id, addr) != 0 {
-        return Ok(0); // already present; caller treats 0 as "no-op"
+        return Ok(0);
     }
     let cur = contributor_count(env, id);
     if cur >= cap {

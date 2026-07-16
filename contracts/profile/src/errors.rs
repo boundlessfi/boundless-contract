@@ -1,7 +1,3 @@
-// boundless-profile: error codes.
-//
-// Spec: boundless-credits-reputation-prd.md Section 8.
-
 use soroban_sdk::contracterror;
 
 #[contracterror]
@@ -22,14 +18,12 @@ pub enum Error {
     PendingEventsContractTimelock = 17,
 
     ProfileNotFound = 10,
-    // 11 (InsufficientCredits) retired with on-chain credits; left as a gap.
     InvalidAmount = 12,
     ReasonRequired = 13,
 
     OpAlreadySeen = 20,
     Paused = 30,
 
-    // H6: timelocked upgrade + migration
     UpgradeNotProposed = 40,
     UpgradeTimelockNotElapsed = 41,
     UpgradeProposalExpired = 42,

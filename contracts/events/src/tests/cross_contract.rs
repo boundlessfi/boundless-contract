@@ -1,11 +1,3 @@
-// boundless-events: cross-contract integration test.
-//
-// Deploys boundless-events + a real boundless-profile, wires them together,
-// and exercises cross-contract flows (select_winners, submit, cancel, grants).
-// Bounty apply / withdraw coverage lives in tests/bounty_pillar.rs.
-//
-// Spec: boundless-platform-contract-prd.md Section 4; boundless-credits-reputation-prd.md Section 10.1.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -17,10 +9,6 @@ use super::common::drive_cancel;
 use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
-// boundless-profile lives in its own crate. For the integration test we use
-// the WASM artifact path that Soroban's testutils supports. Since we are in a
-// host-target test (not wasm32v1-none), we import the profile contract crate
-// directly and register it.
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
 const FEE_BPS: u32 = 250;
@@ -37,16 +25,12 @@ struct Ctx<'a> {
 
 fn setup<'a>() -> Ctx<'a> {
     let env = Env::default();
-    // Auth from non-root contract invocations is required (token transfers in
-    // create_event, cross-contract calls into the profile contract).
     env.mock_all_auths_allowing_non_root_auth();
 
-    // Deploy profile contract.
     let profile_admin = Address::generate(&env);
     let profile_id = env.register(ProfileContract, (profile_admin.clone(),));
     let profile = ProfileContractClient::new(&env, &profile_id);
 
-    // Deploy events contract pointing at profile.
     let events_admin = Address::generate(&env);
     let fee_account = Address::generate(&env);
     let events_id = env.register(
@@ -60,23 +44,18 @@ fn setup<'a>() -> Ctx<'a> {
     );
     let events = EventsContractClient::new(&env, &events_id);
 
-    // Wire profile to recognize the events contract.
     profile.set_events_contract(&events_id);
 
-    // Mock USDC via Stellar Asset Contract.
     let issuer = Address::generate(&env);
     let sac = env.register_stellar_asset_contract_v2(issuer);
     let token_addr = sac.address();
     let token_admin = token::StellarAssetClient::new(&env, &token_addr);
 
-    // Touch fee_account's trustline (mint 0).
     token_admin.mint(&fee_account, &0);
 
-    // Mint USDC to the bounty owner.
     let owner = Address::generate(&env);
     token_admin.mint(&owner, &1_000_000_0000000_i128);
 
-    // Register USDC on events.
     events.register_supported_token(&token_addr);
 
     let applicant = Address::generate(&env);
@@ -128,12 +107,10 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);
 
-    // Applicant applies, getting bootstrapped.
     let op_apply = BytesN::random(&ctx.env);
     ctx.events
         .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
 
-    // Owner picks applicant as the sole winner of position 1 (100% of budget).
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
@@ -145,26 +122,20 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    // Token: winner received the full budget (no second-layer fee on release).
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
-    // Fee account got the deposit-time fee.
     assert_eq!(token.balance(&ctx.fee_account), FEE_AMOUNT);
 
-    // Profile: the win bumps reputation (credits are off-chain now).
     let profile = ctx.profile.get_profile(&ctx.applicant).unwrap();
     assert_eq!(profile.reputation, 50);
 
-    // Earnings registered against the event's token.
     let earnings = ctx.profile.get_earnings(&ctx.applicant, &ctx.token_addr);
     assert_eq!(earnings, TOTAL_BUDGET);
 
-    // Event completed.
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Completed);
     assert_eq!(event.remaining_escrow, 0);
 
-    // Winner record stored.
     let winner_list = ctx.events.get_winners(&bounty_id);
     assert_eq!(winner_list.len(), 1);
     let recorded = winner_list.get(0).unwrap();
@@ -198,8 +169,6 @@ fn select_winners_requires_position_in_distribution() {
 #[test]
 fn select_winners_rejects_duplicate_position() {
     let ctx = setup();
-    // Use a distribution split 60/40 across positions 1 and 2 so the test
-    // can supply a duplicate position 1 entry.
     let owner = ctx.owner.clone();
     let token_addr = ctx.token_addr.clone();
     let mut dist = Map::new(&ctx.env);
@@ -258,7 +227,6 @@ fn select_winners_handles_multi_recipient_distribution() {
         title: String::from_str(&ctx.env, "Multi Winner"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: dist,
-        // free for this test
         fee_bps_override: None,
         manager: None,
     };
@@ -350,7 +318,6 @@ fn cancel_already_cancelled_reverts() {
 
     drive_cancel(&ctx.env, &ctx.events, bounty_id);
 
-    // Second start_cancel on a Cancelled event must revert.
     let op_again = BytesN::random(&ctx.env);
     let res = ctx.events.try_start_cancel(&bounty_id, &op_again);
     assert!(res.is_err(), "second cancel should revert");
@@ -359,7 +326,6 @@ fn cancel_already_cancelled_reverts() {
 #[test]
 fn cancel_after_select_winners_refunds_only_remaining() {
     let ctx = setup();
-    // 60/40 split so we can pay one winner and then cancel.
     let mut dist = Map::new(&ctx.env);
     dist.set(1, 60);
     dist.set(2, 40);
@@ -379,7 +345,6 @@ fn cancel_after_select_winners_refunds_only_remaining() {
     let op_create = BytesN::random(&ctx.env);
     let bounty_id = ctx.events.create_event(&params, &op_create);
 
-    // Pay one winner (60%).
     let winner_a = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
@@ -392,7 +357,6 @@ fn cancel_after_select_winners_refunds_only_remaining() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    // Now cancel — owner should get the remaining 40%.
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
 
@@ -436,7 +400,6 @@ fn select_grant_winner(ctx: &Ctx, grant_id: u64, recipient: &Address) {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
-            // ignored for Multi; payment-time bumps apply per milestone
             reputation_bump: 0,
         },
     ];
@@ -458,19 +421,15 @@ fn claim_milestone_pays_per_milestone_amount() {
     ctx.events
         .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op_claim);
 
-    // Per-milestone amount: total_budget * 100% / 4 = TOTAL_BUDGET / 4
     let per_milestone = TOTAL_BUDGET / 4;
     assert_eq!(token.balance(&recipient) - recipient_before, per_milestone);
 
-    // Profile: the milestone claim bumps reputation by 5 (credits off-chain).
     let profile = ctx.profile.get_profile(&recipient).unwrap();
     assert_eq!(profile.reputation, 5);
 
-    // Earnings registered.
     let earnings = ctx.profile.get_earnings(&recipient, &ctx.token_addr);
     assert_eq!(earnings, per_milestone);
 
-    // Event still Active, remaining_escrow decremented.
     let event = ctx.events.get_event(&grant_id);
     assert_eq!(event.status, EventStatus::Active);
     assert_eq!(event.remaining_escrow, TOTAL_BUDGET - per_milestone);
@@ -487,14 +446,12 @@ fn claim_milestone_idempotent_per_recipient_and_milestone() {
     ctx.events
         .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op1);
 
-    // Same milestone, different op_id — should still revert.
     let op2 = BytesN::random(&ctx.env);
     let res = ctx
         .events
         .try_claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op2);
     assert!(res.is_err(), "same milestone twice should revert");
 
-    // Different milestone — should succeed.
     let op3 = BytesN::random(&ctx.env);
     ctx.events
         .claim_milestone(&grant_id, &recipient, &1_u32, &5_u32, &op3);
@@ -507,7 +464,6 @@ fn claim_milestone_invalid_milestone_index_reverts() {
     let grant_id = create_grant(&ctx, 4);
     select_grant_winner(&ctx, grant_id, &recipient);
 
-    // Milestone index 4 is out of range for a 4-milestone grant (valid: 0..=3).
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
@@ -531,9 +487,6 @@ fn claim_milestone_rejects_non_grant_events() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    // The bounty is Completed now anyway, but claim_milestone should reject
-    // even an Active Single-release event. Recreate a Single bounty without
-    // winners selected:
     let bounty_id2 = create_bounty(&ctx);
     let op = BytesN::random(&ctx.env);
     let res = ctx
@@ -701,20 +654,10 @@ fn withdraw_submission_without_submission_reverts() {
 
 // ============================================================
 // Per-event fee_bps_override
-//
-// Sales-side discount / comp / waiver lives on the event record, not the
-// global admin config. Tests below cover:
-//   1. create_event with Some(override) charges the override rate.
-//   2. add_funds reads the override from the event (not the live default).
-//   3. waiver (Some(0)) costs the owner exactly total_budget with no fee.
-//   4. an admin change to the global default does not retroactively re-price
-//      in-flight events that snapshotted an override.
-//   5. publish rejects override > MAX_FEE_BPS.
 // ============================================================
 #[test]
 fn create_event_charges_override_rate_when_provided() {
     let ctx = setup();
-    // Override to 1.5% (Hackathon launch rate) while the contract default is 2.5%.
     let override_bps: u32 = 150;
     let total_budget: i128 = 100_000_0000000_i128; // 100k USDC
     let expected_fee = total_budget * (override_bps as i128) / 10_000;
@@ -739,15 +682,12 @@ fn create_event_charges_override_rate_when_provided() {
     let op = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op);
 
-    // Owner paid total_budget + override_fee.
     let owner_after = token.balance(&ctx.owner);
     assert_eq!(owner_before - owner_after, total_budget + expected_fee);
 
-    // Fee account received exactly the override fee.
     let fee_after = token.balance(&ctx.fee_account);
     assert_eq!(fee_after - fee_before, expected_fee);
 
-    // Event record snapshotted the override.
     let event = ctx.events.get_event(&id);
     assert_eq!(event.fee_bps_override, Some(override_bps));
     assert_eq!(event.remaining_escrow, total_budget);
@@ -756,7 +696,6 @@ fn create_event_charges_override_rate_when_provided() {
 #[test]
 fn add_funds_uses_event_override_not_global() {
     let ctx = setup();
-    // Publish at a 0.5% promo rate.
     let override_bps: u32 = 50;
     let total_budget: i128 = 10_000_0000000_i128;
 
@@ -776,13 +715,8 @@ fn add_funds_uses_event_override_not_global() {
     let op_create = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op_create);
 
-    // Admin bumps global default upward; in-flight event must not re-price.
     ctx.events.set_fee_bps(&500);
 
-    // Partner contributes 1_000 USDC. The fee should be at 0.5% (override),
-    // not 5% (new global). Mint 2_000 USDC so the partner balance comfortably
-    // covers amount + fee in either branch (so the test fails on the math
-    // assertion if the override is ignored, not on a balance error).
     let partner = Address::generate(&ctx.env);
     let token_admin = token::StellarAssetClient::new(&ctx.env, &ctx.token_addr);
     token_admin.mint(&partner, &2_000_0000000_i128);
@@ -847,7 +781,6 @@ fn create_event_rejects_override_above_max_fee_bps() {
         title: String::from_str(&ctx.env, "Bad rate"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
         winner_distribution: one_winner_distribution(&ctx.env),
-        // 60% is above the MAX_FEE_BPS = 1000 cap (post L4 audit fix).
         fee_bps_override: Some(6000),
         manager: None,
     };
@@ -883,18 +816,12 @@ fn create_event_omitted_override_falls_back_to_global_default() {
 
     let fee_after = token.balance(&ctx.fee_account);
     assert_eq!(fee_after - fee_before, expected_fee);
-    // Event keeps None so future add_funds also pulls the live default.
     let event = ctx.events.get_event(&id);
     assert_eq!(event.fee_bps_override, None);
 }
 
 // ============================================================
 // select_winners replay lock
-//
-// Calling select_winners twice would silently overwrite the anchor winner
-// records. The contract now rejects the second call so that downstream
-// claim_milestone reads and off-chain audits read a stable winner set.
-// Tested on Grant (Multi); the same code path serves Single releases.
 // ============================================================
 #[test]
 fn select_winners_rejects_second_call_winners_already_selected() {
@@ -903,7 +830,6 @@ fn select_winners_rejects_second_call_winners_already_selected() {
     let grant_id = create_grant(&ctx, 2);
     select_grant_winner(&ctx, grant_id, &r1);
 
-    // Second call (different recipient, fresh op_id) must be rejected.
     let r2 = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
@@ -917,7 +843,6 @@ fn select_winners_rejects_second_call_winners_already_selected() {
     let res = ctx.events.try_select_winners(&grant_id, &winners, &op);
     assert!(res.is_err(), "second select_winners must revert");
 
-    // First selection is untouched.
     let recorded = ctx.events.get_winners(&grant_id);
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded.get(0).unwrap().recipient, r1);
@@ -925,27 +850,18 @@ fn select_winners_rejects_second_call_winners_already_selected() {
 
 // ============================================================
 // Grant last-milestone sweep
-//
-// Per-milestone math floors total_budget * percent / 100 / n_milestones. With
-// a budget that does not divide evenly across milestones the floored amount
-// strands a small residue in escrow. The last milestone for the recipient
-// now sweeps that residue so total paid equals their full position share.
 // ============================================================
 #[test]
 fn grant_last_milestone_sweeps_rounding_residue() {
     let ctx = setup();
     let recipient = Address::generate(&ctx.env);
 
-    // 100k / 3 milestones = 33,333.3333333 USDC each at 7 decimals.
-    // Floored per-milestone: floor(100_000_0000000 / 3) = 33_333_3333333 stroops.
-    // Residue: 100_000_0000000 - 3 * 33_333_3333333 = 1 stroop.
     let grant_id = create_grant(&ctx, 3);
     select_grant_winner(&ctx, grant_id, &recipient);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let before = token.balance(&recipient);
 
-    // Claim m0 + m1 at floored rate.
     let floored = TOTAL_BUDGET / 3;
     ctx.events.claim_milestone(
         &grant_id,
@@ -964,7 +880,6 @@ fn grant_last_milestone_sweeps_rounding_residue() {
     let after_two = token.balance(&recipient);
     assert_eq!(after_two - before, floored * 2);
 
-    // Last claim: sweep so the recipient ends up with the full position share.
     ctx.events.claim_milestone(
         &grant_id,
         &recipient,
@@ -979,7 +894,6 @@ fn grant_last_milestone_sweeps_rounding_residue() {
         "last milestone must sweep residue: recipient receives full position share"
     );
 
-    // Event drained completely and marks Completed.
     let event = ctx.events.get_event(&grant_id);
     assert_eq!(event.remaining_escrow, 0);
     assert_eq!(event.status, EventStatus::Completed);
@@ -991,10 +905,6 @@ fn grant_last_milestone_sweeps_rounding_residue() {
 
 #[test]
 fn select_winners_pays_against_remaining_escrow_including_top_ups() {
-    // Owner deposits TOTAL_BUDGET. Partner tops up another 5_000 USDC.
-    // Single winner at 100% should receive owner_budget + partner_top_up
-    // (net of fees). Pre-audit this was capped at TOTAL_BUDGET and the
-    // top-up would have stayed trapped until cancel.
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);
 
@@ -1007,11 +917,9 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
     let op_add = BytesN::random(&ctx.env);
     ctx.events.add_funds(&bounty_id, &partner, &top_up, &op_add);
 
-    // Confirm the event escrow grew.
     let event_pre = ctx.events.get_event(&bounty_id);
     assert_eq!(event_pre.remaining_escrow, TOTAL_BUDGET + top_up);
 
-    // Single winner at 100%.
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
@@ -1024,11 +932,8 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
-    // Winner receives the full live escrow at select time, not the
-    // original total_budget.
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET + top_up);
 
-    // Event drained, status Completed, no orphaned partner top-up.
     let event_post = ctx.events.get_event(&bounty_id);
     assert_eq!(event_post.remaining_escrow, 0);
     assert_eq!(event_post.status, EventStatus::Completed);
@@ -1059,11 +964,9 @@ fn create_bounty_with_manager(ctx: &Ctx, manager: &Address) -> u64 {
 fn manager_defaults_to_owner_and_override_is_recorded() {
     let ctx = setup();
 
-    // No override: management falls back to the funder/owner (legacy behavior).
     let default_id = create_bounty(&ctx);
     assert_eq!(ctx.events.get_manager(&default_id), ctx.owner);
 
-    // Override: management is the org wallet, distinct from the funder.
     let manager = Address::generate(&ctx.env);
     let managed_id = create_bounty_with_manager(&ctx, &manager);
     assert_eq!(ctx.events.get_manager(&managed_id), manager);
@@ -1103,7 +1006,6 @@ fn manager_override_can_select_winners() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    // Managed event settled via the manager authority.
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Completed);
 }

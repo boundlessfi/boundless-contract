@@ -1,7 +1,3 @@
-// boundless-profile: per-token earnings registration.
-//
-// Spec: boundless-credits-reputation-prd.md Section 5.4.
-
 use soroban_sdk::{Address, BytesN, Env};
 
 use crate::admin;

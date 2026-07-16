@@ -1,12 +1,3 @@
-// boundless-events: cancel + refund batch tests (#28).
-//
-// Covers start_cancel / process_cancel_batch / finalize_cancel:
-//   - OwnerOnly branch settled inline.
-//   - FullPartnerThenResidual: partners full + owner residual.
-//   - ProRataPartners: remaining < non_owner_total.
-//   - Pagination across multiple batches.
-//   - Error variants: wrong state, replay, not finished.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -241,9 +232,6 @@ fn paged_cancel_processes_in_batches() {
 
 #[test]
 fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
-    // escrow = 2000 (owner 1000 + p1 500 + p2 500); select_winners pays
-    // pos1 60% (1200) leaving remaining = 800. non_owner_total = 1000.
-    // 800 < 1000 -> ProRata: each partner gets 500 * 800 / 1000 = 400; owner = 0.
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
     dist.set(1, 60);

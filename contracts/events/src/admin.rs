@@ -1,7 +1,3 @@
-// boundless-events: admin operations.
-//
-// Spec: boundless-platform-contract-prd.md Section 6.1.
-
 use soroban_sdk::{panic_with_error, Address, BytesN, Env, String};
 
 use crate::errors::Error;
@@ -9,35 +5,16 @@ use crate::events as evt;
 use crate::storage;
 use crate::types::{PendingAdmin, PendingUpgrade};
 
-// Two-step admin rotation TTL: 7 days at the mainnet 5-second ledger cadence.
-// 7 * 24 * 60 * 60 / 5 = 120_960 ledgers.
 const PENDING_ADMIN_TTL_LEDGERS: u32 = 120_960;
 
-// Fee bps cap. 100% = 10_000 bps. L4 (2026-06 audit): tightened from 5_000
-// (50%) to 1_000 (10%). 10% covers the full envelope of real Boundless
-// pricing tiers; a config typo can no longer push the fee above operating
-// range. Per-event overrides still respect this cap.
 pub(crate) const MAX_FEE_BPS: u32 = 1_000;
 
-// H6: timelocked upgrade windows.
-//
-//   UPGRADE_TIMELOCK_LEDGERS    earliest gap between propose and apply.
-//                                ~1 day so off-chain monitors have a window
-//                                to react before the new wasm lands.
-//   PENDING_UPGRADE_TTL_LEDGERS  hard expiry on the proposal; ~30 days.
-//                                Past this the admin must re-propose.
-// Testnet builds (`--features testnet`) zero the upgrade timelock for fast
-// iteration; the default build (mainnet + everything else) keeps the full
-// ~1-day timelock. Fail-safe: omitting the flag yields the secure value, never 0.
 #[cfg(not(feature = "testnet"))]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 #[cfg(feature = "testnet")]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
-// Initial contract version. Written by __constructor and bumped on
-// apply_upgrade. Bump alongside any storage-layout or public-surface change
-// that warrants a migration entrypoint.
 pub const INITIAL_VERSION: &str = "1.1.0";
 
 // ============================================================
@@ -50,8 +27,6 @@ pub fn initialize(
     fee_bps: u32,
     profile_contract: Address,
 ) {
-    // Refuse double-init by checking the admin key in instance storage (the
-    // new home for admin/config per the 2026-06 audit).
     if env.storage().instance().has(&crate::types::DataKey::Admin) {
         panic_with_error!(env, Error::AlreadyInitialized);
     }
@@ -140,12 +115,6 @@ pub fn set_fee_bps(env: &Env, new_bps: u32) -> Result<(), Error> {
 
 pub fn set_fee_account(env: &Env, new_account: Address) -> Result<(), Error> {
     require_admin(env)?;
-    // M2 (2026-06 audit): we do not verify trustline existence at the
-    // contract layer because Soroban's SAC interface cannot reliably
-    // distinguish "no trustline" from "zero balance". Admin must verify
-    // off-chain BEFORE calling this; the FeeAccountUpdated event below is
-    // the signal off-chain monitors rely on to re-verify. See
-    // docs/audit-2026-06-stellar-skill.md M2.
     storage::set_fee_account(env, &new_account);
     storage::touch_instance(env);
     evt::FeeAccountUpdated {
@@ -190,22 +159,6 @@ pub fn unpause(env: &Env) -> Result<(), Error> {
 
 // ============================================================
 // UPGRADE (timelocked; H6)
-//
-// Three steps:
-//   1. propose_upgrade(wasm_hash, new_version) — admin-only; writes
-//      PendingUpgrade with proposed_at = now, available_at = now + TIMELOCK,
-//      expires_at = now + TTL. Off-chain monitors can see exactly which
-//      version + wasm is queued before it lands.
-//   2. apply_upgrade()                          — admin-only; requires
-//      now in [available_at, expires_at]; swaps the wasm hash and bumps
-//      the on-chain version label.
-//   3. cancel_pending_upgrade()                 — admin-only; prunes a stale
-//      or unwanted proposal so a fresh one can be queued.
-//
-// migrate(to_version) is a SEPARATE call that runs the one-shot data
-// migration matched to the just-applied version. Guard via MigratedToVersion.
-//
-// Spec: docs/audit-2026-06-stellar-skill.md H6.
 // ============================================================
 pub fn propose_upgrade(
     env: &Env,
@@ -213,10 +166,6 @@ pub fn propose_upgrade(
     new_version: String,
 ) -> Result<(), Error> {
     require_admin(env)?;
-    // Empty version is rejected; reuse InvalidPillar to stay inside the
-    // soroban contracterror 50-variant cap (a dedicated InvalidVersion
-    // would push us over). Off-chain monitors should treat InvalidPillar
-    // on propose_upgrade as "bad version label."
     if new_version.is_empty() {
         return Err(Error::InvalidPillar);
     }
@@ -262,7 +211,6 @@ pub fn apply_upgrade(env: &Env) -> Result<(), Error> {
         new_version: pending.new_version.clone(),
     }
     .publish(env);
-    // Keep the legacy Upgraded event for indexers built against the old shape.
     evt::Upgraded {
         new_wasm_hash: pending.wasm_hash,
     }
@@ -286,29 +234,6 @@ pub fn cancel_pending_upgrade(env: &Env) -> Result<(), Error> {
 
 // ============================================================
 // MIGRATE (post-upgrade one-shot; H6)
-//
-// Called once per version after apply_upgrade swaps the wasm. The shape
-// is:
-//
-//   1. Read the current Version label (set by apply_upgrade) and the
-//      previously-applied migration marker (MigratedToVersion). If the
-//      marker already equals the current Version, reject as
-//      MigrationAlreadyApplied — a second invocation is always a
-//      misconfiguration.
-//   2. Dispatch on (prev, current) and run the migration body. Bodies
-//      run cleanly inside the same tx as the marker write, so a failure
-//      reverts both — there is no half-migrated state to recover from.
-//   3. Stamp MigratedToVersion = current and emit Migrated{}.
-//
-// Mainnet bootstrap: the first deploy lands the constructor with the
-// current storage layout, so no migration body is needed. The first real
-// migration body will land with the first storage-layout upgrade after
-// mainnet goes live. We keep an empty match arm for the no-op case so the
-// shape is stable and future contributors do not have to debate where
-// the dispatch goes.
-//
-// NB: Soroban String only supports equality + length, no `as_str()` /
-// pattern matching. The dispatch below uses `String::from_str` + equality.
 // ============================================================
 pub fn migrate(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
@@ -324,30 +249,7 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 
     // ============================================================
     // PER-(from -> to) MIGRATION DISPATCH
-    //
-    // Each future upgrade adds an `if` clause here with its migration body.
-    // Touch only persistent / instance entries that the new layout changes;
-    // anything the new code reads with backwards-compatible defaults can
-    // be left alone.
-    //
-    // Pattern:
-    //
-    //     if from_version == String::from_str(env, "0.2.0")
-    //         && current == String::from_str(env, "0.3.0")
-    //     {
-    //         migrate_0_2_0_to_0_3_0(env)?;
-    //     }
-    //
-    // The corresponding private fn lives below the match block. Keep it
-    // small enough to read; if the migration is large, split it into named
-    // helpers and call from inside the body.
     // ============================================================
-
-    // No-op for the 1.0.0 -> 1.1.0 credit-removal upgrade: the contracts hold
-    // no events yet, so there are no EventRecord rows to rewrite. __constructor
-    // populates storage in the current shape, so admin can call migrate() once
-    // just to stamp the marker and unlock the audit trail (the Migrated event
-    // signals off-chain runbooks that the post-upgrade cleanup ran).
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);
@@ -404,8 +306,6 @@ pub fn require_admin(env: &Env) -> Result<(), Error> {
 }
 
 pub fn require_not_paused(env: &Env) -> Result<(), Error> {
-    // Every operation path runs this first, so this is the single spot to
-    // bump instance TTL on the hot path. Admin paths bump explicitly.
     storage::touch_instance(env);
     if storage::is_paused(env) {
         return Err(Error::Paused);

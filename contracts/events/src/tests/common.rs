@@ -1,5 +1,3 @@
-// boundless-events: shared test setup.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -11,11 +9,6 @@ use crate::event_ops::MAX_REFUNDS_PER_BATCH;
 use crate::types::EventStatus;
 use crate::{EventsContract, EventsContractClient};
 
-/// Drive a paged cancel end-to-end for the given event. Used by tests so
-/// each call site does not have to thread start_cancel / process /
-/// finalize manually. The OwnerOnly branch settles inside start_cancel,
-/// so an event with no partner contributions skips the batch + finalize
-/// steps.
 #[allow(dead_code)]
 pub fn drive_cancel<'a>(env: &Env, client: &EventsContractClient<'a>, id: u64) {
     let op_start = BytesN::random(env);

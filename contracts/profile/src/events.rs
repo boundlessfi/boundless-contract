@@ -1,9 +1,3 @@
-// boundless-profile: contract event emissions.
-//
-// Spec: boundless-credits-reputation-prd.md Section 7.
-//
-// dead_code allowed: event structs are emitted via .publish() calls. Some
-// events are emitted only by ops still wiring up.
 #![allow(dead_code)]
 
 use soroban_sdk::{contractevent, Address, BytesN, String, Symbol};

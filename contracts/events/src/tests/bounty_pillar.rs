@@ -1,13 +1,3 @@
-// boundless-events: bounty pillar tests.
-//
-// Covers Pillar::Bounty paths:
-//   - validate_create (Single release only)
-//   - apply_to_bounty (profile bootstrap via cross-contract; credits off-chain)
-//   - withdraw_application (drops the applicant slot; credits off-chain)
-//   - auth, idempotency, pause, deadline, and lifecycle guards
-//
-// Spec: boundless-platform-contract-prd.md Sections 6.3, 7.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -174,7 +164,6 @@ fn apply_bootstraps_profile_and_records_applicant() {
     ctx.events
         .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
 
-    // Apply bootstraps the applicant's profile (credits are off-chain now).
     assert!(ctx.profile.get_profile(&ctx.applicant).is_some());
 
     let applicants = ctx.events.get_applicants(&bounty_id);
@@ -350,7 +339,6 @@ fn withdraw_removes_the_applicant() {
     ctx.events
         .withdraw_application(&bounty_id, &ctx.applicant, &op_wd);
 
-    // Credits (including any refund) are off-chain; on-chain just drops the slot.
     let applicants = ctx.events.get_applicants(&bounty_id);
     assert_eq!(applicants.len(), 0);
 }

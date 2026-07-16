@@ -1,7 +1,3 @@
-// boundless-profile: reputation operations.
-//
-// Spec: boundless-credits-reputation-prd.md Section 5.3.
-
 use soroban_sdk::{Address, BytesN, Env, String, Symbol};
 
 use crate::admin;

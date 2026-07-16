@@ -1,9 +1,3 @@
-// boundless-events: grant pillar tests (#32).
-//
-// Covers validate_create (Multi release required) + claim_milestone
-// fixed-split math, last-milestone dust sweep, credit/rep side-effects,
-// and error variants.
-
 #![cfg(test)]
 
 use soroban_sdk::{

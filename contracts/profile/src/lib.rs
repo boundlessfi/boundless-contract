@@ -1,12 +1,4 @@
 // SPDX-License-Identifier: MIT
-//
-// boundless-profile
-//
-// Per-user reputation + per-token earnings. Mutated almost exclusively by the
-// events contract; admin can slash reputation directly with audited reasons.
-// Credits were removed (2026-06) and now live in an off-chain ledger.
-//
-// Spec: boundless-credits-reputation-prd.md
 #![no_std]
 
 use soroban_sdk::{contract, contractimpl, contractmeta, Address, BytesN, Env, String, Symbol};
@@ -108,9 +100,6 @@ impl ProfileContract {
         bootstrap::bootstrap(&env, user, op_id)
     }
 
-    /// Self-service profile creation: the user authorizes their own bootstrap
-    /// (no admin key, no events-contract dependency). Called at onboarding so
-    /// every user has a profile before they participate.
     pub fn bootstrap_self(env: Env, user: Address, op_id: BytesN<32>) -> Result<(), Error> {
         bootstrap::bootstrap_self(&env, user, op_id)
     }

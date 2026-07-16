@@ -1,9 +1,3 @@
-// boundless-events: contract event emissions.
-//
-// Spec: boundless-platform-contract-prd.md Section 13.
-//
-// dead_code allowed: event structs are emitted via .publish() calls from
-// operation bodies that are stubbed in this pass.
 #![allow(dead_code)]
 
 use soroban_sdk::{contractevent, Address, BytesN, String};
@@ -18,8 +12,6 @@ pub struct EventCreated {
     pub token: Address,
     pub total_budget: i128,
     pub content_uri: String,
-    // L5 (2026-06 audit): title is part of the indexer payload so
-    // listings can be rendered without a follow-up get_event read.
     pub title: String,
 }
 
