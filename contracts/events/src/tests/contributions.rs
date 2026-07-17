@@ -323,7 +323,6 @@ fn cancel_with_partner_pool_refunds_partners_then_owner_residual() {
 
 #[test]
 fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
-
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
     dist.set(1, 50);
