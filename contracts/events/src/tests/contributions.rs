@@ -368,6 +368,8 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_select);
 
+    ctx.events.claim_prize(&id, &winner_a, &1_u32, &50_u32, &BytesN::random(&ctx.env));
+
     let after_select = ctx.events.get_event(&id);
     assert_eq!(after_select.status, EventStatus::Active);
     assert_eq!(after_select.remaining_escrow, 1_000_0000000_i128);

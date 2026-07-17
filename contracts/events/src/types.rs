@@ -179,6 +179,8 @@ pub enum DataKey {
 
     MilestoneClaimed(u64, Address, u32),
 
+    PrizeClaimed(u64, Address, u32),
+
     CrowdfundingMilestonesClaimed(u64),
 
     CancellationState(u64),

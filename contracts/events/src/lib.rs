@@ -227,6 +227,17 @@ impl EventsContract {
         event_ops::get_manager(&env, event_id)
     }
 
+    pub fn claim_prize(
+        env: Env,
+        event_id: u64,
+        recipient: Address,
+        position: u32,
+        reputation_bump: u32,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        event_ops::claim_prize(&env, event_id, recipient, position, reputation_bump, op_id)
+    }
+
     pub fn claim_milestone(
         env: Env,
         event_id: u64,

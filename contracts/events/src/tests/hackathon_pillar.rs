@@ -303,8 +303,12 @@ fn select_winners_single_recipient_sweeps_escrow() {
             reputation_bump: 50,
         },
     ];
-    let op = BytesN::random(&ctx.env);
-    ctx.events.select_winners(&id, &winners, &op);
+    let op_select = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&id, &winners, &op_select);
+
+    // Pull-model: claim prize in winner's own transaction.
+    let claim_op = BytesN::random(&ctx.env);
+    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &50_u32, &claim_op);
 
     assert_eq!(token.balance(&ctx.applicant) - winner_before, TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
@@ -320,14 +324,23 @@ fn select_winners_single_recipient_sweeps_escrow() {
     assert_eq!(event.status, EventStatus::Completed);
     assert_eq!(event.remaining_escrow, 0);
 
+    // Two winner rows: anchor (from select_winners) + claim row (from claim_prize).
     let winner_list = ctx.events.get_winners(&id);
-    assert_eq!(winner_list.len(), 1);
-    let w = winner_list.get(0).unwrap();
-    assert_eq!(w.recipient, ctx.applicant);
-    assert_eq!(w.position, 1);
-    assert_eq!(w.amount, TOTAL_BUDGET);
-    assert!(w.milestone.is_none());
-    assert!(w.paid_at.is_some());
+    assert_eq!(winner_list.len(), 2);
+    // Anchor row (select_winners): recorded but unpaid.
+    let anchor = winner_list.get(0).unwrap();
+    assert_eq!(anchor.recipient, ctx.applicant);
+    assert_eq!(anchor.position, 1);
+    assert_eq!(anchor.amount, TOTAL_BUDGET);
+    assert!(anchor.milestone.is_none());
+    assert!(anchor.paid_at.is_none());
+    // Claim row (claim_prize): paid.
+    let claim = winner_list.get(1).unwrap();
+    assert_eq!(claim.recipient, ctx.applicant);
+    assert_eq!(claim.position, 1);
+    assert_eq!(claim.amount, TOTAL_BUDGET);
+    assert!(claim.milestone.is_none());
+    assert!(claim.paid_at.is_some());
 }
 
 #[test]
@@ -361,12 +374,16 @@ fn select_winners_multi_position_splits_by_distribution() {
             reputation_bump: 20,
         },
     ];
-    let op = BytesN::random(&ctx.env);
-    ctx.events.select_winners(&id, &winners, &op);
+    let op_select = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&id, &winners, &op_select);
 
     let amt_1 = TOTAL_BUDGET * 50 / 100;
     let amt_2 = TOTAL_BUDGET * 30 / 100;
     let amt_3 = TOTAL_BUDGET * 20 / 100;
+
+    ctx.events.claim_prize(&id, &first, &1_u32, &60_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&id, &second, &2_u32, &40_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&id, &third, &3_u32, &20_u32, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&first), amt_1);
     assert_eq!(token.balance(&second), amt_2);
@@ -383,7 +400,8 @@ fn select_winners_multi_position_splits_by_distribution() {
     let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Completed);
     assert_eq!(event.remaining_escrow, 0);
-    assert_eq!(ctx.events.get_winners(&id).len(), 3);
+    // 3 anchors + 3 claim rows = 6.
+    assert_eq!(ctx.events.get_winners(&id).len(), 6);
 }
 
 // ============================================================
@@ -526,8 +544,14 @@ fn select_winners_on_completed_event_reverts() {
             reputation_bump: 0,
         },
     ];
-    let op = BytesN::random(&ctx.env);
-    ctx.events.select_winners(&id, &winners, &op);
+    let op_select = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&id, &winners, &op_select);
+    // Pull-model: event stays Active until claim.
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
+
+    // Claim to drain escrow and complete the event.
+    let claim_op = BytesN::random(&ctx.env);
+    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &0_u32, &claim_op);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 
     let again = Address::generate(&ctx.env);

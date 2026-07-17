@@ -65,4 +65,7 @@ pub enum Error {
     Paused = 70,
 
     ProfileCallFailed = 80,
+
+    // Prize claims (pull-model for Single-release events)
+    PrizeAlreadyClaimed = 91,
 }

@@ -83,6 +83,14 @@ pub struct WinnerPaid {
 }
 
 #[contractevent]
+pub struct PrizeClaimed {
+    pub event_id: u64,
+    pub recipient: Address,
+    pub position: u32,
+    pub amount: i128,
+}
+
+#[contractevent]
 pub struct MilestoneClaimed {
     pub event_id: u64,
     pub recipient: Address,
