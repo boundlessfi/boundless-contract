@@ -418,3 +418,19 @@ fn admin_slash_rejects_non_admin_caller() {
         .try_admin_slash_reputation(&user, &1, &admin_reason(&ctx), &op_id(&ctx));
     assert!(res.is_err(), "non-admin admin_slash must be rejected");
 }
+
+#[test]
+fn admin_slash_demands_admins_auth_specifically() {
+    // Complements admin_slash_rejects_non_admin_caller above (already in
+    // the codebase since #60): that test proves *some* auth is required;
+    // this one proves the auth demanded under a normal call is
+    // specifically the admin's, not just any address mock_all_auths()
+    // happens to approve.
+    let (ctx, user) = setup_with_user();
+    ctx.client
+        .admin_slash_reputation(&user, &1, &admin_reason(&ctx), &op_id(&ctx));
+
+    let auths = ctx.env.auths();
+    let admin_required = auths.iter().any(|(addr, _)| *addr == ctx.admin);
+    assert!(admin_required, "admin_slash must demand the admin's auth");
+}

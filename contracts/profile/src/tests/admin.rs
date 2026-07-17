@@ -392,3 +392,44 @@ fn migrate_reverts_without_admin_auth() {
     let err = ctx.client.try_migrate();
     assert!(err.is_err(), "migrate must require admin auth");
 }
+
+// ============================================================
+// ACCEPT_ADMIN — target-auth guard
+//
+// accept_admin does not call require_admin(); it authorizes against the
+// pending target address instead (pending.target.require_auth()). These
+// two tests prove that guard independently of the require_admin() guards
+// above: the empty-mock test shows *some* auth is demanded, and the
+// auths() check shows it is demanded from the pending target
+// specifically, not just any address mock_all_auths() happens to cover.
+// ============================================================
+
+#[test]
+fn accept_admin_reverts_without_targets_auth() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+    ctx.client.set_admin(&new_admin);
+
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_accept_admin();
+    assert!(
+        err.is_err(),
+        "accept_admin must require the pending target's auth"
+    );
+}
+
+#[test]
+fn accept_admin_demands_pending_targets_auth_specifically() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+    ctx.client.set_admin(&new_admin);
+
+    ctx.client.accept_admin();
+
+    let auths = ctx.env.auths();
+    let target_required = auths.iter().any(|(addr, _)| *addr == new_admin);
+    assert!(
+        target_required,
+        "accept_admin must demand the pending target's own auth"
+    );
+}
