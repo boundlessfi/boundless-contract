@@ -16,7 +16,7 @@
               "function_name": "propose_upgrade",
               "args": [
                 {
-                  "bytes": "2ba5162bad367eb2460f852b9adf7464d38cea3b563311a76e353429c0180c86"
+                  "bytes": "5d4f1ee665216dea20b6d1f18b72ea66f6bf0006d6fa2004f897c98401cba523"
                 },
                 {
                   "string": "0.3.0"
@@ -227,7 +227,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.1.0"
+                          "string": "1.2.0"
                         }
                       }
                     ]

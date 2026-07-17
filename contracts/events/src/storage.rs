@@ -475,6 +475,21 @@ pub fn set_contributor_amount(env: &Env, id: u64, contributor: &Address, amount:
     touch_event_persistent(env, &key);
 }
 
+pub fn get_non_owner_contribution_total(env: &Env, id: u64) -> Option<i128> {
+    let key = DataKey::NonOwnerContributionTotal(id);
+    let total: Option<i128> = env.storage().persistent().get(&key);
+    if total.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    total
+}
+
+pub fn set_non_owner_contribution_total(env: &Env, id: u64, total: i128) {
+    let key = DataKey::NonOwnerContributionTotal(id);
+    env.storage().persistent().set(&key, &total);
+    touch_event_persistent(env, &key);
+}
+
 pub fn contributor_count(env: &Env, id: u64) -> u32 {
     let key = DataKey::ContributorCount(id);
     let n: Option<u32> = env.storage().persistent().get(&key);

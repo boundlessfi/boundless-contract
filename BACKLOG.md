@@ -55,6 +55,7 @@ See `docs/audit-2026-06-stellar-skill.md` for full findings.
 
 ## Done
 
+- [x] 2026-07-17 — Cancellation liveness hardening. `add_funds` now maintains an O(1) per-event non-owner contribution total, `start_cancel` no longer scans up to 5,000 contributor rows, and `process_cancel_batch` / `finalize_cancel` are permissionless after cancellation starts. The guarded 1.1.0 → 1.2.0 mainnet flow pauses before proposal, proves the zero-event state, keeps it frozen through the timelock, and rechecks before apply. Older zero-contributor rows initialize the missing total lazily; a missing total with existing contributors fails closed. Tests cover a 220-contributor constant-footprint start and exact third-party-driven payout deltas.
 - [x] 2026-06-03 — `fee_bps_override` per-event field + `effective_fee_bps` resolver.
 - [x] 2026-06-03 — `WinnersAlreadySelected` replay lock on `select_winners`.
 - [x] 2026-06-03 — Grant last-milestone sweep (G4).

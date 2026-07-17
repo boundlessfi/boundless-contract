@@ -223,7 +223,7 @@
                   ]
                 },
                 {
-                  "bytes": "ec18a710214be083185a5f8f25f8158ad933478f721b423ca2b028b71d0de9b2"
+                  "bytes": "aab9084c9ae73bd1ea037aca3ccc442db4e4425170a5c1c0592d2ee6a65de29b"
                 }
               ]
             }
@@ -272,7 +272,7 @@
                   "string": "ipfs://Qm.../v1.json"
                 },
                 {
-                  "bytes": "60a8d10c0ac6da80cbabe1c132f0819b2ed4f7f53eeeac0f5bf6d459769229cc"
+                  "bytes": "f4e71a286a43d36108c57ee83cf0d406a5fe225c356db4e72189ca58ed2c78bd"
                 }
               ]
             }
@@ -773,10 +773,55 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "NonOwnerContributionTotal"
+                },
+                {
+                  "u64": "1"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "NonOwnerContributionTotal"
+                    },
+                    {
+                      "u64": "1"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "i128": "0"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          1555200
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "60a8d10c0ac6da80cbabe1c132f0819b2ed4f7f53eeeac0f5bf6d459769229cc"
+                  "bytes": "aab9084c9ae73bd1ea037aca3ccc442db4e4425170a5c1c0592d2ee6a65de29b"
                 }
               ]
             },
@@ -796,7 +841,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "60a8d10c0ac6da80cbabe1c132f0819b2ed4f7f53eeeac0f5bf6d459769229cc"
+                      "bytes": "aab9084c9ae73bd1ea037aca3ccc442db4e4425170a5c1c0592d2ee6a65de29b"
                     }
                   ]
                 },
@@ -821,7 +866,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "ec18a710214be083185a5f8f25f8158ad933478f721b423ca2b028b71d0de9b2"
+                  "bytes": "f4e71a286a43d36108c57ee83cf0d406a5fe225c356db4e72189ca58ed2c78bd"
                 }
               ]
             },
@@ -841,7 +886,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "ec18a710214be083185a5f8f25f8158ad933478f721b423ca2b028b71d0de9b2"
+                      "bytes": "f4e71a286a43d36108c57ee83cf0d406a5fe225c356db4e72189ca58ed2c78bd"
                     }
                   ]
                 },
@@ -1029,7 +1074,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.1.0"
+                          "string": "1.2.0"
                         }
                       }
                     ]

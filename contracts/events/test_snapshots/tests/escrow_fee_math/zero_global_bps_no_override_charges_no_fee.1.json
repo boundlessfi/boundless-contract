@@ -224,7 +224,7 @@
                   ]
                 },
                 {
-                  "bytes": "833bd5b324a4d40a015494c5aa414450f4e6a1aead6389b6b7ae380bb3c7ed54"
+                  "bytes": "55dd3395cd440f52a89e1bf65898f47f94deed99d2585ade42a741f348157673"
                 }
               ]
             }
@@ -671,10 +671,55 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "NonOwnerContributionTotal"
+                },
+                {
+                  "u64": "1"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "NonOwnerContributionTotal"
+                    },
+                    {
+                      "u64": "1"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "i128": "0"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          1555200
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "833bd5b324a4d40a015494c5aa414450f4e6a1aead6389b6b7ae380bb3c7ed54"
+                  "bytes": "55dd3395cd440f52a89e1bf65898f47f94deed99d2585ade42a741f348157673"
                 }
               ]
             },
@@ -694,7 +739,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "833bd5b324a4d40a015494c5aa414450f4e6a1aead6389b6b7ae380bb3c7ed54"
+                      "bytes": "55dd3395cd440f52a89e1bf65898f47f94deed99d2585ade42a741f348157673"
                     }
                   ]
                 },
@@ -882,7 +927,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.1.0"
+                          "string": "1.2.0"
                         }
                       }
                     ]

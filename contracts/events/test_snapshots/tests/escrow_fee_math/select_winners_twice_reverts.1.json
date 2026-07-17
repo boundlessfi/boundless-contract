@@ -223,7 +223,7 @@
                   ]
                 },
                 {
-                  "bytes": "55f3007942fb08ea73180253e95633924feb21ae43cce9e14f4dcb35933696f3"
+                  "bytes": "80310c104dd560ca062bd825a329cc6b0808db4e749723aa1a12734cea8f9454"
                 }
               ]
             }
@@ -298,7 +298,7 @@
                   ]
                 },
                 {
-                  "bytes": "e96c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                  "bytes": "3970423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                 }
               ]
             }
@@ -474,7 +474,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "086c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                  "bytes": "8970423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                 }
               ]
             },
@@ -494,7 +494,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "086c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                      "bytes": "8970423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                     }
                   ]
                 },
@@ -519,7 +519,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "386c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                  "bytes": "d870423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                 }
               ]
             },
@@ -539,7 +539,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "386c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                      "bytes": "d870423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                     }
                   ]
                 },
@@ -564,7 +564,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "596c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                  "bytes": "e870423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                 }
               ]
             },
@@ -584,7 +584,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "596c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                      "bytes": "e870423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                     }
                   ]
                 },
@@ -1106,10 +1106,55 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "NonOwnerContributionTotal"
+                },
+                {
+                  "u64": "1"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "NonOwnerContributionTotal"
+                    },
+                    {
+                      "u64": "1"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "i128": "0"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          1555200
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "55f3007942fb08ea73180253e95633924feb21ae43cce9e14f4dcb35933696f3"
+                  "bytes": "3970423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                 }
               ]
             },
@@ -1129,7 +1174,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "55f3007942fb08ea73180253e95633924feb21ae43cce9e14f4dcb35933696f3"
+                      "bytes": "3970423972dfcd2a47bf8a32dd114d27fa46e87e9b3a73e117998f8515d845a3"
                     }
                   ]
                 },
@@ -1154,7 +1199,7 @@
                   "symbol": "OpSeen"
                 },
                 {
-                  "bytes": "e96c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                  "bytes": "80310c104dd560ca062bd825a329cc6b0808db4e749723aa1a12734cea8f9454"
                 }
               ]
             },
@@ -1174,7 +1219,7 @@
                       "symbol": "OpSeen"
                     },
                     {
-                      "bytes": "e96c250a822bd6e733b6eedc88fbd7f3a76e3ecdde42c6c39f91a0d25d19a0fc"
+                      "bytes": "80310c104dd560ca062bd825a329cc6b0808db4e749723aa1a12734cea8f9454"
                     }
                   ]
                 },
@@ -1362,7 +1407,7 @@
                           ]
                         },
                         "val": {
-                          "string": "1.1.0"
+                          "string": "1.2.0"
                         }
                       }
                     ]

@@ -1,7 +1,7 @@
 # Boundless Platform — STRIDE Threat Model
 
-**Version:** 1.2
-**Date:** July 2026 (rev. after the 1.1.0 credit-removal upgrade; prior rev. June 2026 after second Scout remediation)
+**Version:** 1.3
+**Date:** July 2026 (rev. after the events 1.2.0 cancellation-liveness upgrade; prior rev. after the 1.1.0 credit-removal upgrade)
 **Scope:** `boundless-events` + `boundless-profile` Soroban contracts and the off-chain orchestrator (`boundless-nestjs`)
 **Prepared by:** Boundless Engineering
 **Status:** Submitted for SDF Soroban Security Audit Program
@@ -25,7 +25,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | Admin Portal | Staff-only Next.js app. Calls the backend admin API surface. Enforces step-up TOTP for sensitive mutations. |
 | Didit KYC | External identity verification service. Receives user documents; sends HMAC-signed webhooks back to the backend. No PII stored on Boundless infrastructure. |
 | Stellar RPC (Nodies) | Managed Soroban RPC endpoint. Backend submits signed transactions; event indexer polls for on-chain events. |
-| Admin Multi-sig Account | 2-of-3 Stellar multi-sig G-address (`GCU64B3YTFL2M6I6MKPIIZWNYAIOKKOFVDJ6W2AIGNRZYO6OW5U32ZIT`). Controls all privileged contract operations (pause, fee changes, upgrade). No single team member can act unilaterally. |
+| Admin Multi-sig Account | 2-of-3 Stellar multi-sig G-address (`GCVK72I6TVJVDTTY4UKU6MQT4QJ2T2AAG3NULNEUDM46L3UOQYDSO4O2`). Controls all privileged contract operations (pause, fee changes, upgrade). No single team member can act unilaterally. |
 | Organization Treasury Wallets | Stellar classic G-addresses with USDC trustlines. Held by organizer accounts; used to fund event escrow at publish time. |
 
 ---
@@ -223,7 +223,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **Repud.1** | `select_winners` emits a `WinnersSelected` Soroban event containing the event ID, winner addresses, and amounts. This event is immutable on the Stellar ledger and publicly auditable on Stellar Expert. |
 | **Repud.2** | Every USDC release is an on-chain SAC `transfer` call. The transaction hash, sender, recipient, and amount are permanently recorded on the Stellar ledger. |
 | **Repud.3** | Every admin KYC action (sync, retrigger, override) is recorded by `AdminAuditService` inside a database transaction with the staff member's ID, action type, target user ID, timestamp, and decision reason. The audit log is append-only. |
-| **Repud.4** | The paged cancel flow emits on-chain events at each step (`CancelStarted`, `CancelBatchProcessed`, `CancelFinalized`). Each refund transfer is an on-chain SAC `transfer`. Stellar Expert shows the full refund history per account. |
+| **Repud.4** | The paged cancel flow emits `ContributorRefunded` for each payout, `OwnerResidualRefunded` when applicable, and `EventCancelled` at settlement. Each refund transfer is also an on-chain SAC `transfer`, providing an account-level payment trail. |
 | **Repud.5** | The admin co-sign is a `SorobanAuthorizationEntry` embedded in the signed XDR of the transaction. It is visible in the transaction envelope on Stellar Expert — both the organizer's auth and the admin's auth are present and attributable to their respective addresses. |
 | **Info.1** | Wallet addresses are pseudonymous. Rich personal data (submission content, project descriptions) is stored off-chain via `content_uri` (IPFS or backend storage), not in contract storage. This transparency is by design for a trustless settlement platform. Users are informed that their address and prize amounts are publicly visible. |
 | **Info.2** | The Boundless PostgreSQL database stores only the Didit `session_id` (opaque token) and a normalized status string (`Approved / Declined / In Review`). Identity documents, biometrics, and personal details are never received or stored by Boundless. A full database breach does not expose KYC documents. |
@@ -232,7 +232,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **Info.5** | The Didit webhook handler logs only the `session_id` and normalized status, never the full payload. Log levels are set to `error,warn,log` in production; raw request bodies are not logged. |
 | **Info.6** | The fee account is a Stellar G-address whose key is held by the admin multi-sig (same custody as the contract admin). Fee diversion requires compromising the multi-sig. |
 | **DoS.1** | Per-event applicant cap is 5,000 entries. The `apply` endpoint requires a valid JWT and KYC-approved status, raising the cost of bot registration significantly. Per-event credit costs on application are enforced by the off-chain credit ledger at the API layer (since the 1.1.0 upgrade; previously on-chain via `application_credit_cost`), making spam economically prohibitive for events with non-zero credit costs. |
-| **DoS.2** | The paged cancel design (`start_cancel` / `process_cancel_batch(max_refunds=25)` / `finalize_cancel`) caps per-transaction refund work at 25 entries, well within Stellar ledger resource limits even at 5,000 contributors. |
+| **DoS.2** | The paged cancel design keeps `start_cancel` O(1) with a per-event `NonOwnerContributionTotal`. Once status is `Cancelling`, `process_cancel_batch(max_refunds=25)` and `finalize_cancel` are permissionless, so manager loss cannot strand an in-progress refund. |
 | **DoS.3** | `GlobalThrottlerGuard` applies per-IP rate limits globally. The backend runs behind a load balancer with DDoS protection at the infrastructure layer. |
 | **DoS.4** | Nodies is a managed, SLA-backed RPC provider. BullMQ queues buffer all async contract operations; if RPC is temporarily unavailable, jobs retry with exponential backoff and are not lost. The `DistributedLockService` prevents duplicate submissions during retry storms. |
 | **DoS.5** | Soroban's fee market (resource fees) prices out spam. The backend uses `simulateTransaction` before submission to estimate fees; operations that would exceed configured limits are rejected before they reach the network. |
@@ -260,7 +260,7 @@ All six STRIDE categories produced actionable threats. The most significant find
 - **Spoofing:** `require_auth()` coverage across all contract functions is thorough, but the orchestrator key's scope needed explicit documentation. The key's limited blast radius (covered under Spoof.2) was identified during this exercise and has been documented in the operational runbooks.
 - **Tampering:** The `select_winners` math (Tamp.2) was scrutinized in the June 2026 Stellar-skill audit (finding M1). The fix — computing winner payouts from `remaining_escrow` at selection time — was already applied, but the threat model gave us additional confidence that the math is correct.
 - **Information Disclosure:** Info.2 (database breach does not expose KYC documents) is the strongest privacy property of the design, enabled by the architectural decision to keep PII exclusively with Didit. This would not have been called out as explicitly without the Information Disclosure category forcing the question.
-- **Denial of Service:** DoS.2 (paged cancel) was the design driver for the `start_cancel / process_cancel_batch / finalize_cancel` architecture. The threat was identified pre-audit and the fix was implemented and audited before this threat model was written.
+- **Denial of Service:** DoS.2 was the design driver for the paged cancellation architecture. The events 1.2.0 review found that the original `start_cancel` snapshot still contained an unbounded scan and that manager-only crank authorization created a second liveness dependency. The running total and permissionless crank close both gaps.
 - **Elevation of Privilege:** EoP.3 (crowdfunding claim requires admin co-auth) is the most operationally sensitive control. The threat model confirmed that the dual-auth design is correctly implemented and the blast radius of an orchestrator key leak is bounded.
 
 ### Unresolved / Residual Risks
@@ -282,6 +282,8 @@ Four issues surfaced during or directly after the modelling process:
 4. **(v1.1)** The ENHANCEMENT category in the Scout report flagged ~50 profile contract functions for missing event emissions. Code review confirmed all state-mutating functions already emit events in their implementation modules; Scout cannot trace through function call chains. Documented as false positives.
 5. **(v1.2)** The 1.0.0 → 1.1.0 contract upgrade (2026-06) removed per-user credit balances from the profile contract; credits now live in an off-chain ledger in `boundless-nestjs`. Component descriptions, the dataflow diagram, and the data-store table were updated; Tamp.7 was marked retired (its subject code, `credits.rs`, no longer exists on-chain); EoP.5 and DoS.1 were reworded to match the post-upgrade surface. Credit-ledger threats are now in scope of the backend's threat surface (TB1), not the contract's.
 
+6. **(v1.3)** The events 1.2.0 cancellation-liveness upgrade replaced the unbounded `start_cancel` contributor scan with an O(1) running total and made cancellation batching and finalization permissionless after the manager starts cancellation. Mainnet was verified to contain no event rows before the storage change.
+
 ### Living Document Commitment
 
 This threat model will be revisited before mainnet launch (Tranche 3) and any time the architecture changes materially (new pillar, new auth flow, new external service, contract upgrade).
@@ -300,9 +302,9 @@ This threat model will be revisited before mainnet launch (Tranche 3) and any ti
 | `add_funds` | events | `from.require_auth()` |
 | `select_winners` | events | `event.owner.require_auth()` (manager) |
 | `claim_milestone` | events | `event.owner.require_auth()` + `admin.require_auth()` |
-| `start_cancel` | events | `admin.require_auth()` |
-| `process_cancel_batch` | events | `admin.require_auth()` |
-| `finalize_cancel` | events | `admin.require_auth()` |
+| `start_cancel` | events | Current event manager, or owner when no manager override exists |
+| `process_cancel_batch` | events | None after the event enters `Cancelling` |
+| `finalize_cancel` | events | None after the event enters `Cancelling` |
 | `set_admin` | events | `admin.require_auth()` (current admin) |
 | `accept_admin` | events | `pending.target.require_auth()` |
 | `pause` / `unpause` | events | `admin.require_auth()` |
