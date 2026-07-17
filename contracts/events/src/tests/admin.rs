@@ -3,8 +3,8 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{BytesN as _, Ledger},
-    BytesN, String,
+    testutils::{Address as _, BytesN as _, Ledger},
+    Address, BytesN, String,
 };
 
 use super::common::setup;
@@ -169,4 +169,113 @@ fn migrate_marks_current_version_and_blocks_replay() {
         .expect("second migrate rejected")
         .unwrap();
     assert_eq!(err, Error::MigrationAlreadyApplied);
+}
+
+// AUTH REGRESSION GUARDS (#73)
+//
+// setup() mocks all auths for every address, so a call succeeding is not
+// proof that require_admin() ran — it succeeds identically whether the
+// check is present or was deleted. These tests replace the mock with an
+// empty auth set so the call can only succeed if the contract explicitly
+// requests and receives the admin's authorization. If require_admin() is
+// ever removed from one of these entrypoints, the call stops requesting
+// auth altogether and runs to completion instead of failing here,
+// turning the test red.
+
+#[test]
+fn pause_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_pause();
+    assert!(err.is_err(), "pause must require admin auth");
+}
+
+#[test]
+fn unpause_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    ctx.client.pause();
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_unpause();
+    assert!(err.is_err(), "unpause must require admin auth");
+}
+
+#[test]
+fn set_admin_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    let new_admin = Address::generate(&ctx.env);
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_set_admin(&new_admin);
+    assert!(err.is_err(), "set_admin must require admin auth");
+}
+
+#[test]
+fn set_fee_bps_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_set_fee_bps(&300);
+    assert!(err.is_err(), "set_fee_bps must require admin auth");
+}
+
+#[test]
+fn set_fee_account_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    let new_account = Address::generate(&ctx.env);
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_set_fee_account(&new_account);
+    assert!(err.is_err(), "set_fee_account must require admin auth");
+}
+
+#[test]
+fn set_profile_contract_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    let new_profile = Address::generate(&ctx.env);
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_set_profile_contract(&new_profile);
+    assert!(err.is_err(), "set_profile_contract must require admin auth");
+}
+
+#[test]
+fn propose_upgrade_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    let new_hash: BytesN<32> = BytesN::random(&ctx.env);
+    let new_version = String::from_str(&ctx.env, "0.3.0");
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_propose_upgrade(&new_hash, &new_version);
+    assert!(err.is_err(), "propose_upgrade must require admin auth");
+}
+
+#[test]
+fn apply_upgrade_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    let new_hash: BytesN<32> = BytesN::random(&ctx.env);
+    let new_version = String::from_str(&ctx.env, "0.3.0");
+    ctx.client.propose_upgrade(&new_hash, &new_version);
+
+    ctx.env.ledger().with_mut(|li| {
+        li.sequence_number += UPGRADE_TIMELOCK_LEDGERS;
+    });
+
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_apply_upgrade();
+    assert!(err.is_err(), "apply_upgrade must require admin auth");
+}
+
+#[test]
+fn cancel_pending_upgrade_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    let new_hash: BytesN<32> = BytesN::random(&ctx.env);
+    let new_version = String::from_str(&ctx.env, "0.3.0");
+    ctx.client.propose_upgrade(&new_hash, &new_version);
+
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_cancel_pending_upgrade();
+    assert!(err.is_err(), "cancel_pending_upgrade must require admin auth");
+}
+
+#[test]
+fn migrate_reverts_without_admin_auth() {
+    let ctx = setup(250);
+    ctx.env.mock_auths(&[]);
+    let err = ctx.client.try_migrate();
+    assert!(err.is_err(), "migrate must require admin auth");
 }
