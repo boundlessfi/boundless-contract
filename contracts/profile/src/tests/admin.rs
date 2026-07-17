@@ -302,7 +302,10 @@ fn propose_events_contract_reverts_without_admin_auth() {
     let events_b = Address::generate(&ctx.env);
     ctx.env.mock_auths(&[]);
     let err = ctx.client.try_propose_events_contract(&events_b);
-    assert!(err.is_err(), "propose_events_contract must require admin auth");
+    assert!(
+        err.is_err(),
+        "propose_events_contract must require admin auth"
+    );
 }
 
 #[test]
@@ -319,7 +322,10 @@ fn accept_events_contract_reverts_without_admin_auth() {
 
     ctx.env.mock_auths(&[]);
     let err = ctx.client.try_accept_events_contract();
-    assert!(err.is_err(), "accept_events_contract must require admin auth");
+    assert!(
+        err.is_err(),
+        "accept_events_contract must require admin auth"
+    );
 }
 
 #[test]
@@ -373,7 +379,10 @@ fn cancel_pending_upgrade_reverts_without_admin_auth() {
 
     ctx.env.mock_auths(&[]);
     let err = ctx.client.try_cancel_pending_upgrade();
-    assert!(err.is_err(), "cancel_pending_upgrade must require admin auth");
+    assert!(
+        err.is_err(),
+        "cancel_pending_upgrade must require admin auth"
+    );
 }
 
 #[test]

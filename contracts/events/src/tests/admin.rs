@@ -269,7 +269,10 @@ fn cancel_pending_upgrade_reverts_without_admin_auth() {
 
     ctx.env.mock_auths(&[]);
     let err = ctx.client.try_cancel_pending_upgrade();
-    assert!(err.is_err(), "cancel_pending_upgrade must require admin auth");
+    assert!(
+        err.is_err(),
+        "cancel_pending_upgrade must require admin auth"
+    );
 }
 
 #[test]
