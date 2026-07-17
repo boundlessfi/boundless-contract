@@ -3,7 +3,7 @@
 ##  All Validation Checks Passed
 
 ### 1. SHA-256 Pinning ✓
-- ✓ `actions/checkout`: ac593985615ec2ede58e132d2e21d2b1cbd6127c (40 hex chars - valid)
+- ✓ `actions/checkout`: b4ffde65f46336ab88eb53be808477a3936bae11 (40 hex chars - valid, v4.1.1)
 - ✓ `dtolnay/rust-toolchain`: 1482605baf623a1ba7bb69329c91659433264734 (40 hex chars - valid)
 - ✓ `Swatinem/rust-cache`: 23bce251a8cd2ffc3c1075eac063c4173a8a8848 (40 hex chars - valid)
 - ✓ `stellar-cli` checksum: 2eb70d75d8f7da3ca9c1f6a69e5055f686cfc8f3ef8e7e06dd10a45e33d3476e (64 hex chars - valid SHA-256)

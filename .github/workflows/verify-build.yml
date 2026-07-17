@@ -32,7 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository using git
-        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c 
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 
+        with:
+          persist-credentials: false
 
       - name: Setup Rust and Stellar
         uses: ./.github/actions/setup-rust-stellar

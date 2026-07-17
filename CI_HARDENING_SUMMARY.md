@@ -6,12 +6,12 @@ All security fixes have been successfully implemented across three GitHub workfl
 
 ### 1. `.github/workflows/rustfmt.yml`
 -  Removed `id-token: write` from permissions (keeping only `contents: read` and `actions: read`)
--  Pinned `actions/checkout@v2` → `actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c` (v4.1.1)
+-  Pinned `actions/checkout@v2` → `actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11` (v4.1.1)
 -  Migrated off archived `actions-rs/toolchain@v1` → `dtolnay/rust-toolchain@1482605baf623a1ba7bb69329c91659433264734` (stable)
 
 ### 2. `.github/workflows/verify-build.yml`
 -  Removed `id-token: write` from permissions (keeping only `contents: read` and `actions: read`)
--  Pinned `actions/checkout@v4` → `actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c` (v4.1.1)
+-  Pinned `actions/checkout@v4` → `actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11` (v4.1.1)
 
 ### 3. `.github/actions/setup-rust-stellar/action.yml`
 -  Pinned `Swatinem/rust-cache@v2` → `Swatinem/rust-cache@23bce251a8cd2ffc3c1075eac063c4173a8a8848` (v2.7.3)
