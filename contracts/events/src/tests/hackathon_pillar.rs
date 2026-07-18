@@ -308,7 +308,8 @@ fn select_winners_single_recipient_sweeps_escrow() {
 
     // Pull-model: claim prize in winner's own transaction.
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &claim_op);
+    ctx.events
+        .claim_prize(&id, &ctx.applicant, &1_u32, &claim_op);
 
     assert_eq!(token.balance(&ctx.applicant) - winner_before, TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
@@ -373,9 +374,12 @@ fn select_winners_multi_position_splits_by_distribution() {
     let amt_2 = TOTAL_BUDGET * 30 / 100;
     let amt_3 = TOTAL_BUDGET * 20 / 100;
 
-    ctx.events.claim_prize(&id, &first, &1_u32, &BytesN::random(&ctx.env));
-    ctx.events.claim_prize(&id, &second, &2_u32, &BytesN::random(&ctx.env));
-    ctx.events.claim_prize(&id, &third, &3_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &first, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &second, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &third, &3_u32, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&first), amt_1);
     assert_eq!(token.balance(&second), amt_2);
@@ -543,7 +547,8 @@ fn select_winners_on_completed_event_reverts() {
 
     // Claim to drain escrow and complete the event.
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &claim_op);
+    ctx.events
+        .claim_prize(&id, &ctx.applicant, &1_u32, &claim_op);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 
     let again = Address::generate(&ctx.env);

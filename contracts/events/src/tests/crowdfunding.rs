@@ -322,8 +322,7 @@ fn claim_milestone_replay_reverts() {
     back(&ctx, id, &backer, 600_0000000_i128);
 
     let op = BytesN::random(&ctx.env);
-    ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &op);
+    ctx.events.claim_milestone(&id, &ctx.builder, &0_u32, &op);
 
     let res = ctx
         .events
@@ -520,8 +519,7 @@ fn crowdfunding_claim_milestone_requires_admin_auth() {
     back(&ctx, id, &p, 200_0000000_i128);
 
     let op = BytesN::random(&ctx.env);
-    ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &op);
+    ctx.events.claim_milestone(&id, &ctx.builder, &0_u32, &op);
 
     let auths = ctx.env.auths();
     let admin_required = auths.iter().any(|(addr, _)| *addr == ctx.events_admin);

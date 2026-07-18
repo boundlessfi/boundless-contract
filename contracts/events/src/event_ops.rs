@@ -297,7 +297,8 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     // The manager must not be able to drain escrow before winners claim,
     // unless the event deadline has passed (liveness escape hatch for
     // winners who cannot authenticate).
-    if matches!(event.release_kind, ReleaseKind::Single) && has_unclaimed_single_winner(env, event_id)
+    if matches!(event.release_kind, ReleaseKind::Single)
+        && has_unclaimed_single_winner(env, event_id)
     {
         let deadline_passed = event
             .deadline
@@ -743,8 +744,7 @@ pub fn claim_prize(
     // prize has already been claimed (canonical guard: paid_at).
     let anchor_idx = storage::get_winner_index(env, event_id, &recipient, position)
         .ok_or(Error::NoSubmissions)?;
-    let w = storage::winner_at(env, event_id, anchor_idx)
-        .ok_or(Error::NoSubmissions)?;
+    let w = storage::winner_at(env, event_id, anchor_idx).ok_or(Error::NoSubmissions)?;
     if w.recipient != recipient || w.position != position || w.milestone.is_some() {
         return Err(Error::NoSubmissions);
     }

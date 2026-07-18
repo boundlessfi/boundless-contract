@@ -123,7 +123,8 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &claim_op);
+    ctx.events
+        .claim_prize(&bounty_id, &ctx.applicant, &1_u32, &claim_op);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
@@ -255,8 +256,10 @@ fn select_winners_handles_multi_recipient_distribution() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     // Pull-model: each winner claims their prize.
-    ctx.events.claim_prize(&bounty_id, &winner_a, &1_u32, &BytesN::random(&ctx.env));
-    ctx.events.claim_prize(&bounty_id, &winner_b, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&bounty_id, &winner_a, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&bounty_id, &winner_b, &2_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let amount_a = TOTAL_BUDGET * 60 / 100;
@@ -365,7 +368,8 @@ fn cancel_after_select_winners_refunds_only_remaining() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&bounty_id, &winner_a, &1_u32, &claim_op);
+    ctx.events
+        .claim_prize(&bounty_id, &winner_a, &1_u32, &claim_op);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
@@ -873,27 +877,15 @@ fn grant_last_milestone_sweeps_rounding_residue() {
     let before = token.balance(&recipient);
 
     let floored = TOTAL_BUDGET / 3;
-    ctx.events.claim_milestone(
-        &grant_id,
-        &recipient,
-        &0_u32,
-        &BytesN::random(&ctx.env),
-    );
-    ctx.events.claim_milestone(
-        &grant_id,
-        &recipient,
-        &1_u32,
-        &BytesN::random(&ctx.env),
-    );
+    ctx.events
+        .claim_milestone(&grant_id, &recipient, &0_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_milestone(&grant_id, &recipient, &1_u32, &BytesN::random(&ctx.env));
     let after_two = token.balance(&recipient);
     assert_eq!(after_two - before, floored * 2);
 
-    ctx.events.claim_milestone(
-        &grant_id,
-        &recipient,
-        &2_u32,
-        &BytesN::random(&ctx.env),
-    );
+    ctx.events
+        .claim_milestone(&grant_id, &recipient, &2_u32, &BytesN::random(&ctx.env));
     let after_all = token.balance(&recipient);
     assert_eq!(
         after_all - before,
@@ -939,7 +931,12 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     // Pull-model: claim prize.
-    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(
+        &bounty_id,
+        &ctx.applicant,
+        &1_u32,
+        &BytesN::random(&ctx.env),
+    );
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET + top_up);
@@ -1016,7 +1013,12 @@ fn manager_override_can_select_winners() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(
+        &bounty_id,
+        &ctx.applicant,
+        &1_u32,
+        &BytesN::random(&ctx.env),
+    );
 
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Completed);
