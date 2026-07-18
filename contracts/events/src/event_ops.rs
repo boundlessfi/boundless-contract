@@ -294,10 +294,17 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     }
 
     // Prevent cancel after winners selected for Single-release (pull-model).
-    // The manager must not be able to drain escrow before winners claim.
+    // The manager must not be able to drain escrow before winners claim,
+    // unless the event deadline has passed (liveness escape hatch for
+    // winners who cannot authenticate).
     if matches!(event.release_kind, ReleaseKind::Single) && has_unclaimed_single_winner(env, event_id)
     {
-        return Err(Error::WinnersAlreadySelected);
+        let deadline_passed = event
+            .deadline
+            .map_or(false, |d| env.ledger().timestamp() > d);
+        if !deadline_passed {
+            return Err(Error::WinnersAlreadySelected);
+        }
     }
 
     resolve_manager(env, event_id, &event.owner).require_auth();
