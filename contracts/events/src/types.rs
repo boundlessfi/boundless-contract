@@ -194,6 +194,9 @@ pub enum DataKey {
     SupportedTokenCount,
     SupportedTokenAt(u32),
     SupportedTokenSlot(Address),
+
+    // Appended in 1.2.0 to preserve existing key discriminants.
+    NonOwnerContributionTotal(u64),
 }
 
 // ============================================================

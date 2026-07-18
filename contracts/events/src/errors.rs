@@ -56,6 +56,7 @@ pub enum Error {
     CancellationNotStarted = 62,
     CancellationAlreadyStarted = 63,
     CancellationNotFinished = 64,
+    CancellationTotalMissing = 66,
 
     UpgradeNotProposed = 65,
     UpgradeTimelockNotElapsed = 67,

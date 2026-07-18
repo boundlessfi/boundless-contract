@@ -21,7 +21,7 @@ Source: https://github.com/stellar/stellar-dev-skill
 - **Storage layout is stable.** Adding a field to `EventRecord` or any persisted struct must extend, never reorder, and must ship with a corresponding migration story (see `docs/mainnet-deploy-runbook.md` and the `upgrade()` admin function).
 - **Per-event configuration over global constants.** Anything sales might want to vary per program (fees, windows, caps) belongs on `EventRecord` or its variant payload, not in module constants.
 - **Tests cover the math.** Every payout split (single + multi-position + sweep) has a test that asserts both the recipient and the fee account deltas.
-- **Snapshots are the audit trail.** When test fixtures change shape, regenerate snapshots intentionally and commit them in the same PR.
+- **Snapshots are inspection tooling, not history.** `test_snapshots/` is gitignored: snapshots are derived artifacts that `cargo test` regenerates from any commit, and committing them made PR diffs so large that the security scanners skipped them. When reviewing a storage-layout or auth change, regenerate locally and inspect the snapshot diff — but never commit snapshot files.
 
 ## Build, test, deploy
 

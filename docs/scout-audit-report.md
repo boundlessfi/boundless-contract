@@ -139,11 +139,9 @@ let percent = record
 
 ### M-4 — Unbounded operations: `event_ops.rs:346,642`, `grant.rs:115`, `storage.rs:341,416`
 
-**Assessment: Partially valid / known and mitigated.** These are iteration loops over per-event applicant/contributor/winner lists. The per-event cap is 5,000 entries per list (enforced at `add_funds` / `apply` call sites). The paged cancel design (`start_cancel` / `process_cancel_batch(max_refunds=25)` / `finalize_cancel`) addresses the worst-case cancel scenario. The flagged loops are bounded by design:
-- `process_cancel_batch` explicitly limits to `max_refunds` per call
-- Snapshot reads (`applicants_snapshot`, `applicant_count`) respect the cap
+**Assessment: Confirmed for the original `start_cancel`; remediated in events 1.2.0.** The contributor cap of 5,000 did not make the old snapshot loop safe because every iteration read both the contributor address and amount. The transaction could exceed Soroban resource limits well before reaching the cap.
 
-No code change. Documented in `docs/threat-model.md` under DoS.2.
+The 1.2.0 fix maintains `NonOwnerContributionTotal` in `add_funds`, so `start_cancel` snapshots cancellation math with one aggregate read. Mainnet was verified to contain no event rows before this storage change. Older zero-contributor rows initialize the key lazily, while a missing total with existing contributors fails closed. Each crank processes at most 25 contributor slots. `process_cancel_batch` and `finalize_cancel` are permissionless after cancellation starts, removing manager availability as a second refund-liveness dependency. Documented in `docs/threat-model.md` under DoS.2.
 
 ---
 
@@ -250,7 +248,7 @@ For audit panel reference -- these Scout warnings require no code change:
 | C-2b | `events/admin.rs` | (upgrade) | Same pattern in events contract `apply_upgrade()` |
 | C-4 | `events/idempotency.rs` | 60,74,75 | Intentional XOR for op_id derivation; documented in comments |
 | M-3 | `crowdfunding.rs`, `event_ops.rs`, `grant.rs` | various | All use `.ok_or()?` safe accessor -- Scout truncates multi-line span and misses the terminal `.ok_or()` |
-| M-4 | `event_ops.rs`, `grant.rs`, `storage.rs` | various | Loops bounded by 5,000-entry cap and paged cancel design |
+| M-4 | `event_ops.rs`, `grant.rs`, `storage.rs` | various | Confirmed for original `start_cancel`; remediated in events 1.2.0 with O(1) aggregate snapshots |
 | M-5 | `escrow.rs` | 34,84 | Amounts are contract-computed, not user-supplied |
 | M-6 | `profile/storage.rs`, `events/storage.rs` | various | Bounded semver strings written by admin-only paths |
 | M-7 | `storage.rs` | 343 | Called only from auth-gated `apply()` |

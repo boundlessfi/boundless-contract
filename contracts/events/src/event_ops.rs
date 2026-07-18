@@ -42,6 +42,17 @@ fn resolve_manager(env: &Env, event_id: u64, owner: &Address) -> Address {
     storage::get_event_manager(env, event_id).unwrap_or_else(|| owner.clone())
 }
 
+fn get_or_init_non_owner_total(env: &Env, event_id: u64) -> Result<i128, Error> {
+    match storage::get_non_owner_contribution_total(env, event_id) {
+        Some(total) => Ok(total),
+        None if storage::contributor_count(env, event_id) == 0 => {
+            storage::set_non_owner_contribution_total(env, event_id, 0);
+            Ok(0)
+        }
+        None => Err(Error::CancellationTotalMissing),
+    }
+}
+
 pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> Result<u64, Error> {
     admin::require_not_paused(env)?;
     idempotency::require_unseen(env, &op_id)?;
@@ -125,6 +136,7 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
     let id = idempotency::next_event_id(env);
     let record = EventRecord { id, ..provisional };
     storage::set_event(env, id, &record);
+    storage::set_non_owner_contribution_total(env, id, 0);
 
     if let Some(manager) = &params.manager {
         storage::set_event_manager(env, id, manager);
@@ -199,8 +211,20 @@ pub fn add_funds(
 
     from.require_auth();
 
-    if from != event.owner {
-        let prior = storage::get_contributor_amount(env, event_id, &from);
+    let is_non_owner = from != event.owner;
+    let prior_contribution = if is_non_owner {
+        storage::get_contributor_amount(env, event_id, &from)
+    } else {
+        0
+    };
+    let non_owner_total_before = if is_non_owner {
+        get_or_init_non_owner_total(env, event_id)?
+    } else {
+        0
+    };
+
+    if is_non_owner {
+        let prior = prior_contribution;
         if prior == 0 {
             storage::append_contributor(env, event_id, &from, MAX_CONTRIBUTORS_PER_EVENT)?;
         }
@@ -214,10 +238,14 @@ pub fn add_funds(
     };
     event.remaining_escrow = event.remaining_escrow.saturating_add(credited);
 
-    if from != event.owner {
-        let prior = storage::get_contributor_amount(env, event_id, &from);
-        let new_total = prior.saturating_add(credited);
+    if is_non_owner {
+        let new_total = prior_contribution.saturating_add(credited);
         storage::set_contributor_amount(env, event_id, &from, new_total);
+        storage::set_non_owner_contribution_total(
+            env,
+            event_id,
+            non_owner_total_before.saturating_add(credited),
+        );
     }
 
     storage::set_event(env, event_id, &event);
@@ -253,14 +281,7 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
 
     let remaining = event.remaining_escrow;
     let count = storage::contributor_count(env, event_id);
-
-    let mut non_owner_total: i128 = 0;
-    for idx in 0..count {
-        if let Some(c) = storage::contributor_at(env, event_id, idx) {
-            non_owner_total =
-                non_owner_total.saturating_add(storage::get_contributor_amount(env, event_id, &c));
-        }
-    }
+    let non_owner_total = get_or_init_non_owner_total(env, event_id)?;
 
     let branch = if non_owner_total <= 0 {
         CancellationBranch::OwnerOnly
@@ -283,6 +304,7 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
         event.remaining_escrow = 0;
         event.status = EventStatus::Cancelled;
         storage::set_event(env, event_id, &event);
+        storage::set_non_owner_contribution_total(env, event_id, 0);
         evt::EventCancelled { id: event_id }.publish(env);
         idempotency::mark_seen(env, &op_id);
         return Ok(());
@@ -316,10 +338,6 @@ pub fn process_cancel_batch(
     if !matches!(event.status, EventStatus::Cancelling) {
         return Err(Error::CancellationNotStarted);
     }
-    resolve_manager(env, event_id, &event.owner).require_auth();
-
-    let mut state =
-        storage::get_cancellation_state(env, event_id).ok_or(Error::CancellationNotStarted)?;
 
     let cap = if max_refunds > MAX_REFUNDS_PER_BATCH {
         MAX_REFUNDS_PER_BATCH
@@ -327,9 +345,14 @@ pub fn process_cancel_batch(
         max_refunds
     };
     let mut processed: u32 = 0;
+
+    let mut state =
+        storage::get_cancellation_state(env, event_id).ok_or(Error::CancellationNotStarted)?;
+
     while processed < cap && state.next_idx < state.count_at_start {
         let idx = state.next_idx;
         state.next_idx = state.next_idx.saturating_add(1);
+        processed = processed.saturating_add(1);
 
         let c = match storage::contributor_at(env, event_id, idx) {
             Some(c) => c,
@@ -358,7 +381,6 @@ pub fn process_cancel_batch(
             .publish(env);
         }
         storage::set_contributor_amount(env, event_id, &c, 0);
-        processed = processed.saturating_add(1);
     }
 
     storage::set_cancellation_state(env, event_id, &state);
@@ -376,8 +398,6 @@ pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<()
     if !matches!(event.status, EventStatus::Cancelling) {
         return Err(Error::CancellationNotStarted);
     }
-    resolve_manager(env, event_id, &event.owner).require_auth();
-
     let state =
         storage::get_cancellation_state(env, event_id).ok_or(Error::CancellationNotStarted)?;
     if state.next_idx < state.count_at_start {
@@ -403,6 +423,7 @@ pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<()
     event.status = EventStatus::Cancelled;
     storage::set_event(env, event_id, &event);
     storage::clear_cancellation_state(env, event_id);
+    storage::set_non_owner_contribution_total(env, event_id, 0);
 
     evt::EventCancelled { id: event_id }.publish(env);
 
