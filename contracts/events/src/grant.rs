@@ -121,18 +121,6 @@ pub fn claim_milestone(
         storage::set_crowdfunding_milestones_claimed(env, event_id, claimed.saturating_add(1));
     }
 
-    let profile = profile_client::client(env);
-    let reason = Symbol::new(env, "milestone");
-
-    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
-    profile.bootstrap(&recipient, &bootstrap_op);
-
-    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
-    profile.bump_reputation(&recipient, &reputation_bump, &reason, &rep_op);
-
-    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
-    profile.register_earnings(&recipient, &event.token, &amount, &earnings_op);
-
     storage::append_winner(
         env,
         event_id,
@@ -153,11 +141,25 @@ pub fn claim_milestone(
 
     evt::MilestoneClaimed {
         event_id,
-        recipient,
+        recipient: recipient.clone(),
         milestone,
         amount,
     }
     .publish(env);
+
+    // Best-effort profile side effects — payout is already finalised so a
+    // profile-contract failure must not block the claim.
+    let profile = profile_client::client(env);
+    let reason = Symbol::new(env, "milestone");
+
+    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    let _ = profile.try_bootstrap(&recipient, &bootstrap_op);
+
+    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
+    let _ = profile.try_bump_reputation(&recipient, &reputation_bump, &reason, &rep_op);
+
+    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
+    let _ = profile.try_register_earnings(&recipient, &event.token, &amount, &earnings_op);
 
     idempotency::mark_seen(env, &op_id);
     Ok(())

@@ -764,22 +764,9 @@ pub fn claim_prize(
         return Err(Error::InsufficientEscrow);
     }
 
-    // Release token from escrow.
+    // Release token from escrow — critical path, must succeed.
     escrow::release(env, &event.token, &recipient, amount);
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
-
-    // Cross-contract profile mutations. Each call gets a unique child op_id.
-    let profile = profile_client::client(env);
-    let reason_win = Symbol::new(env, "win");
-
-    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
-    profile.bootstrap(&recipient, &bootstrap_op);
-
-    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
-    profile.bump_reputation(&recipient, &reputation_bump, &reason_win, &rep_op);
-
-    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
-    profile.register_earnings(&recipient, &event.token, &amount, &earnings_op);
 
     // Mark prize claimed (prevents replay for this recipient + position).
     storage::mark_prize_claimed(env, event_id, &recipient, position);
@@ -807,11 +794,25 @@ pub fn claim_prize(
 
     evt::PrizeClaimed {
         event_id,
-        recipient,
+        recipient: recipient.clone(),
         position,
         amount,
     }
     .publish(env);
+
+    // Best-effort profile side effects — payout is already finalised so a
+    // profile-contract failure must not block the claim.
+    let profile = profile_client::client(env);
+    let reason_win = Symbol::new(env, "win");
+
+    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    let _ = profile.try_bootstrap(&recipient, &bootstrap_op);
+
+    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
+    let _ = profile.try_bump_reputation(&recipient, &reputation_bump, &reason_win, &rep_op);
+
+    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
+    let _ = profile.try_register_earnings(&recipient, &event.token, &amount, &earnings_op);
 
     idempotency::mark_seen(env, &op_id);
     Ok(())
