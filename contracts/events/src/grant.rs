@@ -59,6 +59,9 @@ pub fn claim_milestone(
     let anchor_idx =
         storage::get_grant_recipient_idx(env, event_id, &recipient).ok_or(Error::NoSubmissions)?;
     let anchor = storage::winner_at(env, event_id, anchor_idx).ok_or(Error::NoSubmissions)?;
+    if anchor.recipient != recipient || anchor.milestone.is_some() {
+        return Err(Error::NoSubmissions);
+    }
     let position = anchor.position;
     let reputation_bump = anchor.reputation_bump.unwrap_or(0);
     let already_claimed_for_recipient =
