@@ -202,6 +202,12 @@ pub enum DataKey {
 
     // Winner anchor index for O(1) claim_prize lookup (added 2026-07).
     WinnerIndex(u64, Address, u32),
+
+    // Grant anchor index for O(1) claim_milestone recipient lookup.
+    GrantRecipientIdx(u64, Address),
+
+    // Per-recipient milestone claim counter for claim_milestone.
+    GrantRecipientClaimCount(u64, Address),
 }
 
 // ============================================================

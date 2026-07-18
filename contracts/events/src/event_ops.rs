@@ -155,6 +155,7 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
                 reputation_bump: None,
             },
         );
+        storage::set_grant_recipient_idx(env, id, &params.owner, 0);
     }
 
     evt::EventCreated {
@@ -670,7 +671,8 @@ pub fn select_winners(
             }
         }
         ReleaseKind::Multi(_) => {
-            for spec in winners.iter() {
+            for (i, spec) in winners.iter().enumerate() {
+                let anchor_idx = existing_count + (i as u32);
                 storage::append_winner(
                     env,
                     event_id,
@@ -683,6 +685,7 @@ pub fn select_winners(
                         reputation_bump: Some(spec.reputation_bump),
                     },
                 );
+                storage::set_grant_recipient_idx(env, event_id, &spec.recipient, anchor_idx);
             }
         }
     }
@@ -849,7 +852,7 @@ pub fn get_winners(env: &Env, event_id: u64) -> Result<Vec<Winner>, Error> {
     Ok(storage::winners_snapshot(
         env,
         event_id,
-        MAX_WINNERS_PER_SELECT,
+        MAX_WINNERS_PER_SELECT.saturating_mul(20),
     ))
 }
 

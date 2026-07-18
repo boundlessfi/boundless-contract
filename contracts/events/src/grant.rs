@@ -54,33 +54,24 @@ pub fn claim_milestone(
         return Err(Error::MilestoneAlreadyClaimed);
     }
 
-    let count = storage::winner_count(env, event_id);
-    let mut winner_position: Option<u32> = None;
-    let mut reputation_bump: u32 = 0;
-    let mut already_claimed_for_recipient: u32 = 0;
-    let mut already_paid_to_recipient: i128 = 0;
-    for idx in 0..count {
-        let w = match storage::winner_at(env, event_id, idx) {
-            Some(w) => w,
-            None => continue,
-        };
-        if w.recipient != recipient {
-            continue;
-        }
-        match w.milestone {
-            None => {
-                winner_position = Some(w.position);
-                reputation_bump = w.reputation_bump.unwrap_or(0);
-            }
-            Some(_) => {
-                already_claimed_for_recipient = already_claimed_for_recipient.saturating_add(1);
-                already_paid_to_recipient = already_paid_to_recipient.saturating_add(w.amount);
-            }
-        }
-    }
-    let position = winner_position.ok_or(Error::NoSubmissions)?;
-
     let is_crowdfunding = matches!(event.pillar, Pillar::Crowdfunding);
+
+    let anchor_idx =
+        storage::get_grant_recipient_idx(env, event_id, &recipient).ok_or(Error::NoSubmissions)?;
+    let anchor = storage::winner_at(env, event_id, anchor_idx).ok_or(Error::NoSubmissions)?;
+    let position = anchor.position;
+    let reputation_bump = anchor.reputation_bump.unwrap_or(0);
+    let already_claimed_for_recipient =
+        storage::get_grant_recipient_claim_count(env, event_id, &recipient);
+    let already_paid_to_recipient = if is_crowdfunding {
+        0
+    } else {
+        let percent = event.winner_distribution.get(position).unwrap_or(0) as i128;
+        let total_share = event.total_budget.saturating_mul(percent) / 100_i128;
+        let per_milestone_floored = total_share / (total_milestones as i128);
+        (already_claimed_for_recipient as i128).saturating_mul(per_milestone_floored)
+    };
+
     let amount: i128 = if is_crowdfunding {
         let claimed_count = storage::get_crowdfunding_milestones_claimed(env, event_id);
         let remaining_milestones = total_milestones.saturating_sub(claimed_count);
@@ -124,6 +115,7 @@ pub fn claim_milestone(
     }
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     storage::mark_milestone_claimed(env, event_id, &recipient, milestone);
+    storage::increment_grant_recipient_claim_count(env, event_id, &recipient);
     if is_crowdfunding {
         let claimed = storage::get_crowdfunding_milestones_claimed(env, event_id);
         storage::set_crowdfunding_milestones_claimed(env, event_id, claimed.saturating_add(1));

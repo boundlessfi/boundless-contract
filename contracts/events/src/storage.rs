@@ -466,6 +466,39 @@ pub fn get_winner_index(env: &Env, id: u64, recipient: &Address, position: u32) 
     idx
 }
 
+pub fn get_grant_recipient_idx(env: &Env, id: u64, recipient: &Address) -> Option<u32> {
+    let key = DataKey::GrantRecipientIdx(id, recipient.clone());
+    let idx: Option<u32> = env.storage().persistent().get(&key);
+    if idx.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    idx
+}
+
+pub fn set_grant_recipient_idx(env: &Env, id: u64, recipient: &Address, idx: u32) {
+    let key = DataKey::GrantRecipientIdx(id, recipient.clone());
+    env.storage().persistent().set(&key, &idx);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_grant_recipient_claim_count(env: &Env, id: u64, recipient: &Address) -> u32 {
+    let key = DataKey::GrantRecipientClaimCount(id, recipient.clone());
+    let count: Option<u32> = env.storage().persistent().get(&key);
+    if count.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    count.unwrap_or(0)
+}
+
+pub fn increment_grant_recipient_claim_count(env: &Env, id: u64, recipient: &Address) {
+    let key = DataKey::GrantRecipientClaimCount(id, recipient.clone());
+    let count: u32 = env.storage().persistent().get(&key).unwrap_or(0);
+    env.storage()
+        .persistent()
+        .set(&key, &count.saturating_add(1));
+    touch_event_persistent(env, &key);
+}
+
 pub fn winners_snapshot(env: &Env, id: u64, max: u32) -> Vec<Winner> {
     let count = winner_count(env, id);
     let upper = if count < max { count } else { max };
