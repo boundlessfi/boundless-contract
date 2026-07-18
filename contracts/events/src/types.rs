@@ -129,7 +129,7 @@ pub struct Winner {
     pub amount: i128,
     pub milestone: Option<u32>,
     pub paid_at: Option<u64>,
-    pub reputation_bump: u32,
+    pub reputation_bump: Option<u32>,
 }
 
 // ============================================================
@@ -199,6 +199,9 @@ pub enum DataKey {
 
     // Added last so earlier variant discriminants remain stable on upgrade.
     PrizeClaimed(u64, Address, u32),
+
+    // Winner anchor index for O(1) claim_prize lookup (added 2026-07).
+    WinnerIndex(u64, Address, u32),
 }
 
 // ============================================================

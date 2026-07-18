@@ -70,7 +70,7 @@ pub fn claim_milestone(
         match w.milestone {
             None => {
                 winner_position = Some(w.position);
-                reputation_bump = w.reputation_bump;
+                reputation_bump = w.reputation_bump.unwrap_or(0);
             }
             Some(_) => {
                 already_claimed_for_recipient = already_claimed_for_recipient.saturating_add(1);
@@ -150,7 +150,7 @@ pub fn claim_milestone(
             amount,
             milestone: Some(milestone),
             paid_at: Some(env.ledger().timestamp()),
-            reputation_bump,
+            reputation_bump: Some(reputation_bump),
         },
     );
 

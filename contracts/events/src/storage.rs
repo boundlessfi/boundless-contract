@@ -451,6 +451,21 @@ pub fn append_winner(env: &Env, id: u64, w: &Winner) {
     touch_event_persistent(env, &count_key);
 }
 
+pub fn set_winner_index(env: &Env, id: u64, recipient: &Address, position: u32, idx: u32) {
+    let key = DataKey::WinnerIndex(id, recipient.clone(), position);
+    env.storage().persistent().set(&key, &idx);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_winner_index(env: &Env, id: u64, recipient: &Address, position: u32) -> Option<u32> {
+    let key = DataKey::WinnerIndex(id, recipient.clone(), position);
+    let idx: Option<u32> = env.storage().persistent().get(&key);
+    if idx.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    idx
+}
+
 pub fn winners_snapshot(env: &Env, id: u64, max: u32) -> Vec<Winner> {
     let count = winner_count(env, id);
     let upper = if count < max { count } else { max };

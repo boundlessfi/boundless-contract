@@ -152,7 +152,7 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
                 amount: 0,
                 milestone: None,
                 paid_at: None,
-                reputation_bump: 0,
+                reputation_bump: None,
             },
         );
     }
@@ -632,13 +632,14 @@ pub fn select_winners(
                 return Err(Error::InsufficientEscrow);
             }
 
-            for spec in winners.iter() {
+            for (i, spec) in winners.iter().enumerate() {
                 let percent = event
                     .winner_distribution
                     .get(spec.position)
                     .ok_or(Error::InvalidDistribution)? as i128;
                 let amount = escrow_at_select.saturating_mul(percent) / 100_i128;
 
+                let anchor_idx = existing_count + (i as u32);
                 storage::append_winner(
                     env,
                     event_id,
@@ -648,8 +649,15 @@ pub fn select_winners(
                         amount,
                         milestone: None,
                         paid_at: None,
-                        reputation_bump: spec.reputation_bump,
+                        reputation_bump: Some(spec.reputation_bump),
                     },
+                );
+                storage::set_winner_index(
+                    env,
+                    event_id,
+                    &spec.recipient,
+                    spec.position,
+                    anchor_idx,
                 );
             }
         }
@@ -664,7 +672,7 @@ pub fn select_winners(
                         amount: 0,
                         milestone: None,
                         paid_at: None,
-                        reputation_bump: spec.reputation_bump,
+                        reputation_bump: Some(spec.reputation_bump),
                     },
                 );
             }
@@ -723,25 +731,21 @@ pub fn claim_prize(
         return Err(Error::PrizeAlreadyClaimed);
     }
 
-    // Locate the anchor row (milestone == None) matching this recipient and
-    // position. Captures the index for in-place update, the pre-computed
-    // amount, and the manager-approved reputation_bump.
-    let count = storage::winner_count(env, event_id);
-    let mut winner_info: Option<(u32, i128, u32)> = None;
-    for idx in 0..count {
-        let w = match storage::winner_at(env, event_id, idx) {
-            Some(w) => w,
-            None => continue,
-        };
-        if w.recipient != recipient || w.position != position {
-            continue;
-        }
-        if w.milestone.is_none() && w.paid_at.is_none() {
-            winner_info = Some((idx, w.amount, w.reputation_bump));
-            break;
-        }
+    // Look up the anchor index stored at selection time (O(1) instead of
+    // a linear scan). Returns NoSubmissions if no winner matches or the
+    // prize has already been claimed (canonical guard: paid_at).
+    let anchor_idx = storage::get_winner_index(env, event_id, &recipient, position)
+        .ok_or(Error::NoSubmissions)?;
+    let w = storage::winner_at(env, event_id, anchor_idx)
+        .ok_or(Error::NoSubmissions)?;
+    if w.recipient != recipient || w.position != position || w.milestone.is_some() {
+        return Err(Error::NoSubmissions);
     }
-    let (anchor_idx, amount, reputation_bump) = winner_info.ok_or(Error::NoSubmissions)?;
+    if w.paid_at.is_some() {
+        return Err(Error::PrizeAlreadyClaimed);
+    }
+    let amount = w.amount;
+    let reputation_bump = w.reputation_bump.unwrap_or(0);
 
     if amount <= 0 {
         return Err(Error::InvalidDistribution);
@@ -782,7 +786,7 @@ pub fn claim_prize(
             amount,
             milestone: None,
             paid_at: Some(env.ledger().timestamp()),
-            reputation_bump,
+            reputation_bump: Some(reputation_bump),
         },
     );
 
