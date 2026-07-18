@@ -45,7 +45,7 @@ Updated to **valid, current commit SHAs** from the actual repositories:
 | Action | SHA | Version | Source |
 |--------|-----|---------|--------|
 | Swatinem/rust-cache | `7e35be21c2b94d972b1143087fabc27d7dc881ef` | v2.9.1 | Latest from GitHub API |
-| dtolnay/rust-toolchain | `2c7215f132e9ebf062739d9130488b56d53c060c` | stable (1.97.1) | Latest from GitHub API |
+| dtolnay/rust-toolchain | `2c7215f132e9ebf062739d9130488b56d53c060c` | stable | Latest from GitHub API |
 
 ## Verification
 
