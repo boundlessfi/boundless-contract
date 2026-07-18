@@ -232,10 +232,9 @@ impl EventsContract {
         event_id: u64,
         recipient: Address,
         position: u32,
-        reputation_bump: u32,
         op_id: BytesN<32>,
     ) -> Result<(), Error> {
-        event_ops::claim_prize(&env, event_id, recipient, position, reputation_bump, op_id)
+        event_ops::claim_prize(&env, event_id, recipient, position, op_id)
     }
 
     pub fn claim_milestone(
@@ -243,10 +242,9 @@ impl EventsContract {
         event_id: u64,
         recipient: Address,
         milestone: u32,
-        reputation_bump: u32,
         op_id: BytesN<32>,
     ) -> Result<(), Error> {
-        grant::claim_milestone(&env, event_id, recipient, milestone, reputation_bump, op_id)
+        grant::claim_milestone(&env, event_id, recipient, milestone, op_id)
     }
 
     // ============================================================

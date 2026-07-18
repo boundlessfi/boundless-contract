@@ -257,14 +257,14 @@ fn claim_milestone_splits_evenly_and_charges_fee_at_release() {
 
     let op_m0 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &op_m0);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &op_m0);
     assert_eq!(token.balance(&ctx.builder), 292_5000000_i128);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 7_5000000_i128);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 600_0000000_i128);
 
     let op_m1 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &1_u32, &0_u32, &op_m1);
+        .claim_milestone(&id, &ctx.builder, &1_u32, &op_m1);
     assert_eq!(token.balance(&ctx.builder), 585_0000000_i128);
     assert_eq!(
         token.balance(&ctx.fee_account) - fee_before,
@@ -274,7 +274,7 @@ fn claim_milestone_splits_evenly_and_charges_fee_at_release() {
 
     let op_m2 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &2_u32, &0_u32, &op_m2);
+        .claim_milestone(&id, &ctx.builder, &2_u32, &op_m2);
     assert_eq!(token.balance(&ctx.builder), 877_5000000_i128);
     assert_eq!(
         token.balance(&ctx.fee_account) - fee_before,
@@ -298,7 +298,7 @@ fn claim_milestone_last_drains_dust_with_fee() {
 
     for m in 0u32..3 {
         let op = BytesN::random(&ctx.env);
-        ctx.events.claim_milestone(&id, &ctx.builder, &m, &0, &op);
+        ctx.events.claim_milestone(&id, &ctx.builder, &m, &op);
     }
 
     let builder_delta = token.balance(&ctx.builder) - builder_before;
@@ -323,11 +323,11 @@ fn claim_milestone_replay_reverts() {
 
     let op = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &op);
 
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+        .try_claim_milestone(&id, &ctx.builder, &0_u32, &op);
     assert!(res.is_err());
 }
 
@@ -341,7 +341,7 @@ fn claim_milestone_out_of_range_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.builder, &2_u32, &0, &op);
+        .try_claim_milestone(&id, &ctx.builder, &2_u32, &op);
     assert!(res.is_err());
 }
 
@@ -352,7 +352,7 @@ fn claim_milestone_with_empty_escrow_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+        .try_claim_milestone(&id, &ctx.builder, &0_u32, &op);
     assert!(res.is_err());
 }
 
@@ -385,7 +385,7 @@ fn backer_pays_exactly_pledge_and_creator_bears_fee() {
 
     let claim = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &claim);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &claim);
 
     let fee = pledge * FEE_BPS as i128 / 10_000_i128; // 2.5 USDC
     assert_eq!(
@@ -492,7 +492,7 @@ fn cancel_after_partial_claim_pro_rates_remaining() {
 
     let op_m0 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op_m0);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &op_m0);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let p1_before = token.balance(&p1);
@@ -521,7 +521,7 @@ fn crowdfunding_claim_milestone_requires_admin_auth() {
 
     let op = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+        .claim_milestone(&id, &ctx.builder, &0_u32, &op);
 
     let auths = ctx.env.auths();
     let admin_required = auths.iter().any(|(addr, _)| *addr == ctx.events_admin);

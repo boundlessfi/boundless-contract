@@ -129,6 +129,7 @@ pub struct Winner {
     pub amount: i128,
     pub milestone: Option<u32>,
     pub paid_at: Option<u64>,
+    pub reputation_bump: u32,
 }
 
 // ============================================================
@@ -179,8 +180,6 @@ pub enum DataKey {
 
     MilestoneClaimed(u64, Address, u32),
 
-    PrizeClaimed(u64, Address, u32),
-
     CrowdfundingMilestonesClaimed(u64),
 
     CancellationState(u64),
@@ -197,6 +196,9 @@ pub enum DataKey {
 
     // Appended in 1.2.0 to preserve existing key discriminants.
     NonOwnerContributionTotal(u64),
+
+    // Added last so earlier variant discriminants remain stable on upgrade.
+    PrizeClaimed(u64, Address, u32),
 }
 
 // ============================================================

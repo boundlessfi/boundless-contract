@@ -24,7 +24,6 @@ pub fn claim_milestone(
     event_id: u64,
     recipient: Address,
     milestone: u32,
-    reputation_bump: u32,
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
@@ -57,6 +56,7 @@ pub fn claim_milestone(
 
     let count = storage::winner_count(env, event_id);
     let mut winner_position: Option<u32> = None;
+    let mut reputation_bump: u32 = 0;
     let mut already_claimed_for_recipient: u32 = 0;
     let mut already_paid_to_recipient: i128 = 0;
     for idx in 0..count {
@@ -68,7 +68,10 @@ pub fn claim_milestone(
             continue;
         }
         match w.milestone {
-            None => winner_position = Some(w.position),
+            None => {
+                winner_position = Some(w.position);
+                reputation_bump = w.reputation_bump;
+            }
             Some(_) => {
                 already_claimed_for_recipient = already_claimed_for_recipient.saturating_add(1);
                 already_paid_to_recipient = already_paid_to_recipient.saturating_add(w.amount);
@@ -147,6 +150,7 @@ pub fn claim_milestone(
             amount,
             milestone: Some(milestone),
             paid_at: Some(env.ledger().timestamp()),
+            reputation_bump,
         },
     );
 

@@ -123,7 +123,7 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &50_u32, &claim_op);
+    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &claim_op);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
@@ -140,19 +140,13 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     assert_eq!(event.remaining_escrow, 0);
 
     let winner_list = ctx.events.get_winners(&bounty_id);
-    assert_eq!(winner_list.len(), 2);
-    let anchor = winner_list.get(0).unwrap();
-    assert_eq!(anchor.recipient, ctx.applicant);
-    assert_eq!(anchor.position, 1);
-    assert_eq!(anchor.amount, TOTAL_BUDGET);
-    assert_eq!(anchor.milestone, None);
-    assert!(anchor.paid_at.is_none());
-    let claim = winner_list.get(1).unwrap();
-    assert_eq!(claim.recipient, ctx.applicant);
-    assert_eq!(claim.position, 1);
-    assert_eq!(claim.amount, TOTAL_BUDGET);
-    assert_eq!(claim.milestone, None);
-    assert!(claim.paid_at.is_some());
+    assert_eq!(winner_list.len(), 1);
+    let row = winner_list.get(0).unwrap();
+    assert_eq!(row.recipient, ctx.applicant);
+    assert_eq!(row.position, 1);
+    assert_eq!(row.amount, TOTAL_BUDGET);
+    assert_eq!(row.milestone, None);
+    assert!(row.paid_at.is_some());
 }
 
 #[test]
@@ -261,8 +255,8 @@ fn select_winners_handles_multi_recipient_distribution() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     // Pull-model: each winner claims their prize.
-    ctx.events.claim_prize(&bounty_id, &winner_a, &1_u32, &50_u32, &BytesN::random(&ctx.env));
-    ctx.events.claim_prize(&bounty_id, &winner_b, &2_u32, &25_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&bounty_id, &winner_a, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&bounty_id, &winner_b, &2_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let amount_a = TOTAL_BUDGET * 60 / 100;
@@ -371,7 +365,7 @@ fn cancel_after_select_winners_refunds_only_remaining() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&bounty_id, &winner_a, &1_u32, &50_u32, &claim_op);
+    ctx.events.claim_prize(&bounty_id, &winner_a, &1_u32, &claim_op);
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
@@ -416,7 +410,7 @@ fn select_grant_winner(ctx: &Ctx, grant_id: u64, recipient: &Address) {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
-            reputation_bump: 0,
+            reputation_bump: 5,
         },
     ];
     let op_select = BytesN::random(&ctx.env);
@@ -435,7 +429,7 @@ fn claim_milestone_pays_per_milestone_amount() {
 
     let op_claim = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op_claim);
+        .claim_milestone(&grant_id, &recipient, &0_u32, &op_claim);
 
     let per_milestone = TOTAL_BUDGET / 4;
     assert_eq!(token.balance(&recipient) - recipient_before, per_milestone);
@@ -460,17 +454,17 @@ fn claim_milestone_idempotent_per_recipient_and_milestone() {
 
     let op1 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op1);
+        .claim_milestone(&grant_id, &recipient, &0_u32, &op1);
 
     let op2 = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op2);
+        .try_claim_milestone(&grant_id, &recipient, &0_u32, &op2);
     assert!(res.is_err(), "same milestone twice should revert");
 
     let op3 = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &1_u32, &5_u32, &op3);
+        .claim_milestone(&grant_id, &recipient, &1_u32, &op3);
 }
 
 #[test]
@@ -483,7 +477,7 @@ fn claim_milestone_invalid_milestone_index_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&grant_id, &recipient, &4_u32, &5_u32, &op);
+        .try_claim_milestone(&grant_id, &recipient, &4_u32, &op);
     assert!(res.is_err(), "out-of-range milestone should revert");
 }
 
@@ -507,7 +501,7 @@ fn claim_milestone_rejects_non_grant_events() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&bounty_id2, &ctx.applicant, &0_u32, &5_u32, &op);
+        .try_claim_milestone(&bounty_id2, &ctx.applicant, &0_u32, &op);
     assert!(res.is_err(), "claim on Single-release event should revert");
 }
 
@@ -520,14 +514,14 @@ fn claim_milestone_final_milestone_marks_event_completed() {
 
     let op_a = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &0_u32, &5_u32, &op_a);
+        .claim_milestone(&grant_id, &recipient, &0_u32, &op_a);
 
     let mid = ctx.events.get_event(&grant_id);
     assert_eq!(mid.status, EventStatus::Active);
 
     let op_b = BytesN::random(&ctx.env);
     ctx.events
-        .claim_milestone(&grant_id, &recipient, &1_u32, &5_u32, &op_b);
+        .claim_milestone(&grant_id, &recipient, &1_u32, &op_b);
 
     let after = ctx.events.get_event(&grant_id);
     assert_eq!(after.status, EventStatus::Completed);
@@ -883,14 +877,12 @@ fn grant_last_milestone_sweeps_rounding_residue() {
         &grant_id,
         &recipient,
         &0_u32,
-        &5_u32,
         &BytesN::random(&ctx.env),
     );
     ctx.events.claim_milestone(
         &grant_id,
         &recipient,
         &1_u32,
-        &5_u32,
         &BytesN::random(&ctx.env),
     );
     let after_two = token.balance(&recipient);
@@ -900,7 +892,6 @@ fn grant_last_milestone_sweeps_rounding_residue() {
         &grant_id,
         &recipient,
         &2_u32,
-        &5_u32,
         &BytesN::random(&ctx.env),
     );
     let after_all = token.balance(&recipient);
@@ -948,7 +939,7 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
     // Pull-model: claim prize.
-    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &50_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET + top_up);
@@ -1025,7 +1016,7 @@ fn manager_override_can_select_winners() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &0_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&bounty_id, &ctx.applicant, &1_u32, &BytesN::random(&ctx.env));
 
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Completed);

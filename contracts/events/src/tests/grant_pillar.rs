@@ -95,7 +95,7 @@ fn select_winner(ctx: &Ctx, id: u64, recipient: &Address) {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
-            reputation_bump: 0
+            reputation_bump: 10
         },
     ];
     ctx.events
@@ -176,7 +176,7 @@ fn claim_milestone_pays_fixed_per_milestone_amount() {
     let fee_before = token.balance(&ctx.fee_account);
 
     ctx.events
-        .claim_milestone(&id, &recipient, &0_u32, &5_u32, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &0_u32, &BytesN::random(&ctx.env));
 
     let per_milestone = TOTAL_BUDGET / 4;
     assert_eq!(token.balance(&recipient) - before, per_milestone);
@@ -201,13 +201,13 @@ fn claim_milestone_last_sweeps_rounding_residue() {
     let floored = TOTAL_BUDGET / 3;
 
     ctx.events
-        .claim_milestone(&id, &recipient, &0_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &0_u32, &BytesN::random(&ctx.env));
     ctx.events
-        .claim_milestone(&id, &recipient, &1_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &1_u32, &BytesN::random(&ctx.env));
     assert_eq!(token.balance(&recipient) - before, floored * 2);
 
     ctx.events
-        .claim_milestone(&id, &recipient, &2_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &2_u32, &BytesN::random(&ctx.env));
     assert_eq!(token.balance(&recipient) - before, TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 
@@ -224,11 +224,11 @@ fn claim_milestone_marks_completed_on_last() {
     select_winner(&ctx, id, &recipient);
 
     ctx.events
-        .claim_milestone(&id, &recipient, &0_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &0_u32, &BytesN::random(&ctx.env));
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
 
     ctx.events
-        .claim_milestone(&id, &recipient, &1_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &1_u32, &BytesN::random(&ctx.env));
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 }
 
@@ -244,7 +244,7 @@ fn claim_milestone_earns_credits_and_bumps_reputation() {
     select_winner(&ctx, id, &recipient);
 
     ctx.events
-        .claim_milestone(&id, &recipient, &0_u32, &10_u32, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &0_u32, &BytesN::random(&ctx.env));
 
     let profile = ctx.profile.get_profile(&recipient).unwrap();
     assert_eq!(profile.reputation, 10);
@@ -268,10 +268,10 @@ fn claim_milestone_already_claimed_reverts() {
     select_winner(&ctx, id, &recipient);
 
     ctx.events
-        .claim_milestone(&id, &recipient, &0_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &recipient, &0_u32, &BytesN::random(&ctx.env));
     assert!(ctx
         .events
-        .try_claim_milestone(&id, &recipient, &0_u32, &0, &BytesN::random(&ctx.env))
+        .try_claim_milestone(&id, &recipient, &0_u32, &BytesN::random(&ctx.env))
         .is_err());
 }
 
@@ -283,7 +283,7 @@ fn claim_milestone_out_of_range_reverts() {
     select_winner(&ctx, id, &recipient);
     assert!(ctx
         .events
-        .try_claim_milestone(&id, &recipient, &3_u32, &0, &BytesN::random(&ctx.env))
+        .try_claim_milestone(&id, &recipient, &3_u32, &BytesN::random(&ctx.env))
         .is_err());
 }
 
@@ -294,7 +294,7 @@ fn claim_milestone_without_being_winner_reverts() {
     let non_winner = Address::generate(&ctx.env);
     assert!(ctx
         .events
-        .try_claim_milestone(&id, &non_winner, &0_u32, &0, &BytesN::random(&ctx.env))
+        .try_claim_milestone(&id, &non_winner, &0_u32, &BytesN::random(&ctx.env))
         .is_err());
 }
 
@@ -318,7 +318,7 @@ fn claim_milestone_on_single_release_reverts() {
     let r = Address::generate(&ctx.env);
     assert!(ctx
         .events
-        .try_claim_milestone(&id, &r, &0_u32, &0, &BytesN::random(&ctx.env))
+        .try_claim_milestone(&id, &r, &0_u32, &BytesN::random(&ctx.env))
         .is_err());
 }
 
@@ -330,10 +330,10 @@ fn claim_milestone_op_replay_reverts() {
     select_winner(&ctx, id, &recipient);
 
     let op = BytesN::random(&ctx.env);
-    ctx.events.claim_milestone(&id, &recipient, &0_u32, &0, &op);
+    ctx.events.claim_milestone(&id, &recipient, &0_u32, &op);
     assert!(ctx
         .events
-        .try_claim_milestone(&id, &recipient, &0_u32, &0, &op)
+        .try_claim_milestone(&id, &recipient, &0_u32, &op)
         .is_err());
 }
 
@@ -386,13 +386,13 @@ fn two_winner_grant_each_claims_their_share() {
     let fee_before = token.balance(&ctx.fee_account);
 
     ctx.events
-        .claim_milestone(&id, &w1, &0_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &w1, &0_u32, &BytesN::random(&ctx.env));
     ctx.events
-        .claim_milestone(&id, &w1, &1_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &w1, &1_u32, &BytesN::random(&ctx.env));
     ctx.events
-        .claim_milestone(&id, &w2, &0_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &w2, &0_u32, &BytesN::random(&ctx.env));
     ctx.events
-        .claim_milestone(&id, &w2, &1_u32, &0, &BytesN::random(&ctx.env));
+        .claim_milestone(&id, &w2, &1_u32, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&w1) - w1_before, TOTAL_BUDGET * 60 / 100);
     assert_eq!(token.balance(&w2) - w2_before, TOTAL_BUDGET * 40 / 100);

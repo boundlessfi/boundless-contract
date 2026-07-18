@@ -308,7 +308,7 @@ fn select_winners_single_recipient_sweeps_escrow() {
 
     // Pull-model: claim prize in winner's own transaction.
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &50_u32, &claim_op);
+    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &claim_op);
 
     assert_eq!(token.balance(&ctx.applicant) - winner_before, TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
@@ -324,23 +324,15 @@ fn select_winners_single_recipient_sweeps_escrow() {
     assert_eq!(event.status, EventStatus::Completed);
     assert_eq!(event.remaining_escrow, 0);
 
-    // Two winner rows: anchor (from select_winners) + claim row (from claim_prize).
+    // Single winner row: anchor updated in-place by claim_prize with paid_at.
     let winner_list = ctx.events.get_winners(&id);
-    assert_eq!(winner_list.len(), 2);
-    // Anchor row (select_winners): recorded but unpaid.
-    let anchor = winner_list.get(0).unwrap();
-    assert_eq!(anchor.recipient, ctx.applicant);
-    assert_eq!(anchor.position, 1);
-    assert_eq!(anchor.amount, TOTAL_BUDGET);
-    assert!(anchor.milestone.is_none());
-    assert!(anchor.paid_at.is_none());
-    // Claim row (claim_prize): paid.
-    let claim = winner_list.get(1).unwrap();
-    assert_eq!(claim.recipient, ctx.applicant);
-    assert_eq!(claim.position, 1);
-    assert_eq!(claim.amount, TOTAL_BUDGET);
-    assert!(claim.milestone.is_none());
-    assert!(claim.paid_at.is_some());
+    assert_eq!(winner_list.len(), 1);
+    let row = winner_list.get(0).unwrap();
+    assert_eq!(row.recipient, ctx.applicant);
+    assert_eq!(row.position, 1);
+    assert_eq!(row.amount, TOTAL_BUDGET);
+    assert!(row.milestone.is_none());
+    assert!(row.paid_at.is_some());
 }
 
 #[test]
@@ -381,9 +373,9 @@ fn select_winners_multi_position_splits_by_distribution() {
     let amt_2 = TOTAL_BUDGET * 30 / 100;
     let amt_3 = TOTAL_BUDGET * 20 / 100;
 
-    ctx.events.claim_prize(&id, &first, &1_u32, &60_u32, &BytesN::random(&ctx.env));
-    ctx.events.claim_prize(&id, &second, &2_u32, &40_u32, &BytesN::random(&ctx.env));
-    ctx.events.claim_prize(&id, &third, &3_u32, &20_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&id, &first, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&id, &second, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&id, &third, &3_u32, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&first), amt_1);
     assert_eq!(token.balance(&second), amt_2);
@@ -400,8 +392,8 @@ fn select_winners_multi_position_splits_by_distribution() {
     let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Completed);
     assert_eq!(event.remaining_escrow, 0);
-    // 3 anchors + 3 claim rows = 6.
-    assert_eq!(ctx.events.get_winners(&id).len(), 6);
+    // 3 anchors updated in-place by claim_prize with paid_at.
+    assert_eq!(ctx.events.get_winners(&id).len(), 3);
 }
 
 // ============================================================
@@ -551,7 +543,7 @@ fn select_winners_on_completed_event_reverts() {
 
     // Claim to drain escrow and complete the event.
     let claim_op = BytesN::random(&ctx.env);
-    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &0_u32, &claim_op);
+    ctx.events.claim_prize(&id, &ctx.applicant, &1_u32, &claim_op);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 
     let again = Address::generate(&ctx.env);
@@ -611,7 +603,7 @@ fn claim_milestone_on_single_release_hackathon_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_claim_milestone(&id, &ctx.applicant, &0_u32, &0_u32, &op);
+        .try_claim_milestone(&id, &ctx.applicant, &0_u32, &op);
     assert!(
         res.is_err(),
         "claim_milestone must reject a Single-release hackathon"

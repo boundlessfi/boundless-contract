@@ -22,11 +22,11 @@ const MAX_TITLE_LEN: u32 = 120;
 // Max winners per select_winners call. With the pull-model (2026-07),
 // select_winners only records winners (1 storage write each) and defers
 // all token transfers + cross-contract calls to per-winner claim_prize
-// transactions. This makes the per-winner cost negligible, so the cap is
-// raised from 50 to 5_000 (matching MAX_APPLICANTS_PER_EVENT / MAX_CONTRIBUTORS_PER_EVENT
-// for consistency). The practical ceiling is now the storage footprint of
-// the winner list rather than the per-tx execution budget.
-pub const MAX_WINNERS_PER_SELECT: u32 = 5_000;
+// transactions. However, claim_prize still performs a linear scan of the
+// winner list to locate the anchor row, and get_winners loads all rows
+// into a Vec. Without keyed winner lookup or batched recording, 500 is a
+// safe ceiling compatible with the current table-backed implementation.
+pub const MAX_WINNERS_PER_SELECT: u32 = 500;
 
 pub const MAX_APPLICANTS_PER_EVENT: u32 = 5_000;
 pub const MAX_CONTRIBUTORS_PER_EVENT: u32 = 5_000;
@@ -152,6 +152,7 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
                 amount: 0,
                 milestone: None,
                 paid_at: None,
+                reputation_bump: 0,
             },
         );
     }
@@ -624,7 +625,8 @@ pub fn select_winners(
                         position: spec.position,
                         amount,
                         milestone: None,
-                        paid_at: None, // set by claim_prize
+                        paid_at: None,
+                        reputation_bump: spec.reputation_bump,
                     },
                 );
             }
@@ -640,6 +642,7 @@ pub fn select_winners(
                         amount: 0,
                         milestone: None,
                         paid_at: None,
+                        reputation_bump: spec.reputation_bump,
                     },
                 );
             }
@@ -675,7 +678,6 @@ pub fn claim_prize(
     event_id: u64,
     recipient: Address,
     position: u32,
-    reputation_bump: u32,
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
@@ -700,9 +702,10 @@ pub fn claim_prize(
     }
 
     // Locate the anchor row (milestone == None) matching this recipient and
-    // position. The amount was pre-computed in select_winners.
+    // position. Captures the index for in-place update, the pre-computed
+    // amount, and the manager-approved reputation_bump.
     let count = storage::winner_count(env, event_id);
-    let mut winner_amount: Option<i128> = None;
+    let mut winner_info: Option<(u32, i128, u32)> = None;
     for idx in 0..count {
         let w = match storage::winner_at(env, event_id, idx) {
             Some(w) => w,
@@ -712,11 +715,11 @@ pub fn claim_prize(
             continue;
         }
         if w.milestone.is_none() {
-            winner_amount = Some(w.amount);
+            winner_info = Some((idx, w.amount, w.reputation_bump));
             break;
         }
     }
-    let amount = winner_amount.ok_or(Error::NoSubmissions)?;
+    let (anchor_idx, amount, reputation_bump) = winner_info.ok_or(Error::NoSubmissions)?;
 
     if amount <= 0 {
         return Err(Error::InvalidDistribution);
@@ -745,16 +748,19 @@ pub fn claim_prize(
     // Mark prize claimed (prevents replay for this recipient + position).
     storage::mark_prize_claimed(env, event_id, &recipient, position);
 
-    // Append per-claim Winner row.
-    storage::append_winner(
+    // Update the anchor row in-place with the paid timestamp instead of
+    // appending a duplicate row. This keeps winner_count == selected count.
+    storage::set_winner_at(
         env,
         event_id,
+        anchor_idx,
         &Winner {
             recipient: recipient.clone(),
             position,
             amount,
             milestone: None,
             paid_at: Some(env.ledger().timestamp()),
+            reputation_bump,
         },
     );
 

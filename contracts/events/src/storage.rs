@@ -433,6 +433,12 @@ pub fn winner_at(env: &Env, id: u64, idx: u32) -> Option<Winner> {
     w
 }
 
+pub fn set_winner_at(env: &Env, id: u64, idx: u32, w: &Winner) {
+    let key = DataKey::EventWinnerAt(id, idx);
+    env.storage().persistent().set(&key, w);
+    touch_event_persistent(env, &key);
+}
+
 pub fn append_winner(env: &Env, id: u64, w: &Winner) {
     let cur = winner_count(env, id);
     let at_key = DataKey::EventWinnerAt(id, cur);

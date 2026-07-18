@@ -439,7 +439,7 @@ fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
         .select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
     // Pull-model: claim prize to drain escrow (60% of 2000 = 1200).
-    ctx.events.claim_prize(&id, &w, &1_u32, &0_u32, &BytesN::random(&ctx.env));
+    ctx.events.claim_prize(&id, &w, &1_u32, &BytesN::random(&ctx.env));
 
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);
