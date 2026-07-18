@@ -263,6 +263,21 @@ pub fn add_funds(
     Ok(())
 }
 
+/// True if the Single-release event has at least one winner anchor whose
+/// prize has not yet been claimed (`paid_at` is `None`).  The manager must
+/// not be able to cancel and drain the escrow before those winners claim.
+fn has_unclaimed_single_winner(env: &Env, event_id: u64) -> bool {
+    let count = storage::winner_count(env, event_id);
+    for idx in 0..count {
+        if let Some(w) = storage::winner_at(env, event_id, idx) {
+            if w.milestone.is_none() && w.paid_at.is_none() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // ============================================================
 // PAGED CANCEL
 // ============================================================
@@ -276,6 +291,13 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     }
     if storage::get_cancellation_state(env, event_id).is_some() {
         return Err(Error::CancellationAlreadyStarted);
+    }
+
+    // Prevent cancel after winners selected for Single-release (pull-model).
+    // The manager must not be able to drain escrow before winners claim.
+    if matches!(event.release_kind, ReleaseKind::Single) && has_unclaimed_single_winner(env, event_id)
+    {
+        return Err(Error::WinnersAlreadySelected);
     }
 
     resolve_manager(env, event_id, &event.owner).require_auth();
