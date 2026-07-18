@@ -56,16 +56,8 @@ pub fn claim_milestone(
 
     let is_crowdfunding = matches!(event.pillar, Pillar::Crowdfunding);
 
-    let anchor_idx =
-        storage::get_grant_recipient_idx(env, event_id, &recipient).ok_or(Error::NoSubmissions)?;
-    let anchor = storage::winner_at(env, event_id, anchor_idx).ok_or(Error::NoSubmissions)?;
-    if anchor.recipient != recipient || anchor.milestone.is_some() {
-        return Err(Error::NoSubmissions);
-    }
-    let position = anchor.position;
-    let reputation_bump = anchor.reputation_bump.unwrap_or(0);
-    let already_claimed_for_recipient =
-        storage::get_grant_recipient_claim_count(env, event_id, &recipient);
+    let (position, reputation_bump, already_claimed_for_recipient) =
+        resolve_recipient(env, event_id, &recipient)?;
     let already_paid_to_recipient = if is_crowdfunding {
         0
     } else {
@@ -166,4 +158,63 @@ pub fn claim_milestone(
 
     idempotency::mark_seen(env, &op_id);
     Ok(())
+}
+
+/// Resolve recipient anchor (position + reputation_bump) and milestone claim count.
+///
+/// Tries the O(1) index path first. If the indexes don't exist (pre-upgrade events),
+/// falls back to a linear scan over winner rows and persists the indexes so future
+/// calls use the fast path.
+fn resolve_recipient(
+    env: &Env,
+    event_id: u64,
+    recipient: &Address,
+) -> Result<(u32, u32, u32), Error> {
+    // Fast path: indexes already exist (post-upgrade events).
+    if let Some(anchor_idx) = storage::get_grant_recipient_idx(env, event_id, recipient) {
+        let anchor = storage::winner_at(env, event_id, anchor_idx).ok_or(Error::NoSubmissions)?;
+        if anchor.recipient != *recipient || anchor.milestone.is_some() {
+            return Err(Error::NoSubmissions);
+        }
+        let claim_count = storage::get_grant_recipient_claim_count(env, event_id, recipient);
+        return Ok((
+            anchor.position,
+            anchor.reputation_bump.unwrap_or(0),
+            claim_count,
+        ));
+    }
+
+    // Legacy fallback: scan winner rows, which works before the indexes existed.
+    let count = storage::winner_count(env, event_id);
+    let mut anchor_idx = None;
+    let mut position = None;
+    let mut reputation_bump = 0;
+    let mut claim_count = 0u32;
+    for idx in 0..count {
+        let w = match storage::winner_at(env, event_id, idx) {
+            Some(w) => w,
+            None => continue,
+        };
+        if w.recipient != *recipient {
+            continue;
+        }
+        match w.milestone {
+            None => {
+                anchor_idx = Some(idx);
+                position = Some(w.position);
+                reputation_bump = w.reputation_bump.unwrap_or(0);
+            }
+            Some(_) => {
+                claim_count = claim_count.saturating_add(1);
+            }
+        }
+    }
+    let idx = anchor_idx.ok_or(Error::NoSubmissions)?;
+    let pos = position.ok_or(Error::NoSubmissions)?;
+
+    // Persist indexes for future O(1) lookups.
+    storage::set_grant_recipient_idx(env, event_id, recipient, idx);
+    storage::set_grant_recipient_claim_count(env, event_id, recipient, claim_count);
+
+    Ok((pos, reputation_bump, claim_count))
 }

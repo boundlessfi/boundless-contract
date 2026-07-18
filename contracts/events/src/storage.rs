@@ -490,6 +490,12 @@ pub fn get_grant_recipient_claim_count(env: &Env, id: u64, recipient: &Address) 
     count.unwrap_or(0)
 }
 
+pub fn set_grant_recipient_claim_count(env: &Env, id: u64, recipient: &Address, count: u32) {
+    let key = DataKey::GrantRecipientClaimCount(id, recipient.clone());
+    env.storage().persistent().set(&key, &count);
+    touch_event_persistent(env, &key);
+}
+
 pub fn increment_grant_recipient_claim_count(env: &Env, id: u64, recipient: &Address) {
     let key = DataKey::GrantRecipientClaimCount(id, recipient.clone());
     let count: u32 = env.storage().persistent().get(&key).unwrap_or(0);
