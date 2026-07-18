@@ -4,10 +4,10 @@ runs:
   using: composite
   steps:
     - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eac063c4173a8a8848 
+      uses: Swatinem/rust-cache@7e35be21c2b94d972b1143087fabc27d7dc881ef 
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@1482605baf623a1ba7bb69329c91659433264734 
+      uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c 
       with:
         toolchain: stable
         targets: wasm32v1-none
