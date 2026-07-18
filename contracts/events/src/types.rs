@@ -197,9 +197,6 @@ pub enum DataKey {
     // Appended in 1.2.0 to preserve existing key discriminants.
     NonOwnerContributionTotal(u64),
 
-    // Added last so earlier variant discriminants remain stable on upgrade.
-    PrizeClaimed(u64, Address, u32),
-
     // Winner anchor index for O(1) claim_prize lookup (added 2026-07).
     WinnerIndex(u64, Address, u32),
 

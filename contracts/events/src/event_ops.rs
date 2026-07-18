@@ -737,11 +737,6 @@ pub fn claim_prize(
 
     recipient.require_auth();
 
-    // Prevent double-claim for this (event, recipient, position).
-    if storage::is_prize_claimed(env, event_id, &recipient, position) {
-        return Err(Error::PrizeAlreadyClaimed);
-    }
-
     // Look up the anchor index stored at selection time (O(1) instead of
     // a linear scan). Returns NoSubmissions if no winner matches or the
     // prize has already been claimed (canonical guard: paid_at).
@@ -767,9 +762,6 @@ pub fn claim_prize(
     // Release token from escrow — critical path, must succeed.
     escrow::release(env, &event.token, &recipient, amount);
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
-
-    // Mark prize claimed (prevents replay for this recipient + position).
-    storage::mark_prize_claimed(env, event_id, &recipient, position);
 
     // Update the anchor row in-place with the paid timestamp instead of
     // appending a duplicate row. This keeps winner_count == selected count.

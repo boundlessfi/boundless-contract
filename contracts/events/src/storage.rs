@@ -649,27 +649,6 @@ pub fn set_crowdfunding_milestones_claimed(env: &Env, id: u64, count: u32) {
 }
 
 // ============================================================
-// PRIZE CLAIMS (persistent; per-(event, recipient, position))
-//
-// Tracks which winners have claimed their prize in the pull-model flow for
-// Single-release events (bounties, hackathons). Written by claim_prize.
-// ============================================================
-pub fn is_prize_claimed(env: &Env, id: u64, recipient: &Address, position: u32) -> bool {
-    let key = DataKey::PrizeClaimed(id, recipient.clone(), position);
-    let claimed: Option<bool> = env.storage().persistent().get(&key);
-    if claimed.is_some() {
-        touch_event_persistent(env, &key);
-    }
-    claimed.unwrap_or(false)
-}
-
-pub fn mark_prize_claimed(env: &Env, id: u64, recipient: &Address, position: u32) {
-    let key = DataKey::PrizeClaimed(id, recipient.clone(), position);
-    env.storage().persistent().set(&key, &true);
-    touch_event_persistent(env, &key);
-}
-
-// ============================================================
 // CANCELLATION STATE (persistent; present only while Cancelling)
 // ============================================================
 pub fn get_cancellation_state(env: &Env, id: u64) -> Option<CancellationState> {
