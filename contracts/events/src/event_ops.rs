@@ -736,7 +736,7 @@ pub fn claim_prize(
         if w.recipient != recipient || w.position != position {
             continue;
         }
-        if w.milestone.is_none() {
+        if w.milestone.is_none() && w.paid_at.is_none() {
             winner_info = Some((idx, w.amount, w.reputation_bump));
             break;
         }
