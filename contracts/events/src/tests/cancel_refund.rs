@@ -438,6 +438,11 @@ fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
     ctx.events
         .select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
+    // Pull model: the winner claims (60% of 2000 = 1200) before the
+    // manager can cancel; the remainder splits pro-rata below.
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);
     let owner_before = token.balance(&ctx.owner);

@@ -265,6 +265,10 @@ fn apply_on_completed_event_reverts() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
+    // Pull model: claim the sole prize to drain escrow and complete.
+    ctx.events
+        .claim_prize(&bounty_id, &1_u32, &BytesN::random(&ctx.env));
+
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Completed);
 

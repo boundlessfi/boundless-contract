@@ -10,4 +10,5 @@ mod crowdfunding;
 mod escrow_fee_math;
 mod grant_pillar;
 mod hackathon_pillar;
+mod prize_claim;
 mod token_whitelist;

@@ -216,6 +216,15 @@ impl EventsContract {
         event_ops::select_winners(&env, event_id, winners, op_id)
     }
 
+    pub fn claim_prize(
+        env: Env,
+        event_id: u64,
+        position: u32,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        event_ops::claim_prize(&env, event_id, position, op_id)
+    }
+
     // ============================================================
     // MANAGEMENT AUTHORITY (manager != funder/owner)
     // ============================================================

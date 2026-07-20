@@ -122,6 +122,10 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
+    // Pull model: winner claims in their own transaction.
+    ctx.events
+        .claim_prize(&bounty_id, &1_u32, &BytesN::random(&ctx.env));
+
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account), FEE_AMOUNT);
@@ -251,6 +255,12 @@ fn select_winners_handles_multi_recipient_distribution() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
+    // Pull model: each winner claims their own position.
+    ctx.events
+        .claim_prize(&bounty_id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&bounty_id, &2_u32, &BytesN::random(&ctx.env));
+
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let amount_a = TOTAL_BUDGET * 60 / 100;
     let amount_b = TOTAL_BUDGET * 40 / 100;
@@ -356,6 +366,10 @@ fn cancel_after_select_winners_refunds_only_remaining() {
     ];
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
+
+    // Pull model: winner claims their 60% before the manager can cancel.
+    ctx.events
+        .claim_prize(&bounty_id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
@@ -931,6 +945,10 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
+    // Pull model: claim; the pre-selection top-up is in the baseline.
+    ctx.events
+        .claim_prize(&bounty_id, &1_u32, &BytesN::random(&ctx.env));
+
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET + top_up);
 
@@ -1005,6 +1023,10 @@ fn manager_override_can_select_winners() {
     ];
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
+
+    // Pull model: completion happens at claim time.
+    ctx.events
+        .claim_prize(&bounty_id, &1_u32, &BytesN::random(&ctx.env));
 
     let event = ctx.events.get_event(&bounty_id);
     assert_eq!(event.status, EventStatus::Completed);

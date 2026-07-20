@@ -380,6 +380,8 @@ fn single_release_pays_full_escrow_for_100_percent() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&winner), TOTAL_BUDGET);
@@ -421,6 +423,12 @@ fn multi_position_split_pays_correct_amounts() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let escrow = TOTAL_BUDGET; // all positions filled at create time
@@ -465,6 +473,12 @@ fn three_way_33_33_34_split_rounding() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let escrow = TOTAL_BUDGET;
@@ -496,6 +510,8 @@ fn partial_position_fill_leaves_residual_escrow() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&w1), TOTAL_BUDGET * 60 / 100);
@@ -538,6 +554,8 @@ fn partner_funds_grow_winner_payout() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&winner), escrow_at_select);
@@ -1046,6 +1064,8 @@ fn fee_and_winner_balances_consistent() {
     ];
     let op_sel = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_sel);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&winner), escrow);
     assert_eq!(token.balance(&ctx.fee_account), create_fee + contrib_fee);

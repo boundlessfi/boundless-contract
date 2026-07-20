@@ -306,6 +306,11 @@ fn select_winners_single_recipient_sweeps_escrow() {
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
 
+    // Pull model: selection only records; the winner claims in their own tx.
+    assert_eq!(token.balance(&ctx.applicant) - winner_before, 0);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+
     assert_eq!(token.balance(&ctx.applicant) - winner_before, TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 
@@ -363,6 +368,14 @@ fn select_winners_multi_position_splits_by_distribution() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+
+    // Pull model: each winner claims their own position.
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
 
     let amt_1 = TOTAL_BUDGET * 50 / 100;
     let amt_2 = TOTAL_BUDGET * 30 / 100;
@@ -445,7 +458,7 @@ fn select_winners_duplicate_position_reverts() {
 }
 
 #[test]
-fn select_winners_second_call_reverts_winners_already_selected() {
+fn select_winners_batches_append_and_position_replay_reverts() {
     let ctx = setup();
     let dl = Some(ctx.env.ledger().timestamp() + 86_400);
     let id = create_hackathon_with(&ctx, three_way_dist(&ctx.env), dl);
@@ -463,18 +476,53 @@ fn select_winners_second_call_reverts_winners_already_selected() {
 
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
 
-    let second = Address::generate(&ctx.env);
-    let second_winner = soroban_sdk::vec![
+    // Re-awarding an already-taken position must revert, even across calls.
+    let usurper = Address::generate(&ctx.env);
+    let replay = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
-            recipient: second,
-            position: 2,
+            recipient: usurper,
+            position: 1,
             reputation_bump: 0,
         },
     ];
-    let op2 = BytesN::random(&ctx.env);
-    let res = ctx.events.try_select_winners(&id, &second_winner, &op2);
-    assert!(res.is_err(), "a second select_winners must revert");
+    let res = ctx
+        .events
+        .try_select_winners(&id, &replay, &BytesN::random(&ctx.env));
+    assert!(res.is_err(), "re-awarding a taken position must revert");
+
+    // A later batch for untaken positions appends (1.3.0 batching), and
+    // amounts stay anchored to the baseline captured at the first batch.
+    let second = Address::generate(&ctx.env);
+    let third = Address::generate(&ctx.env);
+    let batch2 = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: second.clone(),
+            position: 2,
+            reputation_bump: 0,
+        },
+        WinnerSpec {
+            recipient: third.clone(),
+            position: 3,
+            reputation_bump: 0,
+        },
+    ];
+    ctx.events
+        .select_winners(&id, &batch2, &BytesN::random(&ctx.env));
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
+
+    assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET * 50 / 100);
+    assert_eq!(token.balance(&second), TOTAL_BUDGET * 30 / 100);
+    assert_eq!(token.balance(&third), TOTAL_BUDGET * 20 / 100);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 }
 
 #[test]
@@ -528,6 +576,10 @@ fn select_winners_on_completed_event_reverts() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    // Pull model: the event completes when the last prize is claimed.
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 
     let again = Address::generate(&ctx.env);

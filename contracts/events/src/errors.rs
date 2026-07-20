@@ -66,4 +66,9 @@ pub enum Error {
     Paused = 70,
 
     ProfileCallFailed = 80,
+
+    // Pull-model prize claims (1.3.0, #61). NOTE: this enum is now at the
+    // XDR spec cap of 50 cases; the next addition must reuse or
+    // consolidate an existing variant.
+    PrizeAlreadyClaimed = 91,
 }

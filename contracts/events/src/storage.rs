@@ -6,7 +6,8 @@ use soroban_sdk::String;
 
 use crate::errors::Error;
 use crate::types::{
-    CancellationState, DataKey, EventRecord, PendingAdmin, PendingUpgrade, Submission, Winner,
+    CancellationState, DataKey, EventRecord, PendingAdmin, PendingUpgrade, PrizeAward, Submission,
+    Winner,
 };
 
 // ============================================================
@@ -443,6 +444,75 @@ pub fn append_winner(env: &Env, id: u64, w: &Winner) {
     let new_count = cur.saturating_add(1);
     env.storage().persistent().set(&count_key, &new_count);
     touch_event_persistent(env, &count_key);
+}
+
+pub fn set_winner_at(env: &Env, id: u64, idx: u32, w: &Winner) {
+    let key = DataKey::EventWinnerAt(id, idx);
+    env.storage().persistent().set(&key, w);
+    touch_event_persistent(env, &key);
+}
+
+// ============================================================
+// PRIZE AWARDS (pull-model claims; persistent, keyed by (event, position))
+// ============================================================
+pub fn get_prize_award(env: &Env, id: u64, position: u32) -> Option<PrizeAward> {
+    let key = DataKey::EventPrizeAward(id, position);
+    let a: Option<PrizeAward> = env.storage().persistent().get(&key);
+    if a.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    a
+}
+
+pub fn set_prize_award(env: &Env, id: u64, position: u32, award: &PrizeAward) {
+    let key = DataKey::EventPrizeAward(id, position);
+    env.storage().persistent().set(&key, award);
+    touch_event_persistent(env, &key);
+}
+
+pub fn unclaimed_prize_count(env: &Env, id: u64) -> u32 {
+    let key = DataKey::EventUnclaimedPrizes(id);
+    let n: Option<u32> = env.storage().persistent().get(&key);
+    if n.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    n.unwrap_or(0)
+}
+
+pub fn set_unclaimed_prize_count(env: &Env, id: u64, count: u32) {
+    let key = DataKey::EventUnclaimedPrizes(id);
+    env.storage().persistent().set(&key, &count);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_prize_base_escrow(env: &Env, id: u64) -> Option<i128> {
+    let key = DataKey::EventPrizeBaseEscrow(id);
+    let b: Option<i128> = env.storage().persistent().get(&key);
+    if b.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    b
+}
+
+pub fn set_prize_base_escrow(env: &Env, id: u64, base: i128) {
+    let key = DataKey::EventPrizeBaseEscrow(id);
+    env.storage().persistent().set(&key, &base);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_prize_claim_expiry(env: &Env, id: u64) -> Option<u64> {
+    let key = DataKey::EventPrizeClaimExpiry(id);
+    let t: Option<u64> = env.storage().persistent().get(&key);
+    if t.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    t
+}
+
+pub fn set_prize_claim_expiry(env: &Env, id: u64, expires_at: u64) {
+    let key = DataKey::EventPrizeClaimExpiry(id);
+    env.storage().persistent().set(&key, &expires_at);
+    touch_event_persistent(env, &key);
 }
 
 pub fn winners_snapshot(env: &Env, id: u64, max: u32) -> Vec<Winner> {
