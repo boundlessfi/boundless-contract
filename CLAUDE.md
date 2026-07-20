@@ -13,7 +13,7 @@ The Stellar Development Foundation publishes a Claude Code skill that bundles cu
 
 After install, the seven sub-skills (`soroban`, `dapp`, `assets`, `data`, `agentic-payments`, `zk-proofs`, `standards`) become available across sessions. Lean on `soroban/` for contract changes and audit prep; lean on `dapp/` and `assets/` only when the work crosses into the frontend wallet or trustline flows.
 
-Source: https://github.com/stellar/stellar-dev-skill
+Source: <https://github.com/stellar/stellar-dev-skill>
 
 ## Hard rules
 
@@ -49,3 +49,6 @@ cargo build --release --target wasm32-unknown-unknown
 ```
 
 Update `BACKLOG.md` if your PR closes one of the entries there.
+
+@AGENTS.md
+Never add "Co-Authored-By" lines to commits
