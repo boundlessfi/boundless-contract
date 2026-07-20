@@ -196,8 +196,7 @@ pub enum DataKey {
     // Appended in 1.2.0 to preserve existing key discriminants.
     NonOwnerContributionTotal(u64),
 
-    // Appended in 1.3.0 (pull-model prize claims, #61). New keys only; the
-    // persisted Winner/EventRecord layouts are untouched, so no migration.
+    // Appended in 1.3.0 to preserve existing key discriminants.
     EventPrizeAward(u64, u32),
     EventUnclaimedPrizes(u64),
     EventPrizeBaseEscrow(u64),
@@ -205,10 +204,7 @@ pub enum DataKey {
 }
 
 // ============================================================
-// PRIZE AWARD payload (pull-model claims; keyed by (event, position))
-//
-// Written once per position by select_winners; consumed by claim_prize.
-// Lives in its own key so the persisted Winner row layout stays stable.
+// PRIZE AWARD payload (keyed by (event, position); pull-model claims)
 // ============================================================
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

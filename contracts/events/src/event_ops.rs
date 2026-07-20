@@ -19,18 +19,10 @@ use crate::types::{
 
 const MAX_TITLE_LEN: u32 = 120;
 
-// Per-call winner cap. Since 1.3.0 (#61) Single-release selection is
-// batchable: each position is awardable exactly once, so an event's total
-// winner count is bounded by its winner_distribution, and each call stays
-// within this known-safe per-transaction bound.
 const MAX_WINNERS_PER_SELECT: u32 = 50;
 
-// How long selected winners have to claim before the manager may cancel
-// the event and sweep unclaimed prizes back through the refund path.
-// Anchored at selection time (not the event deadline, which typically
-// passes before winners are even selected). Refreshed by each selection
-// batch. Constant for now; a per-event override belongs on EventRecord and
-// must wait for the next migration window (see BACKLOG).
+// Anchored at selection time, not the event deadline (which usually passes
+// before winners are selected). A per-event override needs a migration.
 pub const PRIZE_CLAIM_WINDOW_SECS: u64 = 90 * 24 * 60 * 60;
 
 pub const MAX_APPLICANTS_PER_EVENT: u32 = 5_000;
@@ -282,11 +274,8 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
         return Err(Error::CancellationAlreadyStarted);
     }
 
-    // Pull-model gate (1.3.0, #61): while selected prizes remain unclaimed
-    // and the claim window is open, the escrow is owed to winners and the
-    // manager must not cancel it out from under them. Once the window
-    // expires, cancellation proceeds and unclaimed amounts flow back
-    // through the normal refund path, so escrow can never be stranded.
+    // Block cancel while prizes are unclaimed and the window is open;
+    // after it expires, unclaimed amounts sweep out via the refund path.
     if matches!(event.release_kind, ReleaseKind::Single)
         && storage::unclaimed_prize_count(env, event_id) > 0
     {
@@ -574,11 +563,9 @@ pub fn select_winners(
 
     let existing_count = storage::winner_count(env, event_id);
     match event.release_kind {
-        // Single-release selection is batchable on the pull model: the
-        // per-position award key is the replay lock. An event with winner
-        // rows but no base-escrow key was selected by the pre-1.3.0 push
-        // model; keep those one-shot.
         ReleaseKind::Single => {
+            // Winner rows but no base-escrow key means a pre-1.3.0 push-model
+            // event: keep it one-shot. New events award each position once.
             if existing_count > 0 && storage::get_prize_base_escrow(env, event_id).is_none() {
                 return Err(Error::WinnersAlreadySelected);
             }
@@ -623,12 +610,8 @@ pub fn select_winners(
 
     match event.release_kind {
         ReleaseKind::Single => {
-            // Pull model (1.3.0, #61): record each winner's prize against a
-            // baseline fixed at the first selection; the token transfer and
-            // profile effects happen in claim_prize, one transaction per
-            // winner. The distribution sums to exactly 100 and every
-            // position is awardable once, so the sum of recorded amounts
-            // can never exceed the baseline.
+            // Amounts are fixed against the escrow baseline captured at the
+            // first selection; claim_prize does the transfer and profile calls.
             let base_escrow = match storage::get_prize_base_escrow(env, event_id) {
                 Some(b) => b,
                 None => {
@@ -695,8 +678,7 @@ pub fn select_winners(
                 unclaimed.saturating_add(winners.len()),
             );
 
-            // Refresh the claim window so late-selected batches get the
-            // full window; start_cancel stays blocked until it expires.
+            // Extend the window so a later batch's winners get the full term.
             let expiry = now.saturating_add(PRIZE_CLAIM_WINDOW_SECS);
             let cur = storage::get_prize_claim_expiry(env, event_id).unwrap_or(0);
             if expiry > cur {
@@ -734,14 +716,7 @@ pub fn select_winners(
 }
 
 // ============================================================
-// CLAIM PRIZE (pull model for Single-release events; 1.3.0, #61)
-//
-// One winner per transaction: the recorded recipient authorizes, the
-// amount fixed at selection time is released from escrow, and profile
-// effects run best-effort after payment so a profile-contract failure can
-// never strand the payout. Mirrors the claim_milestone pull pattern used
-// by Multi-release events. WinnerPaid keeps firing at the moment money
-// moves, so off-chain consumers are unchanged.
+// CLAIM PRIZE (pull model for Single-release events; #61)
 // ============================================================
 pub fn claim_prize(
     env: &Env,
@@ -804,8 +779,7 @@ pub fn claim_prize(
     storage::set_event(env, event_id, &event);
     idempotency::mark_seen(env, &op_id);
 
-    // Interactions after effects. A failed token transfer traps and rolls
-    // the whole invocation back, so ordering costs nothing.
+    // State written above; release last so a reentrant token can't double-claim.
     escrow::release(env, &event.token, &award.recipient, amount);
 
     evt::WinnerPaid {
@@ -817,8 +791,7 @@ pub fn claim_prize(
     }
     .publish(env);
 
-    // Best-effort profile effects: funds already moved, so a profile
-    // failure must not fail the claim.
+    // Best-effort: the payout is final, so a profile failure must not revert it.
     let profile = profile_client::client(env);
     let reason_win = Symbol::new(env, "win");
 

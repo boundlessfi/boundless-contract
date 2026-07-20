@@ -1,10 +1,5 @@
-// Pull-model prize claims (1.3.0, #61): dedicated coverage.
-//
-// select_winners records prizes; claim_prize pays one winner per
-// transaction. These tests cover the claim math (recipient + fee account
-// deltas), the auth surface, replay/double-claim guards, the cancel gate
-// with its claim-window escape hatch, and the storage-layout guard for
-// pre-1.3.0 Winner rows.
+// Pull-model prize claims (#61): claim math, auth, replay/double-claim,
+// the cancel gate + window escape hatch, and the pre-1.3.0 row decode guard.
 
 #![cfg(test)]
 
@@ -438,11 +433,9 @@ fn claim_window_refreshes_on_a_later_batch() {
 // Storage-layout guard for pre-1.3.0 winner rows
 // ============================================================
 
-// The Winner struct exactly as persisted by contracts up to 1.2.0. If a
-// field is ever added to `types::Winner`, this test starts failing with
-// Error(Object, UnexpectedSize): every deployed row would brick reads
-// (claim_milestone, get_winners, select_winners guards) after upgrade.
-// Persist new per-winner data under NEW DataKeys instead.
+// Winner as persisted up to 1.2.0. Adding a field to types::Winner breaks
+// this test (UnexpectedSize) because deployed rows would fail to decode on
+// upgrade. Persist new per-winner data under new DataKeys instead.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct WinnerRowV1 {
