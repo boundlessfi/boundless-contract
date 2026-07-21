@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{BytesN, Env};
+use soroban_sdk::{xdr::ToXdr, Bytes, BytesN, Env};
 
 use crate::errors::Error;
 use crate::storage;
@@ -35,15 +35,22 @@ pub mod tag {
     pub const REGISTER_EARNINGS: u8 = 0xE1;
 }
 
+/// Collision-resistant child op_id.
+///
+/// Invariant: `sha256(parent ‖ op_tag ‖ sub_idx ‖ callee_contract_id)`.
+/// XOR into parent bytes is malleable (reversible, squat-friendly); hashing with
+/// the profile contract id as domain separator is not.
 pub fn derive_child(env: &Env, parent: &BytesN<32>, op_tag: u8) -> BytesN<32> {
-    let mut payload = parent.to_array();
-    payload[0] ^= op_tag;
-    BytesN::from_array(env, &payload)
+    derive_child_indexed(env, parent, op_tag, 0)
 }
 
 pub fn derive_child_indexed(env: &Env, parent: &BytesN<32>, op_tag: u8, sub_idx: u8) -> BytesN<32> {
-    let mut payload = parent.to_array();
-    payload[0] ^= op_tag;
-    payload[1] ^= sub_idx;
-    BytesN::from_array(env, &payload)
+    let callee = storage::get_profile_contract(env);
+    let mut payload = Bytes::new(env);
+    payload.append(&Bytes::from_array(env, &parent.to_array()));
+    payload.push_back(op_tag);
+    payload.push_back(sub_idx);
+    payload.append(&callee.to_xdr(env));
+    let digest = env.crypto().sha256(&payload);
+    BytesN::from_array(env, &digest.to_array())
 }
