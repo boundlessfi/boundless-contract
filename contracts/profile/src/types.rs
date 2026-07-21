@@ -61,5 +61,7 @@ pub enum DataKey {
     PendingUpgrade,
     MigratedToVersion,
 
-    OpSeen(BytesN<32>),
+    /// Temporary idempotency flag keyed by (caller domain, op_id).
+    /// Domain separates events-originated ops from unprivileged bootstrap_self.
+    OpSeen(Address, BytesN<32>),
 }

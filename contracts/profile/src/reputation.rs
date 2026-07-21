@@ -15,7 +15,8 @@ pub fn bump(
 ) -> Result<(), Error> {
     admin::require_events_contract(env)?;
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    let domain = idempotency::events_domain(env)?;
+    idempotency::require_unseen(env, &domain, &op_id)?;
 
     let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
     profile.reputation = profile.reputation.saturating_add(delta as u64);
@@ -27,7 +28,7 @@ pub fn bump(
         reason,
     }
     .publish(env);
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &domain, &op_id);
     Ok(())
 }
 
@@ -40,7 +41,8 @@ pub fn slash(
 ) -> Result<(), Error> {
     admin::require_events_contract(env)?;
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    let domain = idempotency::events_domain(env)?;
+    idempotency::require_unseen(env, &domain, &op_id)?;
 
     let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
     profile.reputation = profile.reputation.saturating_sub(delta as u64);
@@ -52,7 +54,7 @@ pub fn slash(
         reason,
     }
     .publish(env);
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &domain, &op_id);
     Ok(())
 }
 
@@ -65,7 +67,8 @@ pub fn admin_slash(
 ) -> Result<(), Error> {
     admin::require_admin(env)?;
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    let domain = storage::get_admin(env)?;
+    idempotency::require_unseen(env, &domain, &op_id)?;
 
     if reason.is_empty() {
         return Err(Error::ReasonRequired);
@@ -81,6 +84,6 @@ pub fn admin_slash(
         reason,
     }
     .publish(env);
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &domain, &op_id);
     Ok(())
 }

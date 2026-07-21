@@ -10,7 +10,8 @@ use crate::types::Profile;
 pub fn bootstrap(env: &Env, user: Address, op_id: BytesN<32>) -> Result<(), Error> {
     admin::require_events_contract(env)?;
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    let domain = idempotency::events_domain(env)?;
+    idempotency::require_unseen(env, &domain, &op_id)?;
 
     if storage::get_profile(env, &user).is_none() {
         let profile = Profile::new(env.ledger().timestamp());
@@ -18,21 +19,22 @@ pub fn bootstrap(env: &Env, user: Address, op_id: BytesN<32>) -> Result<(), Erro
         evt::ProfileBootstrapped { user }.publish(env);
     }
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &domain, &op_id);
     Ok(())
 }
 
 pub fn bootstrap_self(env: &Env, user: Address, op_id: BytesN<32>) -> Result<(), Error> {
     user.require_auth();
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    // Domain = user so unprivileged self-bootstrap cannot squat events-domain op_ids.
+    idempotency::require_unseen(env, &user, &op_id)?;
 
     if storage::get_profile(env, &user).is_none() {
         let profile = Profile::new(env.ledger().timestamp());
         storage::set_profile(env, &user, &profile);
-        evt::ProfileBootstrapped { user }.publish(env);
+        evt::ProfileBootstrapped { user: user.clone() }.publish(env);
     }
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &user, &op_id);
     Ok(())
 }
