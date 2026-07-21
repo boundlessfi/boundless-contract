@@ -42,18 +42,24 @@ Each row in `history_contract_events` has:
 | `ledger_sequence` | `BIGINT` | Ledger number |
 | `closed_at` | `TIMESTAMP` | Ledger close time |
 | `contract_id` | `VARCHAR` | Contract address (StrKey) |
-| `topic_1` … `topic_N` | `VARCHAR` | XDR-decoded topic values, one column per position |
-| `data` | `JSON` / `VARCHAR` | XDR-decoded event data map |
+| `topics_decoded` | `VARCHAR` | JSON array of decoded topic values — `$[0]` is the event-name symbol |
+| `data_decoded` | `VARCHAR` | JSON object of decoded event fields, keyed by field name |
+| `topics` | `VARCHAR` | Raw XDR-encoded topics (use `topics_decoded` instead) |
+| `data` | `VARCHAR` | Raw XDR-encoded data (use `data_decoded` instead) |
+| `type_string` | `VARCHAR` | Event type string (`"contract"` for Soroban events) |
 | `transaction_hash` | `VARCHAR` | Transaction hash for drill-down |
+| `successful` | `BOOLEAN` | Whether the transaction succeeded |
 
-`topic_1` is always the event-name symbol emitted by the `#[contractevent]`
-macro. All subsequent fields land in `data` as a JSON map keyed by field name.
+`JSON_EXTRACT_SCALAR(topics_decoded, '$[0]')` gives the event-name symbol
+(e.g. `'EventCreated'`). All event fields land in `data_decoded` as a JSON
+object keyed by field name.
 
-> **Dune decoding note.** Dune's Stellar pipeline decodes ScVal automatically:
-> `ScVal::Symbol` → string, `ScVal::U64` / `ScVal::I128` → numeric,
-> `ScVal::Address` → StrKey string, `ScVal::Bytes` → hex string,
-> `ScVal::Void` → SQL `NULL`, enum variants → string of the variant name.
-> No manual XDR parsing is required in SQL.
+> **Dune decoding note.** Dune's Stellar pipeline decodes ScVal automatically
+> into the `*_decoded` columns: `ScVal::Symbol` → string, `ScVal::U64` /
+> `ScVal::I128` → numeric string, `ScVal::Address` → StrKey string,
+> `ScVal::Bytes` → hex string, `ScVal::Void` → SQL `NULL`, enum variants →
+> variant name string. Use `CAST(... AS DOUBLE)` / `CAST(... AS BIGINT)` when
+> you need numeric arithmetic. No manual XDR parsing is required in SQL.
 
 ---
 
@@ -252,34 +258,32 @@ Amounts are in stroops (7 decimal places); divide by `1e7` for human units.
 
 ```sql
 -- Boundless: Current TVL
--- Sums all escrow inflows minus outflows to give the live balance.
 
 WITH inflows AS (
-    SELECT
-        COALESCE(CAST(JSON_EXTRACT_SCALAR(data, '$.total_budget') AS DOUBLE), 0) AS amount
+    SELECT COALESCE(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE), 0) AS amount
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 = 'EventCreated'
-      AND JSON_EXTRACT_SCALAR(data, '$.pillar') != 'Crowdfunding'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
+      AND JSON_EXTRACT_SCALAR(data_decoded, '$.pillar') != 'Crowdfunding'
 
     UNION ALL
 
-    SELECT
-        COALESCE(CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE), 0) AS amount
+    SELECT COALESCE(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE), 0) AS amount
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 = 'FundsAdded'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'FundsAdded'
 ),
 outflows AS (
-    SELECT
-        COALESCE(CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE), 0) AS amount
+    SELECT COALESCE(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE), 0) AS amount
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 IN ('WinnerPaid', 'MilestoneClaimed', 'ContributorRefunded', 'OwnerResidualRefunded')
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
+          'WinnerPaid', 'MilestoneClaimed', 'ContributorRefunded', 'OwnerResidualRefunded'
+      )
 )
-SELECT
-    (SUM(i.amount) - SUM(o.amount)) / 1e7 AS tvl_usdc
-FROM inflows i, outflows o
+SELECT (COALESCE(SUM(i.amount), 0) - COALESCE(SUM(o.amount), 0)) / 1e7 AS tvl_usdc
+FROM inflows i
+FULL OUTER JOIN outflows o ON 1 = 1
 ```
 
 ### 4.2 TVL over time (daily)
@@ -291,19 +295,20 @@ WITH events AS (
     SELECT
         DATE_TRUNC('day', closed_at) AS day,
         CASE
-            WHEN topic_1 = 'EventCreated'
-              AND JSON_EXTRACT_SCALAR(data, '$.pillar') != 'Crowdfunding'
-            THEN  CAST(JSON_EXTRACT_SCALAR(data, '$.total_budget') AS DOUBLE)
-            WHEN topic_1 = 'FundsAdded'
-            THEN  CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE)
-            WHEN topic_1 IN ('WinnerPaid', 'MilestoneClaimed',
-                             'ContributorRefunded', 'OwnerResidualRefunded')
-            THEN -CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE)
+            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
+              AND JSON_EXTRACT_SCALAR(data_decoded, '$.pillar') != 'Crowdfunding'
+            THEN  CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE)
+            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'FundsAdded'
+            THEN  CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)
+            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
+                'WinnerPaid', 'MilestoneClaimed',
+                'ContributorRefunded', 'OwnerResidualRefunded')
+            THEN -CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)
             ELSE 0
         END AS delta
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 IN (
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
           'EventCreated', 'FundsAdded',
           'WinnerPaid', 'MilestoneClaimed',
           'ContributorRefunded', 'OwnerResidualRefunded'
@@ -328,14 +333,13 @@ ORDER BY 1
 -- Boundless: Events created — count and total budget by pillar and month
 
 SELECT
-    DATE_TRUNC('month', closed_at)                              AS month,
-    JSON_EXTRACT_SCALAR(data, '$.pillar')                       AS pillar,
-    COUNT(*)                                                    AS events_created,
-    SUM(CAST(JSON_EXTRACT_SCALAR(data, '$.total_budget') AS DOUBLE)) / 1e7
-                                                                AS total_budget_usdc
+    DATE_TRUNC('month', closed_at)                                                   AS month,
+    JSON_EXTRACT_SCALAR(data_decoded, '$.pillar')                                    AS pillar,
+    COUNT(*)                                                                         AS events_created,
+    SUM(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE)) / 1e7  AS total_budget_usdc
 FROM stellar.history_contract_events
 WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND topic_1 = 'EventCreated'
+  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
 GROUP BY 1, 2
 ORDER BY 1 DESC, 2
 ```
@@ -346,14 +350,13 @@ ORDER BY 1 DESC, 2
 -- Boundless: Total paid out to builders (WinnerPaid + MilestoneClaimed)
 
 SELECT
-    DATE_TRUNC('month', closed_at)  AS month,
-    topic_1                         AS payout_type,
-    COUNT(*)                        AS payout_count,
-    SUM(CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE)) / 1e7
-                                    AS total_paid_usdc
+    DATE_TRUNC('month', closed_at)                                                AS month,
+    JSON_EXTRACT_SCALAR(topics_decoded, '$[0]')                                   AS payout_type,
+    COUNT(*)                                                                      AS payout_count,
+    SUM(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)) / 1e7     AS total_paid_usdc
 FROM stellar.history_contract_events
 WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND topic_1 IN ('WinnerPaid', 'MilestoneClaimed')
+  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
 GROUP BY 1, 2
 ORDER BY 1 DESC, 2
 ```
@@ -363,20 +366,19 @@ ORDER BY 1 DESC, 2
 ```sql
 -- Boundless: Unique builder wallets that applied or received a payout
 
-SELECT
-    COUNT(DISTINCT applicant_or_recipient) AS unique_builders
+SELECT COUNT(DISTINCT addr) AS unique_builders
 FROM (
-    SELECT JSON_EXTRACT_SCALAR(data, '$.applicant')  AS applicant_or_recipient
+    SELECT JSON_EXTRACT_SCALAR(data_decoded, '$.applicant') AS addr
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 = 'Applied'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'Applied'
 
     UNION
 
-    SELECT JSON_EXTRACT_SCALAR(data, '$.recipient')  AS applicant_or_recipient
+    SELECT JSON_EXTRACT_SCALAR(data_decoded, '$.recipient') AS addr
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 IN ('WinnerPaid', 'MilestoneClaimed')
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
 ) AS combined
 ```
 
@@ -385,10 +387,10 @@ FROM (
 ```sql
 -- Boundless: Unique organizer wallets that created events
 
-SELECT COUNT(DISTINCT JSON_EXTRACT_SCALAR(data, '$.owner')) AS unique_organizers
+SELECT COUNT(DISTINCT JSON_EXTRACT_SCALAR(data_decoded, '$.owner')) AS unique_organizers
 FROM stellar.history_contract_events
 WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND topic_1 = 'EventCreated'
+  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
 ```
 
 ### 4.7 Funded vs completed vs cancelled events
@@ -398,33 +400,32 @@ WHERE contract_id = '{{CONTRACT_ADDRESS}}'
 
 WITH created AS (
     SELECT
-        CAST(JSON_EXTRACT_SCALAR(data, '$.id') AS BIGINT) AS event_id,
+        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id') AS BIGINT) AS event_id,
         closed_at AS created_at
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 = 'EventCreated'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
 ),
 cancelled AS (
-    SELECT DISTINCT CAST(JSON_EXTRACT_SCALAR(data, '$.id') AS BIGINT) AS event_id
+    SELECT DISTINCT CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id') AS BIGINT) AS event_id
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 = 'EventCancelled'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCancelled'
 ),
 paid AS (
-    -- An event is "completed" if it has at least one payout event
-    SELECT DISTINCT CAST(JSON_EXTRACT_SCALAR(data, '$.event_id') AS BIGINT) AS event_id
+    SELECT DISTINCT CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.event_id') AS BIGINT) AS event_id
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 IN ('WinnerPaid', 'MilestoneClaimed')
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
 )
 SELECT
-    COUNT(c.event_id)                                        AS total_created,
-    COUNT(p.event_id)                                        AS completed_with_payout,
-    COUNT(cx.event_id)                                       AS cancelled,
-    COUNT(c.event_id) - COUNT(p.event_id) - COUNT(cx.event_id) AS active_or_pending
+    COUNT(c.event_id)                                                    AS total_created,
+    COUNT(p.event_id)                                                    AS completed_with_payout,
+    COUNT(cx.event_id)                                                   AS cancelled,
+    COUNT(c.event_id) - COUNT(p.event_id) - COUNT(cx.event_id)          AS active_or_pending
 FROM created c
-LEFT JOIN paid   p  ON c.event_id = p.event_id
-LEFT JOIN cancelled cx ON c.event_id = cx.event_id
+LEFT JOIN paid       p  ON c.event_id = p.event_id
+LEFT JOIN cancelled cx  ON c.event_id = cx.event_id
 ```
 
 ### 4.8 Average bounty size and time-to-payout
@@ -434,20 +435,20 @@ LEFT JOIN cancelled cx ON c.event_id = cx.event_id
 
 WITH created AS (
     SELECT
-        CAST(JSON_EXTRACT_SCALAR(data, '$.id') AS BIGINT)              AS event_id,
-        CAST(JSON_EXTRACT_SCALAR(data, '$.total_budget') AS DOUBLE) / 1e7 AS budget_usdc,
-        closed_at                                                      AS created_at
+        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id') AS BIGINT)              AS event_id,
+        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE) / 1e7 AS budget_usdc,
+        closed_at                                                              AS created_at
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 = 'EventCreated'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
 ),
 first_payout AS (
     SELECT
-        CAST(JSON_EXTRACT_SCALAR(data, '$.event_id') AS BIGINT) AS event_id,
-        MIN(closed_at)                                          AS first_paid_at
+        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.event_id') AS BIGINT) AS event_id,
+        MIN(closed_at)                                                  AS first_paid_at
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 IN ('WinnerPaid', 'MilestoneClaimed')
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
     GROUP BY 1
 )
 SELECT
@@ -461,24 +462,23 @@ JOIN first_payout fp ON c.event_id = fp.event_id
 
 ```sql
 -- Boundless: Payout volume grouped by payment token
--- (Join to an off-chain token symbol map for readable names)
 
 WITH payouts AS (
     SELECT
-        CAST(JSON_EXTRACT_SCALAR(data, '$.event_id') AS BIGINT) AS event_id,
-        CAST(JSON_EXTRACT_SCALAR(data, '$.amount')   AS DOUBLE) / 1e7 AS amount_usdc,
-        topic_1
+        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.event_id') AS BIGINT)        AS event_id,
+        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount')   AS DOUBLE) / 1e7  AS amount_usdc,
+        JSON_EXTRACT_SCALAR(topics_decoded, '$[0]')                            AS payout_type
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 IN ('WinnerPaid', 'MilestoneClaimed')
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
 ),
 created AS (
     SELECT
-        CAST(JSON_EXTRACT_SCALAR(data, '$.id')    AS BIGINT)  AS event_id,
-        JSON_EXTRACT_SCALAR(data, '$.token')                  AS token_address
+        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id')    AS BIGINT)  AS event_id,
+        JSON_EXTRACT_SCALAR(data_decoded, '$.token')                  AS token_address
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 = 'EventCreated'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
 )
 SELECT
     c.token_address,
@@ -496,13 +496,13 @@ ORDER BY 2 DESC
 -- Boundless: Crowdfunding inflows — daily contribution volume
 
 SELECT
-    DATE_TRUNC('day', closed_at)                                           AS day,
-    COUNT(*)                                                               AS contribution_count,
-    COUNT(DISTINCT JSON_EXTRACT_SCALAR(data, '$.contributor'))             AS unique_contributors,
-    SUM(CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE)) / 1e7      AS total_contributed_usdc
+    DATE_TRUNC('day', closed_at)                                                AS day,
+    COUNT(*)                                                                    AS contribution_count,
+    COUNT(DISTINCT JSON_EXTRACT_SCALAR(data_decoded, '$.contributor'))          AS unique_contributors,
+    SUM(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)) / 1e7   AS total_contributed_usdc
 FROM stellar.history_contract_events
 WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND topic_1 = 'FundsAdded'
+  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'FundsAdded'
 GROUP BY 1
 ORDER BY 1 DESC
 ```

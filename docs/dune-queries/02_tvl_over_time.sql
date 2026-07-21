@@ -1,34 +1,34 @@
 -- Boundless On-chain: TVL over time (daily running balance)
 -- Panel type: area chart  x=day  y=tvl_usdc
 --
--- Calculates the net daily escrow delta then uses a window function to
--- produce a running sum. Each row shows the TVL at end-of-day.
+-- topics_decoded: JSON array — index 0 is the event-name symbol
+-- data_decoded:   JSON object — field values
 
 WITH raw_events AS (
     SELECT
         DATE_TRUNC('day', closed_at) AS day,
         CASE
             -- Inflow: non-crowdfunding creation
-            WHEN topic_1 = 'EventCreated'
-              AND JSON_EXTRACT_SCALAR(data, '$.pillar') != 'Crowdfunding'
-            THEN  CAST(JSON_EXTRACT_SCALAR(data, '$.total_budget') AS DOUBLE)
+            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
+              AND JSON_EXTRACT_SCALAR(data_decoded, '$.pillar') != 'Crowdfunding'
+            THEN  CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE)
 
             -- Inflow: add_funds (crowdfunding + partner top-ups)
-            WHEN topic_1 = 'FundsAdded'
-            THEN  CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE)
+            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'FundsAdded'
+            THEN  CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)
 
             -- Outflow: winner / milestone payouts and refunds
-            WHEN topic_1 IN (
+            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
                 'WinnerPaid', 'MilestoneClaimed',
                 'ContributorRefunded', 'OwnerResidualRefunded'
             )
-            THEN -CAST(JSON_EXTRACT_SCALAR(data, '$.amount') AS DOUBLE)
+            THEN -CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)
 
             ELSE 0
         END AS delta
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND topic_1 IN (
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
           'EventCreated', 'FundsAdded',
           'WinnerPaid', 'MilestoneClaimed',
           'ContributorRefunded', 'OwnerResidualRefunded'
