@@ -15,7 +15,7 @@ const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
-pub const INITIAL_VERSION: &str = "1.4.0";
+pub const INITIAL_VERSION: &str = "1.5.0";
 
 // ============================================================
 // INITIALIZATION
