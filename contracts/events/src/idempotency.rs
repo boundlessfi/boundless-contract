@@ -1,19 +1,23 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{xdr::ToXdr, Bytes, BytesN, Env};
+use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env};
 
 use crate::errors::Error;
 use crate::storage;
 
-pub fn require_unseen(env: &Env, op_id: &BytesN<32>) -> Result<(), Error> {
-    if storage::is_op_seen(env, op_id) {
+// OpSeen is namespaced by the authorizing caller so that a permissionless
+// entrypoint (submit, apply, add_funds) cannot pre-mark an op_id and block a
+// privileged one (select_winners, claim, cancel) that shares it. Pass the
+// address that require_auth'd this call as the domain.
+pub fn require_unseen(env: &Env, domain: &Address, op_id: &BytesN<32>) -> Result<(), Error> {
+    if storage::is_op_seen(env, domain, op_id) {
         return Err(Error::OpAlreadySeen);
     }
     Ok(())
 }
 
-pub fn mark_seen(env: &Env, op_id: &BytesN<32>) {
-    storage::mark_op_seen(env, op_id);
+pub fn mark_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {
+    storage::mark_op_seen(env, domain, op_id);
 }
 
 pub fn id_base(env: &Env) -> u64 {

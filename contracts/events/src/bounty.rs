@@ -26,12 +26,12 @@ pub fn apply(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let event = storage::get_event(env, bounty_id).ok_or(Error::EventNotFound)?;
     require_active_bounty(env, &event)?;
 
     applicant.require_auth();
+    idempotency::require_unseen(env, &applicant, &op_id)?;
 
     storage::append_applicant(env, bounty_id, &applicant, MAX_APPLICANTS_PER_EVENT)?;
 
@@ -41,11 +41,11 @@ pub fn apply(
 
     evt::Applied {
         event_id: bounty_id,
-        applicant,
+        applicant: applicant.clone(),
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &applicant, &op_id);
     Ok(())
 }
 
@@ -59,12 +59,12 @@ pub fn withdraw_application(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let event = storage::get_event(env, bounty_id).ok_or(Error::EventNotFound)?;
     require_active_bounty(env, &event)?;
 
     applicant.require_auth();
+    idempotency::require_unseen(env, &applicant, &op_id)?;
 
     if storage::get_submission(env, bounty_id, &applicant).is_some() {
         return Err(Error::SubmissionAlreadyExists);
@@ -74,11 +74,11 @@ pub fn withdraw_application(
 
     evt::ApplicationWithdrawn {
         event_id: bounty_id,
-        applicant,
+        applicant: applicant.clone(),
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &applicant, &op_id);
     Ok(())
 }
 

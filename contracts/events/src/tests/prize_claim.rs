@@ -282,15 +282,21 @@ fn op_id_replay_reverts() {
     let ctx = setup();
     let id = create_single(&ctx, dist_60_40(&ctx.env));
 
+    // Both positions go to the same recipient so the two claims share an
+    // op_id domain; reusing the op_id must revert even though position 2 is
+    // not yet paid. (Cross-recipient op_id reuse is intentionally allowed —
+    // OpSeen is namespaced per authorizing caller.)
     let a = Address::generate(&ctx.env);
-    let b = Address::generate(&ctx.env);
     select_one(&ctx, id, &a, 1, 0);
-    select_one(&ctx, id, &b, 2, 0);
+    select_one(&ctx, id, &a, 2, 0);
 
     let op = BytesN::random(&ctx.env);
     ctx.events.claim_prize(&id, &1_u32, &op);
     let res = ctx.events.try_claim_prize(&id, &2_u32, &op);
-    assert!(res.is_err(), "replaying an op_id must revert");
+    assert!(
+        res.is_err(),
+        "replaying an op_id in the same domain must revert"
+    );
 }
 
 #[test]

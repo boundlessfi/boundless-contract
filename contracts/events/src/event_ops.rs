@@ -56,9 +56,9 @@ fn get_or_init_non_owner_total(env: &Env, event_id: u64) -> Result<i128, Error> 
 
 pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> Result<u64, Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     params.owner.require_auth();
+    idempotency::require_unseen(env, &params.owner, &op_id)?;
 
     token_whitelist::require_supported(env, &params.token)?;
 
@@ -182,7 +182,7 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
         .publish(env);
     }
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &params.owner, &op_id);
     Ok(id)
 }
 
@@ -273,7 +273,6 @@ pub fn add_funds(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     if amount <= 0 {
         return Err(Error::InvalidContributionAmount);
@@ -288,6 +287,7 @@ pub fn add_funds(
     }
 
     from.require_auth();
+    idempotency::require_unseen(env, &from, &op_id)?;
 
     let is_non_owner = from != event.owner;
     let prior_contribution = if is_non_owner {
@@ -330,13 +330,13 @@ pub fn add_funds(
 
     evt::FundsAdded {
         event_id,
-        contributor: from,
+        contributor: from.clone(),
         amount: credited,
         new_remaining: event.remaining_escrow,
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &from, &op_id);
     Ok(())
 }
 
@@ -345,7 +345,6 @@ pub fn add_funds(
 // ============================================================
 pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
@@ -366,7 +365,9 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
         }
     }
 
-    resolve_manager(env, event_id, &event.owner).require_auth();
+    let manager = resolve_manager(env, event_id, &event.owner);
+    manager.require_auth();
+    idempotency::require_unseen(env, &manager, &op_id)?;
 
     let remaining = event.remaining_escrow;
     let count = storage::contributor_count(env, event_id);
@@ -395,7 +396,7 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
         storage::set_event(env, event_id, &event);
         storage::set_non_owner_contribution_total(env, event_id, 0);
         evt::EventCancelled { id: event_id }.publish(env);
-        idempotency::mark_seen(env, &op_id);
+        idempotency::mark_seen(env, &manager, &op_id);
         return Ok(());
     }
 
@@ -410,7 +411,7 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     event.status = EventStatus::Cancelling;
     storage::set_event(env, event_id, &event);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &manager, &op_id);
     Ok(())
 }
 
@@ -421,7 +422,10 @@ pub fn process_cancel_batch(
     op_id: BytesN<32>,
 ) -> Result<u32, Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    // Permissionless crank: no caller to authorize, so namespace under the
+    // contract's own address — isolated from every user/privileged domain.
+    let domain = env.current_contract_address();
+    idempotency::require_unseen(env, &domain, &op_id)?;
 
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Cancelling) {
@@ -475,13 +479,14 @@ pub fn process_cancel_batch(
     storage::set_cancellation_state(env, event_id, &state);
     let remaining_to_process = state.count_at_start.saturating_sub(state.next_idx);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &domain, &op_id);
     Ok(remaining_to_process)
 }
 
 pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    let domain = env.current_contract_address();
+    idempotency::require_unseen(env, &domain, &op_id)?;
 
     let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Cancelling) {
@@ -516,7 +521,7 @@ pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<()
 
     evt::EventCancelled { id: event_id }.publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &domain, &op_id);
     Ok(())
 }
 
@@ -531,7 +536,6 @@ pub fn submit(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
@@ -547,6 +551,7 @@ pub fn submit(
     }
 
     applicant.require_auth();
+    idempotency::require_unseen(env, &applicant, &op_id)?;
 
     // Reused rather than adding a new variant — stays inside the
     // contracterror 50-variant cap (see BACKLOG.md L7 for precedent).
@@ -583,12 +588,12 @@ pub fn submit(
 
     evt::Submitted {
         event_id,
-        applicant,
+        applicant: applicant.clone(),
         content_uri,
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &applicant, &op_id);
     Ok(())
 }
 
@@ -602,7 +607,6 @@ pub fn withdraw_submission(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
@@ -615,6 +619,7 @@ pub fn withdraw_submission(
     }
 
     applicant.require_auth();
+    idempotency::require_unseen(env, &applicant, &op_id)?;
 
     if storage::get_submission(env, event_id, &applicant).is_none() {
         return Err(Error::SubmissionNotFound);
@@ -624,11 +629,11 @@ pub fn withdraw_submission(
 
     evt::SubmissionWithdrawn {
         event_id,
-        applicant,
+        applicant: applicant.clone(),
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &applicant, &op_id);
     Ok(())
 }
 
@@ -642,7 +647,6 @@ pub fn select_winners(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
@@ -652,7 +656,9 @@ pub fn select_winners(
         return Err(Error::InvalidPillar);
     }
 
-    resolve_manager(env, event_id, &event.owner).require_auth();
+    let manager = resolve_manager(env, event_id, &event.owner);
+    manager.require_auth();
+    idempotency::require_unseen(env, &manager, &op_id)?;
 
     let existing_count = storage::winner_count(env, event_id);
     match event.release_kind {
@@ -804,7 +810,7 @@ pub fn select_winners(
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &manager, &op_id);
     Ok(())
 }
 
@@ -818,7 +824,6 @@ pub fn claim_prize(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
@@ -831,6 +836,7 @@ pub fn claim_prize(
     let award =
         storage::get_prize_award(env, event_id, position).ok_or(Error::InvalidWinnerPosition)?;
     award.recipient.require_auth();
+    idempotency::require_unseen(env, &award.recipient, &op_id)?;
 
     let anchor =
         storage::winner_at(env, event_id, award.anchor_idx).ok_or(Error::InvalidWinnerPosition)?;
@@ -870,7 +876,7 @@ pub fn claim_prize(
         event.status = EventStatus::Completed;
     }
     storage::set_event(env, event_id, &event);
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &award.recipient, &op_id);
 
     // State written above; release last so a reentrant token can't double-claim.
     escrow::release(env, &event.token, &award.recipient, amount);

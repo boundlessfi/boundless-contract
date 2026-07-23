@@ -754,15 +754,15 @@ pub fn clear_cancellation_state(env: &Env, id: u64) {
 // ============================================================
 // IDEMPOTENCY (temporary; auto-TTL)
 // ============================================================
-pub fn is_op_seen(env: &Env, op_id: &BytesN<32>) -> bool {
+pub fn is_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) -> bool {
     env.storage()
         .temporary()
-        .get(&DataKey::OpSeen(op_id.clone()))
+        .get(&DataKey::OpSeen(domain.clone(), op_id.clone()))
         .unwrap_or(false)
 }
 
-pub fn mark_op_seen(env: &Env, op_id: &BytesN<32>) {
+pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {
     env.storage()
         .temporary()
-        .set(&DataKey::OpSeen(op_id.clone()), &true);
+        .set(&DataKey::OpSeen(domain.clone(), op_id.clone()), &true);
 }

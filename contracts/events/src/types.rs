@@ -187,7 +187,9 @@ pub enum DataKey {
     PendingUpgrade,
     MigratedToVersion,
 
-    OpSeen(BytesN<32>),
+    // Temporary idempotency flag keyed by (authorizing caller, op_id) so a
+    // permissionless entrypoint cannot squat a privileged one's op_id.
+    OpSeen(Address, BytesN<32>),
 
     SupportedTokenCount,
     SupportedTokenAt(u32),

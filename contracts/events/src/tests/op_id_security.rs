@@ -208,3 +208,39 @@ fn events_domain_child_op_id_replay_still_rejected() {
         "true replay of the same events-domain op_id must be rejected"
     );
 }
+
+/// Events-side OpSeen is namespaced by the authorizing caller: a permissionless
+/// entrypoint (apply) cannot pre-mark an op_id and block a privileged one
+/// (select_winners) that reuses it. Before namespacing, the shared global
+/// OpSeen made the manager's payout revert with OpAlreadySeen.
+#[test]
+fn permissionless_apply_cannot_squat_select_winners_op_id() {
+    let ctx = setup();
+    let id = create_bounty(&ctx);
+
+    ctx.events
+        .apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    // The op_id the owner will use to select winners.
+    let victim_op = BytesN::random(&ctx.env);
+
+    // Attacker front-runs by burning that op_id in their own (apply) domain.
+    let attacker = Address::generate(&ctx.env);
+    ctx.events.apply_to_bounty(&id, &attacker, &victim_op);
+
+    // Owner's select_winners with the same op_id still succeeds (owner domain).
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: ctx.applicant.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+    ];
+    ctx.events.select_winners(&id, &winners, &victim_op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
+}

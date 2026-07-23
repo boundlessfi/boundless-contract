@@ -28,7 +28,6 @@ pub fn claim_milestone(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
 
     let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
@@ -45,6 +44,7 @@ pub fn claim_milestone(
     }
 
     event.owner.require_auth();
+    idempotency::require_unseen(env, &event.owner, &op_id)?;
 
     if matches!(event.pillar, Pillar::Crowdfunding) {
         let admin = storage::get_admin(env)?;
@@ -163,6 +163,6 @@ pub fn claim_milestone(
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &event.owner, &op_id);
     Ok(())
 }
