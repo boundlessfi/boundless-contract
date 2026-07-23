@@ -42,24 +42,40 @@ Each row in `history_contract_events` has:
 | `ledger_sequence` | `BIGINT` | Ledger number |
 | `closed_at` | `TIMESTAMP` | Ledger close time |
 | `contract_id` | `VARCHAR` | Contract address (StrKey) |
-| `topics_decoded` | `VARCHAR` | JSON array of decoded topic values — `$[0]` is the event-name symbol |
-| `data_decoded` | `VARCHAR` | JSON object of decoded event fields, keyed by field name |
-| `topics` | `VARCHAR` | Raw XDR-encoded topics (use `topics_decoded` instead) |
-| `data` | `VARCHAR` | Raw XDR-encoded data (use `data_decoded` instead) |
+| `topics_decoded` | `VARCHAR` | JSON **array of ScVal objects**. The event name is at `$[0].symbol`, e.g. `[{"symbol":"EventCreated"}]` |
+| `data_decoded` | `VARCHAR` | JSON **ScVal map**: `{"map":[{"key":{"symbol":"id"},"val":{"u64":"7"}}, ...]}`. Each value is wrapped by its ScVal type |
+| `closed_at_date` | `DATE` | **Partition column** — always filter it to avoid full-table scans |
+| `topics` / `data` | `VARCHAR` | Raw XDR (use the `*_decoded` columns instead) |
 | `type_string` | `VARCHAR` | Event type string (`"contract"` for Soroban events) |
-| `transaction_hash` | `VARCHAR` | Transaction hash for drill-down |
+| `transaction_hash` | `VARBINARY` | Transaction hash — wrap with `to_hex()` for a readable string |
 | `successful` | `BOOLEAN` | Whether the transaction succeeded |
 
-`JSON_EXTRACT_SCALAR(topics_decoded, '$[0]')` gives the event-name symbol
-(e.g. `'EventCreated'`). All event fields land in `data_decoded` as a JSON
-object keyed by field name.
+**Decoding, correctly (verified against live `stellar.history_contract_events`):**
 
-> **Dune decoding note.** Dune's Stellar pipeline decodes ScVal automatically
-> into the `*_decoded` columns: `ScVal::Symbol` → string, `ScVal::U64` /
-> `ScVal::I128` → numeric string, `ScVal::Address` → StrKey string,
-> `ScVal::Bytes` → hex string, `ScVal::Void` → SQL `NULL`, enum variants →
-> variant name string. Use `CAST(... AS DOUBLE)` / `CAST(... AS BIGINT)` when
-> you need numeric arithmetic. No manual XDR parsing is required in SQL.
+1. **Event name** is *not* `$[0]` — that element is an object. Use:
+   `JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol')`.
+2. **Fields** are *not* flat `$.field` — they live inside a positional `map`,
+   each value wrapped by its ScVal type. Rebuild the map into
+   `MAP(field_name → ScVal JSON)`, then read each field by type:
+
+```sql
+-- reusable decode: f['<field>'] -> that field's ScVal JSON
+map_from_entries(
+    transform(
+        CAST(JSON_EXTRACT(data_decoded, '$.map') AS ARRAY(JSON)),
+        e -> ROW(JSON_EXTRACT_SCALAR(e, '$.key.symbol'), JSON_EXTRACT(e, '$.val'))
+    )
+) AS f
+-- then:  JSON_EXTRACT_SCALAR(f['id'], '$.u64')        -- u64
+--        JSON_EXTRACT_SCALAR(f['amount'], '$.i128')   -- i128
+--        JSON_EXTRACT_SCALAR(f['owner'], '$.address')  -- Address (StrKey)
+--        JSON_EXTRACT_SCALAR(f['title'], '$.string')   -- String
+--        JSON_EXTRACT_SCALAR(f['pillar'], '$.vec[0].symbol')  -- unit enum
+```
+
+The canonical, Dune-tested queries live in [`docs/dune-queries/`](./dune-queries);
+start with `10_event_created_decode_test.sql`. The snippets in §4 below illustrate
+intent — treat the `.sql` files as the source of truth.
 
 ---
 
@@ -83,11 +99,19 @@ Emitted by `create_event` for every pillar.
 | `content_uri` | `String` | IPFS/S3 URI; omit from aggregates |
 | `title` | `String` | Human label; omit from aggregates |
 
-**TVL note.** For all pillars except Crowdfunding, `total_budget` is deposited
-into escrow at create time (minus the protocol fee). For Crowdfunding, escrow
-starts at 0 and grows via `FundsAdded`. Track live TVL by summing `FundsAdded`
-debiting `WinnerPaid` + `MilestoneClaimed` + `ContributorRefunded` +
-`OwnerResidualRefunded` events.
+**TVL note.** For all pillars except Crowdfunding, the **full** `total_budget`
+is escrowed at create time — the protocol fee is charged *on top* (the owner
+pays `budget + fee`; the fee is forwarded to the fee account, and escrow is
+credited the full `total_budget`). So `total_budget` is exactly the escrow
+inflow; use it directly. For Crowdfunding, escrow starts at 0 and grows via
+`FundsAdded`. Track live TVL by summing `EventCreated.total_budget`
+(non-Crowdfunding) + `FundsAdded.amount`, debiting `WinnerPaid` +
+`MilestoneClaimed` + `ContributorRefunded` + `OwnerResidualRefunded`.
+
+> **Fee revenue is not derivable from these events.** The fee is transferred to
+> the fee account with no dedicated event and is not embedded in any event
+> `amount`. For protocol-fee analytics, read `stellar.history_transactions` /
+> effects for transfers to the fee account, not `history_contract_events`.
 
 #### `EventCancelled`
 Emitted at the end of the cancel flow (`start_cancel` fast-path or
@@ -99,13 +123,15 @@ Emitted at the end of the cancel flow (`start_cancel` fast-path or
 
 #### `FundsAdded`
 Emitted on every successful `add_funds` call (partner top-ups, crowdfunding
-contributions). **Amount is net of fee.**
+contributions). `amount` is exactly what escrow was credited (for
+non-Crowdfunding the fee is charged on top; Crowdfunding contributions are
+fee-free, with the fee taken later at `claim_milestone`).
 
 | Field | ScVal type | Notes |
 |-------|-----------|-------|
 | `event_id` | `U64` | |
 | `contributor` | `Address` | |
-| `amount` | `I128` | Net credited amount after fee deduction |
+| `amount` | `I128` | Amount credited to escrow |
 | `new_remaining` | `I128` | `remaining_escrow` after this deposit |
 
 #### `ContributorRefunded`
@@ -213,6 +239,9 @@ These are useful for governance dashboards but not for TVL/payout metrics.
 | `ProfileContractUpdated` | `new_addr: Address` | Companion profile contract changed |
 | `TokenRegistered` | `token: Address` | New payment token whitelisted |
 | `TokenDeregistered` | `token: Address` | Token removed from whitelist |
+| `ManagerProposed` | `event_id: U64`, `target: Address`, `expires_at_ledger: U32` | Two-step manager delegation proposed for an event |
+| `ManagerChanged` | `event_id: U64`, `new_manager: Address` | Manager delegation accepted (authority transferred) |
+| `PendingManagerCancelled` | `event_id: U64` | Pending manager proposal vetoed |
 | `Paused` | _(no fields)_ | Contract paused |
 | `Unpaused` | _(no fields)_ | Contract unpaused |
 
@@ -244,8 +273,11 @@ TVL (Total Value Locked) = escrow currently held by the contract.
 - `ContributorRefunded.amount` — partner refund during cancel
 - `OwnerResidualRefunded.amount` — owner residual refund during cancel
 
-**Protocol fee** is deducted at deposit time and never enters `remaining_escrow`.
-All `*amount*` fields in events are already net-of-fee values — they match what the contract actually holds. Use them directly; no fee adjustment needed in SQL.
+**Protocol fee** is charged on top of the deposited amount (the payer sends
+`amount + fee`; the fee is forwarded to the fee account). Every event `amount`
+therefore equals exactly what escrow was credited or released — use them
+directly, no fee adjustment in SQL. The fee itself is *not* in any event; see
+the fee-revenue note in §2.1.
 
 ---
 
@@ -256,256 +288,43 @@ Amounts are in stroops (7 decimal places); divide by `1e7` for human units.
 
 ### 4.1 Total Value Locked (current)
 
-```sql
--- Boundless: Current TVL
-
-WITH inflows AS (
-    SELECT COALESCE(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE), 0) AS amount
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
-      AND JSON_EXTRACT_SCALAR(data_decoded, '$.pillar') != 'Crowdfunding'
-
-    UNION ALL
-
-    SELECT COALESCE(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE), 0) AS amount
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'FundsAdded'
-),
-outflows AS (
-    SELECT COALESCE(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE), 0) AS amount
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
-          'WinnerPaid', 'MilestoneClaimed', 'ContributorRefunded', 'OwnerResidualRefunded'
-      )
-)
-SELECT (COALESCE(SUM(i.amount), 0) - COALESCE(SUM(o.amount), 0)) / 1e7 AS tvl_usdc
-FROM inflows i
-FULL OUTER JOIN outflows o ON 1 = 1
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/01_tvl_current.sql`](./dune-queries/01_tvl_current.sql)
 
 ### 4.2 TVL over time (daily)
 
-```sql
--- Boundless: Daily TVL (running balance)
-
-WITH events AS (
-    SELECT
-        DATE_TRUNC('day', closed_at) AS day,
-        CASE
-            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
-              AND JSON_EXTRACT_SCALAR(data_decoded, '$.pillar') != 'Crowdfunding'
-            THEN  CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE)
-            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'FundsAdded'
-            THEN  CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)
-            WHEN JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
-                'WinnerPaid', 'MilestoneClaimed',
-                'ContributorRefunded', 'OwnerResidualRefunded')
-            THEN -CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)
-            ELSE 0
-        END AS delta
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN (
-          'EventCreated', 'FundsAdded',
-          'WinnerPaid', 'MilestoneClaimed',
-          'ContributorRefunded', 'OwnerResidualRefunded'
-      )
-),
-daily_delta AS (
-    SELECT day, SUM(delta) / 1e7 AS daily_change
-    FROM events
-    GROUP BY 1
-)
-SELECT
-    day,
-    daily_change,
-    SUM(daily_change) OVER (ORDER BY day ROWS UNBOUNDED PRECEDING) AS tvl_usdc
-FROM daily_delta
-ORDER BY 1
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/02_tvl_over_time.sql`](./dune-queries/02_tvl_over_time.sql)
 
 ### 4.3 Bounties funded (count + volume by pillar)
 
-```sql
--- Boundless: Events created — count and total budget by pillar and month
-
-SELECT
-    DATE_TRUNC('month', closed_at)                                                   AS month,
-    JSON_EXTRACT_SCALAR(data_decoded, '$.pillar')                                    AS pillar,
-    COUNT(*)                                                                         AS events_created,
-    SUM(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE)) / 1e7  AS total_budget_usdc
-FROM stellar.history_contract_events
-WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
-GROUP BY 1, 2
-ORDER BY 1 DESC, 2
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/03_bounties_funded.sql`](./dune-queries/03_bounties_funded.sql)
 
 ### 4.4 Total payouts to builders
 
-```sql
--- Boundless: Total paid out to builders (WinnerPaid + MilestoneClaimed)
-
-SELECT
-    DATE_TRUNC('month', closed_at)                                                AS month,
-    JSON_EXTRACT_SCALAR(topics_decoded, '$[0]')                                   AS payout_type,
-    COUNT(*)                                                                      AS payout_count,
-    SUM(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)) / 1e7     AS total_paid_usdc
-FROM stellar.history_contract_events
-WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
-GROUP BY 1, 2
-ORDER BY 1 DESC, 2
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/04_total_payouts.sql`](./dune-queries/04_total_payouts.sql)
 
 ### 4.5 Unique participants (applicants + recipients)
 
-```sql
--- Boundless: Unique builder wallets that applied or received a payout
-
-SELECT COUNT(DISTINCT addr) AS unique_builders
-FROM (
-    SELECT JSON_EXTRACT_SCALAR(data_decoded, '$.applicant') AS addr
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'Applied'
-
-    UNION
-
-    SELECT JSON_EXTRACT_SCALAR(data_decoded, '$.recipient') AS addr
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
-) AS combined
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/05_unique_participants.sql`](./dune-queries/05_unique_participants.sql)
 
 ### 4.6 Unique organizers
 
-```sql
--- Boundless: Unique organizer wallets that created events
-
-SELECT COUNT(DISTINCT JSON_EXTRACT_SCALAR(data_decoded, '$.owner')) AS unique_organizers
-FROM stellar.history_contract_events
-WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/05_unique_participants.sql`](./dune-queries/05_unique_participants.sql)
 
 ### 4.7 Funded vs completed vs cancelled events
 
-```sql
--- Boundless: Event outcome funnel
-
-WITH created AS (
-    SELECT
-        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id') AS BIGINT) AS event_id,
-        closed_at AS created_at
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
-),
-cancelled AS (
-    SELECT DISTINCT CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id') AS BIGINT) AS event_id
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCancelled'
-),
-paid AS (
-    SELECT DISTINCT CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.event_id') AS BIGINT) AS event_id
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
-)
-SELECT
-    COUNT(c.event_id)                                                    AS total_created,
-    COUNT(p.event_id)                                                    AS completed_with_payout,
-    COUNT(cx.event_id)                                                   AS cancelled,
-    COUNT(c.event_id) - COUNT(p.event_id) - COUNT(cx.event_id)          AS active_or_pending
-FROM created c
-LEFT JOIN paid       p  ON c.event_id = p.event_id
-LEFT JOIN cancelled cx  ON c.event_id = cx.event_id
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/06_event_outcomes.sql`](./dune-queries/06_event_outcomes.sql)
 
 ### 4.8 Average bounty size and time-to-payout
 
-```sql
--- Boundless: Average budget and time from creation to first payout (days)
-
-WITH created AS (
-    SELECT
-        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id') AS BIGINT)              AS event_id,
-        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.total_budget') AS DOUBLE) / 1e7 AS budget_usdc,
-        closed_at                                                              AS created_at
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
-),
-first_payout AS (
-    SELECT
-        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.event_id') AS BIGINT) AS event_id,
-        MIN(closed_at)                                                  AS first_paid_at
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
-    GROUP BY 1
-)
-SELECT
-    AVG(c.budget_usdc)                                          AS avg_budget_usdc,
-    AVG(DATE_DIFF('day', c.created_at, fp.first_paid_at))       AS avg_days_to_payout
-FROM created c
-JOIN first_payout fp ON c.event_id = fp.event_id
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/07_avg_size_and_ttp.sql`](./dune-queries/07_avg_size_and_ttp.sql)
 
 ### 4.9 Payout volume by token address
 
-```sql
--- Boundless: Payout volume grouped by payment token
-
-WITH payouts AS (
-    SELECT
-        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.event_id') AS BIGINT)        AS event_id,
-        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount')   AS DOUBLE) / 1e7  AS amount_usdc,
-        JSON_EXTRACT_SCALAR(topics_decoded, '$[0]')                            AS payout_type
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') IN ('WinnerPaid', 'MilestoneClaimed')
-),
-created AS (
-    SELECT
-        CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.id')    AS BIGINT)  AS event_id,
-        JSON_EXTRACT_SCALAR(data_decoded, '$.token')                  AS token_address
-    FROM stellar.history_contract_events
-    WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'EventCreated'
-)
-SELECT
-    c.token_address,
-    SUM(p.amount_usdc) AS total_paid_usdc,
-    COUNT(*)           AS payout_count
-FROM payouts p
-JOIN created c ON p.event_id = c.event_id
-GROUP BY 1
-ORDER BY 2 DESC
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/08_payout_by_token.sql`](./dune-queries/08_payout_by_token.sql)
 
 ### 4.10 Crowdfunding contributions over time
 
-```sql
--- Boundless: Crowdfunding inflows — daily contribution volume
-
-SELECT
-    DATE_TRUNC('day', closed_at)                                                AS day,
-    COUNT(*)                                                                    AS contribution_count,
-    COUNT(DISTINCT JSON_EXTRACT_SCALAR(data_decoded, '$.contributor'))          AS unique_contributors,
-    SUM(CAST(JSON_EXTRACT_SCALAR(data_decoded, '$.amount') AS DOUBLE)) / 1e7   AS total_contributed_usdc
-FROM stellar.history_contract_events
-WHERE contract_id = '{{CONTRACT_ADDRESS}}'
-  AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0]') = 'FundsAdded'
-GROUP BY 1
-ORDER BY 1 DESC
-```
+> Canonical, Dune-tested query: [`docs/dune-queries/09_crowdfunding_contributions.sql`](./dune-queries/09_crowdfunding_contributions.sql)
 
 ---
 
@@ -550,9 +369,10 @@ dashboard:
   confirms the on-chain migration ran; cross-check with `UpgradeApplied`.
 - **New tokens.** When `TokenRegistered` appears for a new address, add it
   to any off-chain symbol map used by query §4.9.
-- **Fee changes.** Protocol fee is deducted before `remaining_escrow` is
-  credited. All `amount` fields in events are already net-of-fee. No SQL
-  adjustment needed if the fee rate changes.
+- **Fee changes.** The protocol fee is charged on top of the deposited amount,
+  so event `amount` fields already equal the escrow credit/release. No SQL
+  adjustment is needed if the fee rate changes. (Fee revenue itself is not in
+  these events — see §2.1.)
 - **Crowdfunding vs other pillars.** `EventCreated.total_budget` is a
   *funding goal* for Crowdfunding, not an escrow deposit. Exclude
   `pillar = 'Crowdfunding'` from inflow sums based on `EventCreated` and
