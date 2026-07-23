@@ -19,7 +19,7 @@ mod tests;
 use crate::errors::Error;
 use crate::types::{PendingEventsContract, PendingUpgrade, Profile};
 
-contractmeta!(key = "version", val = "1.1.0");
+contractmeta!(key = "version", val = "1.2.0");
 contractmeta!(
     key = "description",
     val = "Boundless profile contract: reputation + earnings"
