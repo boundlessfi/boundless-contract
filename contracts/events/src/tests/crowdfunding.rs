@@ -1,16 +1,3 @@
-// boundless-events: crowdfunding tests.
-//
-// Covers the Pillar::Crowdfunding paths:
-//   - create_event with zero owner deposit, builder auto-registered as Winner
-//   - validate_create rejects single-release / missing-deadline / wrong dist
-//   - add_funds drives escrow from 0 up to whatever was raised
-//   - claim_milestone dynamic math: amount = remaining / (total - claimed)
-//   - last milestone drains remainder including rounding dust
-//   - select_winners and submit are rejected for Crowdfunding
-//   - cancel_event refunds all contributors (no owner deposit to refund)
-//
-// Spec: boundless-crowdfunding-prd.md.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -26,7 +13,6 @@ use boundless_profile::{ProfileContract, ProfileContractClient};
 
 const FEE_BPS: u32 = 250;
 
-// Builder's stated funding goal (informational only on-chain).
 const FUNDING_GOAL: i128 = 1_000_0000000_i128;
 
 struct Ctx<'a> {
@@ -69,7 +55,6 @@ fn setup<'a>() -> Ctx<'a> {
     let token_admin = token::StellarAssetClient::new(&env, &token_addr);
     token_admin.mint(&fee_account, &0);
 
-    // Builder pays nothing upfront, so no mint needed for them.
     let builder = Address::generate(&env);
 
     events.register_supported_token(&token_addr);
@@ -133,7 +118,6 @@ fn create_with_zero_owner_deposit_and_auto_registered_winner() {
 
     let id = create_campaign(&ctx, 3);
 
-    // No deposit pulled from builder. Builder balance unchanged.
     assert_eq!(token.balance(&ctx.builder), builder_before);
 
     let event = ctx.events.get_event(&id);
@@ -144,7 +128,6 @@ fn create_with_zero_owner_deposit_and_auto_registered_winner() {
         "crowdfunding starts with empty escrow"
     );
 
-    // Builder auto-registered as Winner at position 1, milestone=None.
     let winners = ctx.events.get_winners(&id);
     assert_eq!(winners.len(), 1);
     let w = winners.get(0).unwrap();
@@ -243,9 +226,6 @@ fn community_top_ups_raise_escrow_from_zero() {
 
 #[test]
 fn builder_top_up_does_not_appear_in_contributor_list() {
-    // The builder is allowed to add funds (matching the owner-top-up rule).
-    // Their entry shouldn't appear in ContributorList so cancel_event treats
-    // them as residual, not partner.
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
 
@@ -267,12 +247,6 @@ fn builder_top_up_does_not_appear_in_contributor_list() {
 
 #[test]
 fn claim_milestone_splits_evenly_and_charges_fee_at_release() {
-    // 3 milestones, escrow raised = 900 USDC. The builder bears the 2.5% fee,
-    // taken from each payout (backers deposited their full pledge fee-free):
-    //   m0 -> 900/3 = 300 gross; builder +292.5, fee_account +7.5; leaves 600.
-    //   m1 -> 600/2 = 300 gross; builder +292.5, fee_account +7.5; leaves 300.
-    //   m2 -> 300 gross (final);  builder +292.5, fee_account +7.5; leaves 0.
-    // Builder nets 877.5 (= 900 * 0.975); platform collects 22.5 (= 900 * .025).
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
     let backer = Address::generate(&ctx.env);
@@ -313,10 +287,6 @@ fn claim_milestone_splits_evenly_and_charges_fee_at_release() {
 
 #[test]
 fn claim_milestone_last_drains_dust_with_fee() {
-    // 3 milestones, raised 100_000_001 stroops (just above MIN_CONTRIB and not
-    // divisible by 3). The builder nets the raised amount minus the 2.5% fee;
-    // the fee account collects the fee; together they drain escrow exactly so
-    // no dust is stranded, even with per-milestone rounding.
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
     let backer = Address::generate(&ctx.env);
@@ -392,10 +362,6 @@ fn claim_milestone_with_empty_escrow_reverts() {
 
 #[test]
 fn backer_pays_exactly_pledge_and_creator_bears_fee() {
-    // Regression for the fee-on-top bug: a backer holding EXACTLY their pledge
-    // must be able to fund. The old model pulled pledge + fee from the backer
-    // and reverted for a wallet that held only the pledge. Now the fee is borne
-    // by the builder and taken at release, so deposit pulls exactly the pledge.
     let ctx = setup();
     let id = create_campaign(&ctx, 1);
 
@@ -409,7 +375,6 @@ fn backer_pays_exactly_pledge_and_creator_bears_fee() {
     let op = BytesN::random(&ctx.env);
     ctx.events.add_funds(&id, &backer, &pledge, &op);
 
-    // Backer paid exactly their pledge; no fee taken at deposit.
     assert_eq!(token.balance(&backer), 0, "backer pays exactly the pledge");
     assert_eq!(
         token.balance(&ctx.fee_account),
@@ -418,7 +383,6 @@ fn backer_pays_exactly_pledge_and_creator_bears_fee() {
     );
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, pledge);
 
-    // Single milestone: the builder claims and the fee is taken from the payout.
     let claim = BytesN::random(&ctx.env);
     ctx.events
         .claim_milestone(&id, &ctx.builder, &0_u32, &0, &claim);
@@ -518,10 +482,6 @@ fn cancel_with_no_contributions_just_marks_cancelled() {
 
 #[test]
 fn cancel_after_partial_claim_pro_rates_remaining() {
-    // Builder claimed m0 already, then campaign is cancelled. Remaining < non_owner_total.
-    // 3 milestones, raised 900, claim m0 -> 300 to builder, remaining 600.
-    // Cancel: non_owner_total still 900 (we don't subtract from contributor ledger
-    // on claim), remaining = 600 < 900 -> case B pro-rata.
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
 
@@ -540,9 +500,6 @@ fn cancel_after_partial_claim_pro_rates_remaining() {
 
     drive_cancel(&ctx.env, &ctx.events, id);
 
-    // remaining = 600, non_owner_total = 900.
-    // p1 share = 300 * 600 / 900 = 200.
-    // p2 share = 600 * 600 / 900 = 400.
     assert_eq!(token.balance(&p1) - p1_before, 200_0000000_i128);
     assert_eq!(token.balance(&p2) - p2_before, 400_0000000_i128);
 
@@ -557,10 +514,6 @@ fn cancel_after_partial_claim_pro_rates_remaining() {
 
 #[test]
 fn crowdfunding_claim_milestone_requires_admin_auth() {
-    // Verify the admin's address is among the required auths for a
-    // crowdfunding claim. mock_all_auths_allowing_non_root_auth makes the
-    // call succeed, but env.auths() records the addresses whose auth was
-    // demanded, which is the audit-relevant observation.
     let ctx = setup();
     let id = create_campaign(&ctx, 2);
     let p = Address::generate(&ctx.env);

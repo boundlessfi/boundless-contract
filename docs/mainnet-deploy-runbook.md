@@ -1,7 +1,7 @@
 # Mainnet deployment runbook
 
 **For:** the contracts engineer + the admin multi-sig signers.
-**Last updated:** 2026-06-04 (revised for the 2026-06 Stellar-skill audit fixes; see Section 8 for the full delta).
+**Last updated:** 2026-07-17 (revised for the 1.1.0 → 1.2.0 cancellation-liveness upgrade guard).
 
 This is the cold-deploy procedure for Boundless contracts on Stellar mainnet. Follow it in order. Do not skip the verification steps. Every transaction below is irreversible.
 
@@ -52,9 +52,18 @@ Total: ~3 hours of focused work, plus pre-flight.
 ### 2.1 Set environment
 
 ```bash
-export STELLAR_NETWORK=mainnet
-export STELLAR_RPC_URL=https://soroban-rpc.mainnet.stellar.org  # or our managed Nodies URL
+# Use our managed production provider. The URL below is Stellar's listed public
+# fallback, not the preferred production endpoint.
+export STELLAR_RPC_URL=https://stellar.api.onfinality.io/public
 export STELLAR_NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015"
+stellar network add boundless-mainnet \
+  --rpc-url "$STELLAR_RPC_URL" \
+  --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
+
+# From here onward use only the named network. Never mix --network with the
+# explicit RPC/passphrase pair in one command; see contract-ops-runbook Rule 5.
+export STELLAR_NETWORK=boundless-mainnet
+unset STELLAR_RPC_URL STELLAR_NETWORK_PASSPHRASE
 
 # Treasury G-address (fee_account). Pre-funded with min reserve + USDC trustline.
 export FEE_ACCOUNT=GADMINMS...  # placeholder; replace with real fee account
@@ -84,25 +93,25 @@ export USDC_SAC=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 
 ```bash
 cd boundless-contract
-soroban contract build --release
+stellar contract build
 
 # Deploy boundless-profile first; events depends on its address.
-PROFILE_WASM=target/wasm32-unknown-unknown/release/boundless_profile.wasm
+PROFILE_WASM=target/wasm32v1-none/release/boundless_profile.wasm
 
-PROFILE_ID=$(soroban contract deploy \
-  --network mainnet \
+PROFILE_ID=$(stellar contract deploy \
+  --network "$STELLAR_NETWORK" \
   --source $INITIAL_ADMIN_KEY \
   --wasm $PROFILE_WASM \
   -- \
-  --admin $(soroban keys address $INITIAL_ADMIN_KEY))
+  --admin $(stellar keys address $INITIAL_ADMIN_KEY))
 
 echo "PROFILE_ID=$PROFILE_ID" | tee -a deployments/mainnet.env
 ```
 
 Verify:
 ```bash
-soroban contract invoke \
-  --network mainnet \
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
   --source $INITIAL_ADMIN_KEY \
   --id $PROFILE_ID \
   -- get_admin
@@ -112,14 +121,14 @@ Should return the address of `$INITIAL_ADMIN_KEY`.
 ### 2.3 Deploy events contract
 
 ```bash
-EVENTS_WASM=target/wasm32-unknown-unknown/release/boundless_events.wasm
+EVENTS_WASM=target/wasm32v1-none/release/boundless_events.wasm
 
-EVENTS_ID=$(soroban contract deploy \
-  --network mainnet \
+EVENTS_ID=$(stellar contract deploy \
+  --network "$STELLAR_NETWORK" \
   --source $INITIAL_ADMIN_KEY \
   --wasm $EVENTS_WASM \
   -- \
-  --admin $(soroban keys address $INITIAL_ADMIN_KEY) \
+  --admin $(stellar keys address $INITIAL_ADMIN_KEY) \
   --fee_account $FEE_ACCOUNT \
   --fee_bps $INITIAL_GLOBAL_FEE_BPS \
   --profile_contract $PROFILE_ID)
@@ -129,11 +138,11 @@ echo "EVENTS_ID=$EVENTS_ID" | tee -a deployments/mainnet.env
 
 Verify reads:
 ```bash
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_admin
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_fee_bps
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_fee_account
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_profile_contract
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- is_paused
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_admin
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_fee_bps
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_fee_account
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_profile_contract
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- is_paused
 ```
 
 All must return the values you set.
@@ -142,8 +151,8 @@ All must return the values you set.
 
 ```bash
 # Profile contract needs to know which events contract is allowed to write to it.
-soroban contract invoke \
-  --network mainnet \
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
   --source $INITIAL_ADMIN_KEY \
   --id $PROFILE_ID \
   -- set_events_contract \
@@ -155,23 +164,24 @@ soroban contract invoke \
 Verify the version label was written by the constructor:
 
 ```bash
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $PROFILE_ID -- version
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- version
-# Both should return "0.2.0" (or the INITIAL_VERSION constant of the wasm being deployed).
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $PROFILE_ID -- version
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- version
+# For this tree: profile returns "1.1.0" and events returns "1.2.0".
+# For a tagged release, compare each result with that package's INITIAL_VERSION.
 ```
 
 ### 2.5 Register USDC SAC
 
 ```bash
-soroban contract invoke \
-  --network mainnet \
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
   --source $INITIAL_ADMIN_KEY \
   --id $EVENTS_ID \
   -- register_supported_token \
   --token $USDC_SAC
 
 # Confirm
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID \
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID \
   -- is_supported_token --token $USDC_SAC
 # Should return true.
 ```
@@ -179,7 +189,7 @@ soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVEN
 If you are launching with XLM support too (per B14):
 ```bash
 export XLM_SAC=<XLM Stellar Asset Contract address>  # native XLM SAC
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID \
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID \
   -- register_supported_token --token $XLM_SAC
 ```
 
@@ -217,24 +227,31 @@ Now that the deploy works, rotate the admin key. This is the operation that lock
 export MULTISIG_ADMIN_ADDRESS=GMULTISIG...
 
 # Step B: set the pending admin (two-step rotation).
-soroban contract invoke \
-  --network mainnet \
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
   --source $INITIAL_ADMIN_KEY \
   --id $EVENTS_ID \
   -- set_admin \
   --new_admin $MULTISIG_ADMIN_ADDRESS
 
-# Step C: the multi-sig accepts. This requires THRESHOLD signers to sign together.
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
+# Step C: build + simulate the multi-sig accept transaction.
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
+  --source-account $MULTISIG_ADMIN_ADDRESS \
   --id $EVENTS_ID \
-  -- accept_admin
+  --build-only \
+  -- accept_admin \
+  | stellar tx simulate \
+      --network "$STELLAR_NETWORK" \
+      --source-account $MULTISIG_ADMIN_ADDRESS \
+  > /tmp/events-accept-admin.xdr
 ```
+
+Sign `/tmp/events-accept-admin.xdr` sequentially with the required quorum, then submit the final signed XDR with `stellar tx send "<signed-xdr>" --network "$STELLAR_NETWORK"`. Follow `docs/contract-ops-runbook.md` Section 5 exactly.
 
 Verify:
 ```bash
-soroban contract invoke --network mainnet --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_admin
+stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- get_admin
 # Should now return $MULTISIG_ADMIN_ADDRESS.
 ```
 
@@ -245,7 +262,7 @@ Do the same rotation on `$PROFILE_ID`.
 The initial admin key was a single-key, used only to deploy. Once Section 2.7 succeeds:
 
 1. Securely delete the local copy on the deploy machine (`shred -u` or equivalent).
-2. Confirm via `soroban keys ls` that the key is no longer registered.
+2. Confirm via `stellar keys ls` that the key is no longer registered.
 3. The on-chain account that held the key continues to exist but has no admin authority on the contract anymore. Its funds can be swept to the treasury later.
 
 ### 2.9 Record the deployment
@@ -297,14 +314,23 @@ If anything looks wrong between Section 2.6 and the public announcement, pause i
 
 ```bash
 # Pause: any TWO multi-sig signers (lower-quorum emergency authority).
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
+  --source-account $MULTISIG_ADMIN_ADDRESS \
   --id $EVENTS_ID \
-  -- pause
+  --build-only \
+  -- pause \
+  | stellar tx simulate \
+      --network "$STELLAR_NETWORK" \
+      --source-account $MULTISIG_ADMIN_ADDRESS \
+  > /tmp/events-emergency-pause.xdr
 ```
 
-Pause stops every state-mutating op: `create_event`, `add_funds`, `start_cancel`, `process_cancel_batch`, `finalize_cancel`, `select_winners`, `claim_milestone`, `apply_to_bounty`, `withdraw_application`, `submit`, `withdraw_submission`, `register_supported_token`, `deregister_supported_token`, `propose_upgrade`, `apply_upgrade`, `cancel_pending_upgrade`, `migrate`, and the admin rotations. Reads continue.
+Sign `/tmp/events-emergency-pause.xdr` sequentially with two signers, submit with `stellar tx send`, then read `is_paused` back as `true`.
+
+Pause stops event-lifecycle mutations guarded by `require_not_paused`, including `create_event`, `add_funds`, `propose_manager`, `accept_manager`, `cancel_pending_manager`, `start_cancel`, `process_cancel_batch`, `finalize_cancel`, `select_winners`, `claim_milestone`, `apply_to_bounty`, `withdraw_application`, `submit`, and `withdraw_submission`. Reads continue.
+
+Pause intentionally does **not** block admin recovery and governance entrypoints such as `propose_upgrade`, `apply_upgrade`, `cancel_pending_upgrade`, `migrate`, configuration changes, token-list changes, admin rotation, or `unpause`. This is why the 1.1.0 → 1.2.0 upgrade can remain paused through its timelock.
 
 Unpausing requires full quorum (see `admin-custody-policy.md` Section 4).
 
@@ -329,13 +355,13 @@ Unpausing requires full quorum (see `admin-custody-policy.md` Section 4).
 - Automate the smoke battery in Section 2.6 + 3 as a single `npm run smoke:mainnet` target.
 - Move the deploy machine to a hardware-isolated workstation; the deploy session uses the only sensitive key.
 - Publish the verified `mainnet.json` to the docs site as a tamper-evident reference.
-- Append a row to `deployments/mainnet-upgrades.jsonl` for each `apply_upgrade` / `migrate` op (timestamp, prev_version, new_version, wasm_hash, tx_hash). Section 7 below covers the upgrade flow itself.
+- Extend `deployments/mainnet-upgrades.jsonl` logging with transaction hashes. `deploy_mainnet.sh` already records timestamp, action, version, and wasm hash.
 
 ---
 
 ## 7. Upgrades (timelocked; H6)
 
-The 2026-06 audit replaced the immediate-effect `upgrade(wasm_hash)` admin call with a three-step timelock flow. The `deploy_and_upgrade.sh` helper wraps it; this section documents the underlying contract calls so on-call can recover from a stuck state without the script.
+The 2026-06 audit replaced the immediate-effect `upgrade(wasm_hash)` admin call with a three-step timelock flow. Use `deploy_mainnet.sh` for mainnet; it verifies the queued version and exact WASM hash and provides the special 1.1.0 → 1.2.0 zero-event guard. Direct contract calls below are only for diagnosis.
 
 ### 7.1 Constants
 
@@ -348,71 +374,96 @@ These are in `contracts/events/src/admin.rs` and `contracts/profile/src/admin.rs
 
 ### 7.2 Propose
 
-```bash
-# Build + upload the new wasm.
-soroban contract build --release
-NEW_HASH=$(soroban contract upload \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
-  --wasm target/wasm32-unknown-unknown/release/boundless_events.wasm)
-
-# Propose. The new_version label is the value `version()` will return after
-# apply_upgrade. Bump it whenever the wasm changes; otherwise migrate guards
-# stop being meaningful.
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
-  --id $EVENTS_ID \
-  -- propose_upgrade \
-  --new_wasm_hash $NEW_HASH \
-  --new_version "0.3.0"   # bump this each upgrade
-```
-
-After the call, inspect the queued proposal:
+For the 1.1.0 → 1.2.0 upgrade, the zero-event assumption must remain true for the entire timelock. Set the live contract ID explicitly if `deployments/mainnet.json` is not present. `ADMIN_SOURCE` is the admin multi-sig G-address, not a secret or single-signer alias. `UPLOAD_SOURCE` is a separate funded, signable CLI identity; uploading WASM does not require contract-admin authority.
 
 ```bash
-soroban contract invoke --network mainnet --source $MULTISIG_ADMIN_ADDRESS --id $EVENTS_ID -- get_pending_upgrade
-# Confirm wasm_hash, new_version, proposed_at_ledger, available_at_ledger,
-# expires_at_ledger.
+export EVENTS_ID=CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ
+export ADMIN_SOURCE=$MULTISIG_ADMIN_ADDRESS
+export UPLOAD_SOURCE=boundless-upgrade-uploader
+
+stellar contract build
+EVENTS_WASM=target/wasm32v1-none/release/boundless_events.wasm
+
+# Upload the exact already-built artifact before starting downtime.
+./deploy_mainnet.sh upload-events-wasm "$EVENTS_WASM"
+
+# Guard the current 1.1.0 zero-event state and prepare the pause transaction.
+./deploy_mainnet.sh prepare-pause-events /tmp/events-1.2.0-pause.xdr
 ```
+
+Sign `/tmp/events-1.2.0-pause.xdr` sequentially with the required quorum and submit it with `stellar tx send`. Then:
+
+```bash
+./deploy_mainnet.sh upgrade-status
+# is_paused must be true.
+
+# Recheck version + pause + zero-event state, then prepare the proposal.
+./deploy_mainnet.sh prepare-propose-upgrade-events \
+  "$EVENTS_WASM" "1.2.0" /tmp/events-1.2.0-propose.xdr
+```
+
+Sign and submit `/tmp/events-1.2.0-propose.xdr`, then verify what actually landed:
+
+```bash
+./deploy_mainnet.sh verify-proposed-upgrade-events "$EVENTS_WASM" "1.2.0"
+./deploy_mainnet.sh upgrade-status
+```
+
+The guarded preparation and verification:
+
+- requires the live version to be `1.1.0` and no other upgrade to be pending;
+- requires the pause transaction to have landed and `is_paused` to read back as `true`;
+- derives the first possible event ID from `id_base` and requires `get_event` to fail specifically with `EventNotFound`;
+- uploads without re-optimizing and requires the returned hash to equal the local file's SHA-256;
+- builds and simulates the admin transaction without attempting to bypass the 2-of-3 signing flow;
+- reads back both the queued version and exact WASM hash after the signed proposal lands.
+
+The contract remains paused after proposal. Do not unpause during the timelock: `is_paused == true` is what prevents a new event from invalidating the zero-event snapshot before apply. If the event check succeeds or returns any ambiguous RPC error, the script aborts fail-closed. Do not apply 1.2.0; implement a paginated legacy-total migration instead.
 
 Publish the `proposed_at` ledger sequence and `available_at` ledger to the status page so the community has a window to inspect the new wasm before it lands.
 
 ### 7.3 Apply
 
-Wait for the current ledger sequence to reach `available_at_ledger`. The `deploy_and_upgrade.sh status` action reads the proposal back and is the recommended check. On day-of:
+Wait for the current ledger sequence to reach `available_at_ledger`. Keep the exact proposed WASM artifact. On day-of:
 
 ```bash
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
-  --id $EVENTS_ID \
-  -- apply_upgrade
+./deploy_mainnet.sh upgrade-status
+./deploy_mainnet.sh prepare-apply-upgrade-events \
+  "$EVENTS_WASM" "1.2.0" /tmp/events-1.2.0-apply.xdr
 ```
 
-Errors:
-- `UpgradeTimelockNotElapsed` — wait longer.
-- `UpgradeProposalExpired` — past the 30-day window; `cancel_pending_upgrade` then re-`propose_upgrade`.
-- `UpgradeNotProposed` — no proposal in storage; check whether someone cancelled.
+Before preparing apply, the script rechecks the local WASM hash against the queued hash, current version, `is_paused == true`, and the zero-event invariant. Sign and submit `/tmp/events-1.2.0-apply.xdr`, then read status. It must show version `1.2.0`, no pending proposal, and still paused.
 
-After `apply_upgrade` settles, verify:
+Prepare, sign, and submit migration:
 
 ```bash
-soroban contract invoke --network mainnet --source $MULTISIG_ADMIN_ADDRESS --id $EVENTS_ID -- version
-# Should return the new_version label from the proposal.
+./deploy_mainnet.sh upgrade-status
+./deploy_mainnet.sh prepare-migrate-upgrade-events \
+  "1.2.0" /tmp/events-1.2.0-migrate.xdr
 ```
 
-Then call `migrate()` if the upgrade ships a storage-layout change. Currently the 0.2.0 initial deploy has no migration body, so a no-op `migrate()` call is safe but optional; future upgrades may require it.
+After migration lands, prepare, sign, and submit unpause:
 
 ```bash
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
-  --id $EVENTS_ID \
-  -- migrate
+./deploy_mainnet.sh upgrade-status
+# get_migrated_to_version must be "1.2.0".
+./deploy_mainnet.sh prepare-unpause-events \
+  "1.2.0" /tmp/events-1.2.0-unpause.xdr
 ```
 
-A second `migrate` call returns `MigrationAlreadyApplied`; that's the success signal that the marker landed.
+Only after the signed unpause lands:
+
+```bash
+./deploy_mainnet.sh verify-upgrade-events "$EVENTS_WASM" "1.2.0"
+```
+
+The final verification requires version `1.2.0`, migration marker `1.2.0`, no pending proposal, and `is_paused == false` before updating the local deployment record.
+
+Common contract errors:
+
+- `UpgradeTimelockNotElapsed` — wait longer; leave the contract paused.
+- `UpgradeProposalExpired` — cancel the pending proposal, then propose again.
+- `UpgradeNotProposed` — no proposal is in storage; inspect `upgrade-status`.
 
 ### 7.4 Rotating the events-contract address on `boundless-profile`
 
@@ -420,20 +471,28 @@ A second `migrate` call returns `MigrationAlreadyApplied`; that's the success si
 
 ```bash
 # Propose the new events contract address.
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
+  --source-account $MULTISIG_ADMIN_ADDRESS \
   --id $PROFILE_ID \
+  --build-only \
   -- propose_events_contract \
-  --new_addr $NEW_EVENTS_ID
+  --new_addr $NEW_EVENTS_ID \
+  | stellar tx simulate --network "$STELLAR_NETWORK" --source-account $MULTISIG_ADMIN_ADDRESS \
+  > /tmp/profile-propose-events-contract.xdr
 
 # Wait ~1 day (EVENTS_CONTRACT_TIMELOCK_LEDGERS = 17_280).
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
+stellar contract invoke \
+  --network "$STELLAR_NETWORK" \
+  --source-account $MULTISIG_ADMIN_ADDRESS \
   --id $PROFILE_ID \
-  -- accept_events_contract
+  --build-only \
+  -- accept_events_contract \
+  | stellar tx simulate --network "$STELLAR_NETWORK" --source-account $MULTISIG_ADMIN_ADDRESS \
+  > /tmp/profile-accept-events-contract.xdr
 ```
+
+Sign and submit each prepared XDR separately, verifying the proposal landed before preparing the accept transaction.
 
 Expiry is 7 days (`PENDING_EVENTS_CONTRACT_TTL_LEDGERS = 120_960`).
 
@@ -442,19 +501,32 @@ Expiry is 7 days (`PENDING_EVENTS_CONTRACT_TTL_LEDGERS = 120_960`).
 If a propose was wrong but not yet applied:
 
 ```bash
-soroban contract invoke \
-  --network mainnet \
-  --source $MULTISIG_ADMIN_ADDRESS \
-  --id $EVENTS_ID \
-  -- cancel_pending_upgrade
+./deploy_mainnet.sh prepare-cancel-upgrade-events \
+  /tmp/events-1.2.0-cancel.xdr
 ```
 
-Then propose again.
+Sign and submit the cancel XDR. Cancellation deliberately leaves the pause state unchanged. Either propose the corrected artifact while still paused, or inspect `upgrade-status` and, only when abandoning the upgrade, prepare/sign/send an unpause for the still-live version:
 
-If `apply_upgrade` fails after wasm swap:
-- The wasm hash is updated atomically; a failed apply leaves the contract on the OLD wasm.
-- Diagnose via `get_pending_upgrade` (still present?), `version()` (still old?).
-- If the contract is in a broken state post-apply, pause (Section 4) and contact the lead engineer.
+```bash
+./deploy_mainnet.sh prepare-unpause-events \
+  "1.1.0" /tmp/events-abandon-upgrade-unpause.xdr
+```
+
+`apply_upgrade` itself is atomic: a failed apply leaves the old WASM and pending proposal in place. Regenerate the prepared apply XDR because simulated transactions have time bounds. Migration is a separate transaction. If apply lands but migration or final verification fails, 1.2.0 remains paused and the pending proposal is already cleared. Recover with:
+
+```bash
+./deploy_mainnet.sh upgrade-status
+./deploy_mainnet.sh prepare-migrate-upgrade-events \
+  "1.2.0" /tmp/events-1.2.0-migrate-recovery.xdr
+# Sign and submit the migration XDR.
+./deploy_mainnet.sh upgrade-status
+./deploy_mainnet.sh prepare-unpause-events \
+  "1.2.0" /tmp/events-1.2.0-unpause-recovery.xdr
+# Sign and submit the unpause XDR.
+./deploy_mainnet.sh verify-upgrade-events "$EVENTS_WASM" "1.2.0"
+```
+
+`prepare-unpause-events` refuses to prepare a 1.2.0 unpause until its migration marker is exactly `1.2.0`.
 
 ---
 
@@ -471,7 +543,7 @@ This section summarizes everything that changed in the contract surface between 
 
 ### 8.2 Added
 
-- `version() -> String` — on-chain semver. Returns `INITIAL_VERSION` (`0.2.0` for the initial mainnet ship); bumped by `apply_upgrade`.
+- `version() -> String` — on-chain semver. Returns that package's `INITIAL_VERSION`; bumped by `apply_upgrade`.
 - `propose_upgrade(wasm_hash, new_version)`, `apply_upgrade()`, `cancel_pending_upgrade()`, `migrate()` — timelocked upgrade flow.
 - `start_cancel(event_id, op_id)`, `process_cancel_batch(event_id, max_refunds, op_id) -> u32`, `finalize_cancel(event_id, op_id)` — paged cancellation.
 - `propose_events_contract(addr)`, `accept_events_contract()`, `cancel_pending_events_contract()` — two-step rotation for the profile contract's events binding. First-set still uses `set_events_contract`.
@@ -492,19 +564,24 @@ This section summarizes everything that changed in the contract surface between 
 ```
 start_cancel(event_id, op_id)
   ├─ 0 contributors → status flips to Cancelled inline, owner refunded.
-  └─ N contributors → status flips to Cancelling, CancellationState stored.
+  └─ N contributors → status flips to Cancelling,
+     CancellationState stored from one NonOwnerContributionTotal read.
 
 process_cancel_batch(event_id, max_refunds, op_id) -> remaining
+  ├─ permissionless once status is Cancelling.
   ├─ refunds up to min(max_refunds, MAX_REFUNDS_PER_BATCH = 25) contributors.
   ├─ advances cursor inside CancellationState.
   └─ returns the count of contributors still queued. Loop until 0.
 
 finalize_cancel(event_id, op_id)
+  ├─ permissionless once status is Cancelling.
   ├─ requires cursor == count_at_start (errors with CancellationNotFinished otherwise).
   ├─ pays owner residual on the FullPartnerThenResidual branch.
   └─ status flips to Cancelled, CancellationState cleared.
 ```
 
-Cap math: at `MAX_REFUNDS_PER_BATCH = 25`, refunding 5_000 contributors takes 200 batch transactions (~17 minutes wall clock at testnet ledger cadence). Most cancels are well under that.
+Cap math: at `MAX_REFUNDS_PER_BATCH = 25`, refunding 5_000 contributors takes 200 batch transactions (~17 minutes wall clock at testnet ledger cadence). Most cancels are well under that limit.
 
-The paged-cancel automation worker lives in `boundless-nestjs` (see its own BACKLOG for the worker's status). For now, the orchestrator's `beginStartCancel` kicks off step 1 and an admin tool drives steps 2 + 3.
+The paged-cancel automation worker lives in `boundless-nestjs` (see its own BACKLOG for the worker's status). The orchestrator's `beginStartCancel` kicks off step 1. Any account can sponsor steps 2 and 3, so an unavailable event manager cannot strand a cancellation already in progress.
+
+For the 1.1.0 → 1.2.0 mainnet upgrade, `deploy_mainnet.sh` freezes the zero-event assumption: it pauses before proposal, verifies `is_paused == true` and `EventNotFound`, keeps the contract paused through the timelock, and repeats both checks immediately before apply. Any existing event or ambiguous RPC result aborts the upgrade. New events initialize `NonOwnerContributionTotal` at zero and `add_funds` maintains it in O(1). An older event with no contributors initializes the missing total lazily. If an older event already has contributors, `add_funds` and `start_cancel` fail with `CancellationTotalMissing` instead of using an incomplete total.

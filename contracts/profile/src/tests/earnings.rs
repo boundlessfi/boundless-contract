@@ -1,8 +1,3 @@
-// boundless-profile: earnings registration tests.
-//
-// Covers register_earnings() — guards, error variants, idempotency,
-// auth rejection, saturating arithmetic.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -24,10 +19,6 @@ fn user(env: &crate::Env) -> Address {
 fn token(env: &crate::Env) -> Address {
     Address::generate(env)
 }
-
-// ---------------------------------------------------------------------------
-// Happy path
-// ---------------------------------------------------------------------------
 
 #[test]
 fn register_earnings_succeeds() {
@@ -60,10 +51,6 @@ fn register_earnings_accumulates() {
 
     assert_eq!(ctx.client.get_earnings(&u, &t), 100);
 }
-
-// ---------------------------------------------------------------------------
-// Edge cases: multiple tokens / users
-// ---------------------------------------------------------------------------
 
 #[test]
 fn register_earnings_multiple_tokens() {
@@ -101,10 +88,6 @@ fn register_earnings_multiple_users() {
     assert_eq!(ctx.client.get_earnings(&u2, &t), 200);
 }
 
-// ---------------------------------------------------------------------------
-// Error: InvalidAmount (zero / negative)
-// ---------------------------------------------------------------------------
-
 #[test]
 fn register_earnings_rejects_zero() {
     let ctx = setup();
@@ -139,10 +122,6 @@ fn register_earnings_rejects_negative() {
     assert_eq!(err, Error::InvalidAmount);
 }
 
-// ---------------------------------------------------------------------------
-// Error: EventsContractNotConfigured
-// ---------------------------------------------------------------------------
-
 #[test]
 fn register_earnings_reverts_no_events_contract() {
     let ctx = setup();
@@ -157,10 +136,6 @@ fn register_earnings_reverts_no_events_contract() {
         .unwrap();
     assert_eq!(err, Error::EventsContractNotConfigured);
 }
-
-// ---------------------------------------------------------------------------
-// Error: Paused
-// ---------------------------------------------------------------------------
 
 #[test]
 fn register_earnings_reverts_when_paused() {
@@ -180,10 +155,6 @@ fn register_earnings_reverts_when_paused() {
     assert_eq!(err, Error::Paused);
 }
 
-// ---------------------------------------------------------------------------
-// Idempotency: duplicate op_id
-// ---------------------------------------------------------------------------
-
 #[test]
 fn register_earnings_rejects_duplicate_op_id() {
     let ctx = setup();
@@ -193,11 +164,9 @@ fn register_earnings_rejects_duplicate_op_id() {
     let t = token(&ctx.env);
     let op_id = BytesN::random(&ctx.env);
 
-    // First call succeeds.
     ctx.client.register_earnings(&u, &t, &100_i128, &op_id);
     assert_eq!(ctx.client.get_earnings(&u, &t), 100);
 
-    // Same op_id — idempotency guard.
     let err = ctx
         .client
         .try_register_earnings(&u, &t, &200_i128, &op_id)
@@ -206,13 +175,8 @@ fn register_earnings_rejects_duplicate_op_id() {
         .unwrap();
     assert_eq!(err, Error::OpAlreadySeen);
 
-    // Balance unchanged.
     assert_eq!(ctx.client.get_earnings(&u, &t), 100);
 }
-
-// ---------------------------------------------------------------------------
-// Edge: saturating arithmetic
-// ---------------------------------------------------------------------------
 
 #[test]
 fn register_earnings_saturating_add() {
@@ -222,20 +186,14 @@ fn register_earnings_saturating_add() {
     let u = user(&ctx.env);
     let t = token(&ctx.env);
 
-    // Push to i128::MAX - 1.
     ctx.client
         .register_earnings(&u, &t, &(i128::MAX - 1), &BytesN::random(&ctx.env));
     assert_eq!(ctx.client.get_earnings(&u, &t), i128::MAX - 1);
 
-    // Add 100 — should saturate at i128::MAX, not overflow.
     ctx.client
         .register_earnings(&u, &t, &100_i128, &BytesN::random(&ctx.env));
     assert_eq!(ctx.client.get_earnings(&u, &t), i128::MAX);
 }
-
-// ---------------------------------------------------------------------------
-// Auth rejection: caller is not the events contract.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn register_earnings_auth_rejection() {
@@ -244,7 +202,6 @@ fn register_earnings_auth_rejection() {
     let contract_id = env.register(crate::ProfileContract, (admin.clone(),));
     let client = crate::ProfileContractClient::new(&env, &contract_id);
 
-    // Set events contract directly in storage to bypass admin auth.
     env.as_contract(&contract_id, || {
         crate::storage::set_events_contract(&env, &events_addr(&env));
     });
@@ -252,8 +209,6 @@ fn register_earnings_auth_rejection() {
     let u = user(&env);
     let t = token(&env);
 
-    // No mock_auths — the events address hasn't authorized this call,
-    // so require_auth() inside register_earnings should fail.
     let result = client.try_register_earnings(&u, &t, &100_i128, &BytesN::random(&env));
     assert!(
         result.is_err(),

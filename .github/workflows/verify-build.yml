@@ -7,6 +7,10 @@ on:
       - testnet
     paths:
       - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/actions/setup-rust-stellar/**'
       - '.github/workflows/verify-build.yml'
   # Use pull_request (not pull_request_target): the check must run the workflow
   # from the PR head so branch-filter changes take effect on the PR itself, and
@@ -19,6 +23,10 @@ on:
       - testnet
     paths:
       - 'contracts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/actions/setup-rust-stellar/**'
       - '.github/workflows/verify-build.yml'
       - '.github/workflows/rustfmt.yml'
   workflow_dispatch:
@@ -26,14 +34,15 @@ on:
 permissions:
   contents: read
   actions: read
-  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository using git
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
 
       - name: Setup Rust and Stellar
         uses: ./.github/actions/setup-rust-stellar

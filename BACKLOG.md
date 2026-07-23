@@ -29,7 +29,10 @@ See `docs/audit-2026-06-stellar-skill.md` for full findings.
 
 ## P1 (post-launch)
 
-- [ ] `select_winners` re-run semantics: today rejected; revisit if a real customer wants "append-only" behavior. Open question, not blocking.
+- [x] `select_winners` re-run semantics: 1.3.0 (#61) made Single-release selection batchable — each position is awardable exactly once (per-position `EventPrizeAward` key is the replay lock), amounts stay anchored to the baseline captured at the first batch, and pre-1.3.0 events remain one-shot. (2026-07-18)
+- [ ] Per-event prize claim window: `PRIZE_CLAIM_WINDOW_SECS` (90 days) is a module constant for now because adding a field to `EventRecord` requires a storage migration. Move it onto `EventRecord` at the next real migration window, per the per-event-config rule in CLAUDE.md.
+- [ ] `Error` enum is at the 50-case XDR spec cap. The next error needs consolidation of an existing variant; plan this before the audit freeze.
+- [ ] Measure real `select_winners` batch headroom with `simulateTransaction` on testnet (entry writes per winner: row + award key). The 50/call cap is conservative; raise it only from measured numbers.
 - [ ] Grant committee multi-sig primitive (dedicated signer set + quorum at the contract level vs the current address-level multi-sig).
 - [ ] Bounty Showdown participation badge on the boundless-profile contract for non-winning finalists.
 - [ ] Multi-token support audit: verify the whitelist mechanism handles tokens with non-Stellar 7-decimal scales (currently assumed uniform).
@@ -55,6 +58,7 @@ See `docs/audit-2026-06-stellar-skill.md` for full findings.
 
 ## Done
 
+- [x] 2026-07-17 — Cancellation liveness hardening. `add_funds` now maintains an O(1) per-event non-owner contribution total, `start_cancel` no longer scans up to 5,000 contributor rows, and `process_cancel_batch` / `finalize_cancel` are permissionless after cancellation starts. The guarded 1.1.0 → 1.2.0 mainnet flow pauses before proposal, proves the zero-event state, keeps it frozen through the timelock, and rechecks before apply. Older zero-contributor rows initialize the missing total lazily; a missing total with existing contributors fails closed. Tests cover a 220-contributor constant-footprint start and exact third-party-driven payout deltas.
 - [x] 2026-06-03 — `fee_bps_override` per-event field + `effective_fee_bps` resolver.
 - [x] 2026-06-03 — `WinnersAlreadySelected` replay lock on `select_winners`.
 - [x] 2026-06-03 — Grant last-milestone sweep (G4).

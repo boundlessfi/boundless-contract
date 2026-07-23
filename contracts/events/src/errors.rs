@@ -1,14 +1,9 @@
-// boundless-events: error codes.
-//
-// Spec: boundless-platform-contract-prd.md Section 14.
-
 use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    // Init
     AlreadyInitialized = 1,
     AdminCannotBeZero = 2,
     FeeAccountCannotBeZero = 3,
@@ -16,17 +11,18 @@ pub enum Error {
     InvalidFeeBps = 5,
     NotInitialized = 6,
 
-    // Auth
     Unauthorized = 10,
     NotAdmin = 11,
-    PendingAdminMismatch = 12,
-    PendingAdminExpired = 13,
+    // Shared by both two-step rotations (admin and event manager): no pending
+    // proposal / target mismatch (12) and pending proposal expired (13). The
+    // enum is at the 50-case XDR cap, so the manager flow reuses these rather
+    // than adding variants.
+    PendingRotationMismatch = 12,
+    PendingRotationExpired = 13,
 
-    // Token
     TokenNotSupported = 20,
     FeeAccountMissingTrustline = 21,
 
-    // Event lifecycle
     EventNotFound = 30,
     EventNotActive = 31,
     InvalidPillar = 32,
@@ -38,14 +34,11 @@ pub enum Error {
     DeadlineMustBeFuture = 38,
     TitleTooLong = 39,
 
-    // Participation
     ApplicantAlreadyApplied = 40,
     ApplicantNotApplied = 41,
     SubmissionNotFound = 42,
     SubmissionAlreadyExists = 43,
-    // 44 (InsufficientCredits) retired with on-chain credits; left as a gap.
 
-    // Winners
     NoSubmissions = 50,
     InvalidWinnerPosition = 51,
     DuplicateWinnerPosition = 52,
@@ -55,32 +48,32 @@ pub enum Error {
     InsufficientEscrow = 56,
     WinnersAlreadySelected = 90,
 
-    // Contributions
     BelowMinimumContribution = 57,
     InvalidContributionAmount = 58,
 
-    // Capacity (per-event list caps; see MAX_*_PER_EVENT in event_ops)
     TooManyApplicants = 59,
 
-    // Idempotency
     OpAlreadySeen = 60,
 
-    // Capacity continued
+    // Also returned by append_submission's cap check — the enum is at
+    // the 50-case XDR cap, so the hackathon submission cap reuses this
+    // rather than adding a variant.
     TooManyContributors = 61,
 
-    // Paged cancellation flow
     CancellationNotStarted = 62,
     CancellationAlreadyStarted = 63,
     CancellationNotFinished = 64,
+    CancellationTotalMissing = 66,
 
     UpgradeNotProposed = 65,
     UpgradeTimelockNotElapsed = 67,
     UpgradeProposalExpired = 68,
     MigrationAlreadyApplied = 69,
 
-    // Pause
     Paused = 70,
 
-    // Cross-contract
     ProfileCallFailed = 80,
+
+    // Enum is at the 50-case XDR cap; consolidate before adding another.
+    PrizeAlreadyClaimed = 91,
 }

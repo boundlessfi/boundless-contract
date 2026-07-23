@@ -1,24 +1,3 @@
-// boundless-events: hackathon pillar tests.
-//
-// Covers the Pillar::Hackathon paths end-to-end against a real
-// boundless-profile so the cross-contract reputation / earnings side-effects
-// of select_winners are exercised, not mocked:
-//
-//   - create_event validation: Hackathon requires ReleaseKind::Single and a
-//     future deadline; the full budget is escrowed (fee taken at deposit).
-//   - submit: open submission model with no prior apply.
-//     deadline gate, re-submit, idempotency, withdraw.
-//   - select_winners distribution: single-recipient sweep and multi-position
-//     split. Each split test asserts BOTH recipient and fee-account deltas
-//     (CLAUDE.md hard rule), plus profile bumps and the stored winner rows.
-//   - select_winners rejections: empty set, position not in distribution,
-//     duplicate position, replay (WinnersAlreadySelected), missing event,
-//     already-completed event, and owner-auth requirement.
-//   - claim_milestone is rejected for a Single-release hackathon.
-//
-// Spec: boundless-platform-contract-prd.md Section 7. Template:
-// src/tests/crowdfunding.rs and src/tests/cross_contract.rs.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -26,20 +5,23 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
-use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
+use crate::errors::Error;
+use crate::event_ops::{MAX_CONTENT_URI_LEN, MAX_SUBMISSIONS_PER_EVENT};
+use crate::storage;
+use crate::types::{CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
 const FEE_BPS: u32 = 250;
 
-// 10k USDC at 7 decimals.
 const TOTAL_BUDGET: i128 = 10_000_0000000_i128;
 const FEE_AMOUNT: i128 = (TOTAL_BUDGET * FEE_BPS as i128) / 10_000_i128;
 
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
+    events_id: Address,
     profile: ProfileContractClient<'a>,
     owner: Address,
     applicant: Address,
@@ -50,8 +32,6 @@ struct Ctx<'a> {
 
 fn setup<'a>() -> Ctx<'a> {
     let env = Env::default();
-    // Non-root auth needed for token transfers and the cross-contract calls
-    // into the profile contract during select_winners.
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
@@ -77,7 +57,6 @@ fn setup<'a>() -> Ctx<'a> {
     let token_addr = sac.address();
     let token_admin = token::StellarAssetClient::new(&env, &token_addr);
 
-    // Touch fee_account's trustline (mint 0) and fund the owner.
     token_admin.mint(&fee_account, &0);
     let owner = Address::generate(&env);
     token_admin.mint(&owner, &1_000_000_0000000_i128);
@@ -89,6 +68,7 @@ fn setup<'a>() -> Ctx<'a> {
     Ctx {
         env,
         events,
+        events_id,
         profile,
         owner,
         applicant,
@@ -98,13 +78,21 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
+fn expect_op_err<T, E>(
+    result: Result<Result<T, E>, Result<Error, soroban_sdk::InvokeError>>,
+) -> Error {
+    match result {
+        Err(Ok(e)) => e,
+        _ => panic!("expected contract error"),
+    }
+}
+
 fn single_winner_dist(env: &Env) -> Map<u32, u32> {
     let mut m = Map::new(env);
     m.set(1, 100);
     m
 }
 
-// 50 / 30 / 20 across positions 1..=3.
 fn three_way_dist(env: &Env) -> Map<u32, u32> {
     let mut m = Map::new(env);
     m.set(1, 50);
@@ -156,7 +144,6 @@ fn create_deposits_full_budget_and_takes_fee_at_deposit() {
         "hackathon escrows the full budget at create"
     );
 
-    // Owner paid budget + fee; fee account received the deposit-time fee.
     assert_eq!(
         owner_before - token.balance(&ctx.owner),
         TOTAL_BUDGET + FEE_AMOUNT
@@ -209,7 +196,6 @@ fn create_rejects_missing_deadline() {
 #[test]
 fn create_rejects_past_deadline() {
     let ctx = setup();
-    // try_ variant so we observe the error instead of panicking on the host.
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -218,7 +204,6 @@ fn create_rejects_past_deadline() {
         release_kind: ReleaseKind::Single,
         content_uri: String::from_str(&ctx.env, "uri"),
         title: String::from_str(&ctx.env, "Hackathon"),
-        // Equal-to-now is not in the future; create_event rejects it.
         deadline: Some(ctx.env.ledger().timestamp()),
         winner_distribution: single_winner_dist(&ctx.env),
         fee_bps_override: None,
@@ -272,7 +257,6 @@ fn submit_after_deadline_reverts() {
     let ctx = setup();
     let id = create_hackathon(&ctx);
 
-    // Jump the ledger past the 1-day submission deadline.
     ctx.env.ledger().with_mut(|li| {
         li.timestamp += 2 * 86_400;
     });
@@ -312,6 +296,125 @@ fn withdraw_submission_removes_anchor() {
     assert!(res.is_err(), "withdrawn submission is no longer readable");
 }
 
+#[test]
+fn remove_submission_on_nonexistent_entry_does_not_corrupt_counter() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let submitter = Address::generate(&ctx.env);
+    ctx.events.submit(
+        &id,
+        &submitter,
+        &String::from_str(&ctx.env, "ipfs://Qm.../v1.json"),
+        &BytesN::random(&ctx.env),
+    );
+
+    // ctx.applicant never submitted — calling the low-level storage helper
+    // directly for it must be a no-op, not decrement the counter that
+    // `submitter`'s real submission incremented.
+    ctx.env.as_contract(&ctx.events_id, || {
+        storage::remove_submission(&ctx.env, id, &ctx.applicant);
+    });
+
+    let count = ctx
+        .env
+        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
+    assert_eq!(
+        count, 1,
+        "removing a nonexistent submission must not corrupt the counter"
+    );
+}
+
+#[test]
+fn withdraw_submission_frees_the_slot_for_future_submitters() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
+    ctx.events
+        .submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
+    ctx.events
+        .withdraw_submission(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    let count = ctx
+        .env
+        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
+    assert_eq!(
+        count, 0,
+        "withdrawing a submission must free its slot against the cap"
+    );
+}
+
+#[test]
+fn submit_beyond_cap_reverts() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    // Fast-forward the per-event counter directly instead of performing
+    // MAX_SUBMISSIONS_PER_EVENT real submissions from distinct addresses.
+    ctx.env.as_contract(&ctx.events_id, || {
+        ctx.env.storage().persistent().set(
+            &DataKey::EventSubmissionCount(id),
+            &MAX_SUBMISSIONS_PER_EVENT,
+        );
+    });
+
+    let uri = String::from_str(&ctx.env, "ipfs://Qm.../overflow.json");
+    let op = BytesN::random(&ctx.env);
+    let err = expect_op_err(ctx.events.try_submit(&id, &ctx.applicant, &uri, &op));
+    assert_eq!(
+        err,
+        Error::TooManyContributors,
+        "a submission at cap + 1 must revert"
+    );
+}
+
+#[test]
+fn submit_oversized_content_uri_reverts() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let too_long = "x".repeat((MAX_CONTENT_URI_LEN + 1) as usize);
+    let uri = String::from_str(&ctx.env, &too_long);
+    let op = BytesN::random(&ctx.env);
+    let err = expect_op_err(ctx.events.try_submit(&id, &ctx.applicant, &uri, &op));
+    // Reused rather than a new variant — stays inside the contracterror
+    // 50-variant cap (see BACKLOG.md L7 for precedent).
+    assert_eq!(
+        err,
+        Error::TitleTooLong,
+        "content_uri beyond MAX_CONTENT_URI_LEN must revert"
+    );
+}
+
+#[test]
+fn resubmit_by_existing_applicant_does_not_increment_submission_count() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
+    ctx.events
+        .submit(&id, &ctx.applicant, &uri_a, &BytesN::random(&ctx.env));
+
+    let count_after_first = ctx
+        .env
+        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
+    assert_eq!(count_after_first, 1);
+
+    let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
+    ctx.events
+        .submit(&id, &ctx.applicant, &uri_b, &BytesN::random(&ctx.env));
+
+    let count_after_second = ctx
+        .env
+        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
+    assert_eq!(
+        count_after_second, 1,
+        "re-submission by an existing applicant updates in place and must not \
+         recount against the cap"
+    );
+}
+
 // ============================================================
 // select_winners — distribution (happy paths)
 // ============================================================
@@ -336,12 +439,14 @@ fn select_winners_single_recipient_sweeps_escrow() {
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
 
-    // Recipient delta: full budget. Fee account delta: 0 — the fee was taken
-    // at deposit, never a second time on release.
+    // Pull model: selection only records; the winner claims in their own tx.
+    assert_eq!(token.balance(&ctx.applicant) - winner_before, 0);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+
     assert_eq!(token.balance(&ctx.applicant) - winner_before, TOTAL_BUDGET);
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 
-    // Profile: fresh winner is bootstrapped then bumped for the win.
     let p = ctx.profile.get_profile(&ctx.applicant).unwrap();
     assert_eq!(p.reputation, 50);
     assert_eq!(
@@ -349,7 +454,6 @@ fn select_winners_single_recipient_sweeps_escrow() {
         TOTAL_BUDGET
     );
 
-    // Escrow drained -> Completed; winner row recorded.
     let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Completed);
     assert_eq!(event.remaining_escrow, 0);
@@ -398,18 +502,23 @@ fn select_winners_multi_position_splits_by_distribution() {
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
 
+    // Pull model: each winner claims their own position.
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
+
     let amt_1 = TOTAL_BUDGET * 50 / 100;
     let amt_2 = TOTAL_BUDGET * 30 / 100;
     let amt_3 = TOTAL_BUDGET * 20 / 100;
 
-    // Recipient deltas across the split.
     assert_eq!(token.balance(&first), amt_1);
     assert_eq!(token.balance(&second), amt_2);
     assert_eq!(token.balance(&third), amt_3);
-    // Fee account delta across the split: unchanged (no release-time fee).
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 
-    // Profile bumps per winner.
     let p1 = ctx.profile.get_profile(&first).unwrap();
     let p2 = ctx.profile.get_profile(&second).unwrap();
     let p3 = ctx.profile.get_profile(&third).unwrap();
@@ -417,7 +526,6 @@ fn select_winners_multi_position_splits_by_distribution() {
     assert_eq!(p2.reputation, 40);
     assert_eq!(p3.reputation, 20);
 
-    // 50 + 30 + 20 == 100 -> escrow fully drained -> Completed.
     let event = ctx.events.get_event(&id);
     assert_eq!(event.status, EventStatus::Completed);
     assert_eq!(event.remaining_escrow, 0);
@@ -483,11 +591,9 @@ fn select_winners_duplicate_position_reverts() {
 }
 
 #[test]
-fn select_winners_second_call_reverts_winners_already_selected() {
+fn select_winners_batches_append_and_position_replay_reverts() {
     let ctx = setup();
     let dl = Some(ctx.env.ledger().timestamp() + 86_400);
-    // 50/30/20 so the first call pays only position 1 and leaves the event
-    // Active, isolating WinnersAlreadySelected from EventNotActive.
     let id = create_hackathon_with(&ctx, three_way_dist(&ctx.env), dl);
 
     let first_winner = soroban_sdk::vec![
@@ -501,21 +607,55 @@ fn select_winners_second_call_reverts_winners_already_selected() {
     let op1 = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &first_winner, &op1);
 
-    // Event is still Active (60% escrow remains), but a prior anchor exists.
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
 
-    let second = Address::generate(&ctx.env);
-    let second_winner = soroban_sdk::vec![
+    // Re-awarding an already-taken position must revert, even across calls.
+    let usurper = Address::generate(&ctx.env);
+    let replay = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
-            recipient: second,
-            position: 2,
+            recipient: usurper,
+            position: 1,
             reputation_bump: 0,
         },
     ];
-    let op2 = BytesN::random(&ctx.env);
-    let res = ctx.events.try_select_winners(&id, &second_winner, &op2);
-    assert!(res.is_err(), "a second select_winners must revert");
+    let res = ctx
+        .events
+        .try_select_winners(&id, &replay, &BytesN::random(&ctx.env));
+    assert!(res.is_err(), "re-awarding a taken position must revert");
+
+    // A later batch for untaken positions appends (1.3.0 batching), and
+    // amounts stay anchored to the baseline captured at the first batch.
+    let second = Address::generate(&ctx.env);
+    let third = Address::generate(&ctx.env);
+    let batch2 = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: second.clone(),
+            position: 2,
+            reputation_bump: 0,
+        },
+        WinnerSpec {
+            recipient: third.clone(),
+            position: 3,
+            reputation_bump: 0,
+        },
+    ];
+    ctx.events
+        .select_winners(&id, &batch2, &BytesN::random(&ctx.env));
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
+
+    assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET * 50 / 100);
+    assert_eq!(token.balance(&second), TOTAL_BUDGET * 30 / 100);
+    assert_eq!(token.balance(&third), TOTAL_BUDGET * 20 / 100);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 }
 
 #[test]
@@ -569,6 +709,10 @@ fn select_winners_on_completed_event_reverts() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    // Pull model: the event completes when the last prize is claimed.
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 
     let again = Address::generate(&ctx.env);
@@ -590,9 +734,6 @@ fn select_winners_on_completed_event_reverts() {
 
 #[test]
 fn select_winners_demands_owner_auth() {
-    // mock_all_auths_allowing_non_root_auth lets the call succeed, but
-    // env.auths() records which addresses had to authorize — the audit-relevant
-    // observation. select_winners requires the event owner.
     let ctx = setup();
     let id = create_hackathon(&ctx);
 
@@ -613,7 +754,6 @@ fn select_winners_demands_owner_auth() {
         owner_required,
         "select_winners must demand the event owner's auth"
     );
-    // Sanity: a random non-owner address was never asked to authorize.
     assert!(
         !auths.iter().any(|(addr, _)| *addr == ctx.events_admin),
         "the events admin is not an authorizer of select_winners"

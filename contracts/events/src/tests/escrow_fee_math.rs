@@ -1,14 +1,3 @@
-// boundless-events: escrow fee + release math tests.
-//
-// Covers every function in escrow.rs (effective_fee_bps, compute_fee_at,
-// compute_fee, deposit_with_fee_at, deposit_with_fee, release) plus the
-// payout-split math in select_winners (Single) and claim_milestone (Multi /
-// Crowdfunding). Tests verify rounding, override bps, zero-fee edges,
-// auth rejection, and idempotency where relevant.
-//
-// Spec: boundless-platform-contract-prd.md Sections 6.2, 7, 8;
-//       issue #31.
-
 #![cfg(test)]
 
 use soroban_sdk::{
@@ -252,7 +241,6 @@ fn override_at_max_bps_boundary_succeeds() {
 
 #[test]
 fn fee_rounds_down_non_divisible_amount() {
-    // 1 stroop * 250 bps / 10_000 = 0.025 → truncates to 0.
     let ctx = setup();
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
 
@@ -275,14 +263,12 @@ fn fee_rounds_down_non_divisible_amount() {
     ctx.events.create_event(&params, &op);
     let owner_after = token.balance(&ctx.owner);
 
-    // fee = 1 * 250 / 10_000 = 0 (truncated)
     assert_eq!(owner_before - owner_after, tiny_budget);
     assert_eq!(token.balance(&ctx.fee_account), 0);
 }
 
 #[test]
 fn fee_rounding_on_odd_amounts() {
-    // 333 stroops at 250 bps: 333 * 250 / 10_000 = 8.325 → 8 stroops.
     let ctx = setup();
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
 
@@ -394,6 +380,8 @@ fn single_release_pays_full_escrow_for_100_percent() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&winner), TOTAL_BUDGET);
@@ -435,6 +423,12 @@ fn multi_position_split_pays_correct_amounts() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let escrow = TOTAL_BUDGET; // all positions filled at create time
@@ -479,23 +473,25 @@ fn three_way_33_33_34_split_rounding() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &3_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let escrow = TOTAL_BUDGET;
-    // 33% of 1000_0000000 = 330_0000000 (exact)
-    // 34% of 1000_0000000 = 340_0000000 (exact)
     assert_eq!(token.balance(&w1), escrow * 33 / 100);
     assert_eq!(token.balance(&w2), escrow * 33 / 100);
     assert_eq!(token.balance(&w3), escrow * 34 / 100);
 
     let event = ctx.events.get_event(&id);
-    // 330 + 330 + 340 = 1000. Exact, no dust.
     assert_eq!(event.remaining_escrow, 0);
 }
 
 #[test]
 fn partial_position_fill_leaves_residual_escrow() {
-    // Fill only 1 of 2 positions → event stays Active with residual escrow.
     let ctx = setup();
 
     let mut dist = Map::new(&ctx.env);
@@ -514,6 +510,8 @@ fn partial_position_fill_leaves_residual_escrow() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&w1), TOTAL_BUDGET * 60 / 100);
@@ -556,6 +554,8 @@ fn partner_funds_grow_winner_payout() {
     ];
     let op = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&winner), escrow_at_select);
@@ -585,21 +585,16 @@ fn grant_milestone_pays_floored_per_milestone() {
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
 
-    // total_share = TOTAL_BUDGET * 100 / 100 = TOTAL_BUDGET
-    // per_milestone_floored = TOTAL_BUDGET / 3 = 333_3333333 (floor)
     let per_milestone = TOTAL_BUDGET / milestones as i128;
 
-    // Milestone 0
     let op_m0 = BytesN::random(&ctx.env);
     ctx.events.claim_milestone(&id, &recipient, &0, &50, &op_m0);
     assert_eq!(token.balance(&recipient), per_milestone);
 
-    // Milestone 1
     let op_m1 = BytesN::random(&ctx.env);
     ctx.events.claim_milestone(&id, &recipient, &1, &50, &op_m1);
     assert_eq!(token.balance(&recipient), per_milestone * 2);
 
-    // Milestone 2 (last): sweep — pays total_share - already_paid
     let op_m2 = BytesN::random(&ctx.env);
     ctx.events.claim_milestone(&id, &recipient, &2, &50, &op_m2);
     assert_eq!(
@@ -632,7 +627,6 @@ fn grant_milestone_double_claim_rejected() {
     let op_m0 = BytesN::random(&ctx.env);
     ctx.events.claim_milestone(&id, &recipient, &0, &50, &op_m0);
 
-    // Same milestone again → MilestoneAlreadyClaimed
     let op_m0_dup = BytesN::random(&ctx.env);
     let res = ctx
         .events
@@ -658,7 +652,6 @@ fn grant_milestone_out_of_range_rejected() {
     let op_sel = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_sel);
 
-    // Milestone 2 is out-of-range for Multi(2) (valid: 0, 1)
     let op = BytesN::random(&ctx.env);
     let res = ctx
         .events
@@ -693,7 +686,6 @@ fn crowdfunding_dynamic_milestone_split() {
     let op_create = BytesN::random(&ctx.env);
     let id = ctx.events.create_event(&params, &op_create);
 
-    // Fund from a backer — crowdfunding backers pay NO fee on deposit (deposit_no_fee).
     let backer = Address::generate(&ctx.env);
     let raised = 900_0000000_i128;
     fund(&ctx, &backer, raised);
@@ -703,19 +695,14 @@ fn crowdfunding_dynamic_milestone_split() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     let owner_before = token.balance(&ctx.owner);
 
-    // Crowdfunding claim_milestone uses release_with_fee_at: builder bears
-    // the fee at release. Each milestone amount = remaining / remaining_milestones;
-    // builder receives amount - fee.
     let milestone_amount = raised / 3; // 300_0000000
     let milestone_fee = milestone_amount * FEE_BPS as i128 / 10_000;
     let net_per_milestone = milestone_amount - milestone_fee;
 
-    // M0: amount = 900 / 3 = 300, net = 300 - fee
     let op_m0 = BytesN::random(&ctx.env);
     ctx.events.claim_milestone(&id, &ctx.owner, &0, &50, &op_m0);
     assert_eq!(token.balance(&ctx.owner) - owner_before, net_per_milestone);
 
-    // M1: remaining = 600 / 2 = 300, net = 300 - fee
     let op_m1 = BytesN::random(&ctx.env);
     ctx.events.claim_milestone(&id, &ctx.owner, &1, &50, &op_m1);
     assert_eq!(
@@ -723,7 +710,6 @@ fn crowdfunding_dynamic_milestone_split() {
         net_per_milestone * 2
     );
 
-    // M2: remaining = 300 / 1 = 300, net = 300 - fee
     let op_m2 = BytesN::random(&ctx.env);
     ctx.events.claim_milestone(&id, &ctx.owner, &2, &50, &op_m2);
     assert_eq!(
@@ -737,11 +723,6 @@ fn crowdfunding_dynamic_milestone_split() {
 
 #[test]
 fn crowdfunding_dynamic_rounding_no_dust() {
-    // Raise 1_000_0000001 stroops and split across 3 milestones.
-    // 1_000_0000001 / 3 = 333_3333333 (floor), remaining = 666_6666668
-    // 666_6666668 / 2 = 333_3333334 (floor), remaining = 333_3333334
-    // last milestone takes entire remainder = 333_3333334
-    // Total paid = 333_3333333 + 333_3333334 + 333_3333334 = 1_000_0000001 ✓
     let ctx = setup();
     let milestones = 3_u32;
 
@@ -953,7 +934,6 @@ fn select_winners_twice_reverts() {
     let op1 = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op1);
 
-    // Second selection on the same event → WinnersAlreadySelected
     let op2 = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &winners, &op2);
     assert!(
@@ -1003,10 +983,8 @@ fn mid_flight_global_bps_change_does_not_affect_override_event() {
     let override_bps: u32 = 100;
     let id = create_hackathon_with_override(&ctx, override_bps);
 
-    // Admin changes the global fee bps
     ctx.events.set_fee_bps(&500);
 
-    // Partner add_funds should still use the event's override (100), not the new global (500)
     let partner = Address::generate(&ctx.env);
     let contrib = 500_0000000_i128;
     let partner_fee = contrib * override_bps as i128 / 10_000;
@@ -1086,6 +1064,8 @@ fn fee_and_winner_balances_consistent() {
     ];
     let op_sel = BytesN::random(&ctx.env);
     ctx.events.select_winners(&id, &winners, &op_sel);
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&winner), escrow);
     assert_eq!(token.balance(&ctx.fee_account), create_fee + contrib_fee);

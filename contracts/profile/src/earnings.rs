@@ -1,7 +1,3 @@
-// boundless-profile: per-token earnings registration.
-//
-// Spec: boundless-credits-reputation-prd.md Section 5.4.
-
 use soroban_sdk::{Address, BytesN, Env};
 
 use crate::admin;
@@ -19,7 +15,8 @@ pub fn register(
 ) -> Result<(), Error> {
     admin::require_events_contract(env)?;
     admin::require_not_paused(env)?;
-    idempotency::require_unseen(env, &op_id)?;
+    let domain = idempotency::events_domain(env)?;
+    idempotency::require_unseen(env, &domain, &op_id)?;
 
     if amount <= 0 {
         return Err(Error::InvalidAmount);
@@ -35,6 +32,6 @@ pub fn register(
         amount,
     }
     .publish(env);
-    idempotency::mark_seen(env, &op_id);
+    idempotency::mark_seen(env, &domain, &op_id);
     Ok(())
 }

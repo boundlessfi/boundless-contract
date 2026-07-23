@@ -1,10 +1,4 @@
 // SPDX-License-Identifier: MIT
-//
-// boundless-events
-//
-// On-chain event records (Hackathon, Bounty, Grant) plus inlined escrow.
-// Companion: boundless-profile (credits + reputation).
-// Spec: boundless-platform-contract-prd.md
 #![no_std]
 
 use soroban_sdk::{contract, contractimpl, contractmeta, Address, BytesN, Env, String, Vec};
@@ -30,7 +24,7 @@ mod tests;
 use crate::errors::Error;
 use crate::types::*;
 
-contractmeta!(key = "version", val = "1.1.0");
+contractmeta!(key = "version", val = "1.2.0");
 contractmeta!(
     key = "description",
     val = "Boundless events contract: hackathon, bounty, grant + escrow"
@@ -121,14 +115,10 @@ impl EventsContract {
         token_whitelist::is_supported(&env, &token)
     }
 
-    /// Number of whitelisted tokens. Paged enumeration: read this, then
-    /// supported_token_at(0..count) to recover the full whitelist from state
-    /// (no dependence on ephemeral TokenRegistered/TokenDeregistered events).
     pub fn supported_token_count(env: Env) -> u32 {
         storage::supported_token_count(&env)
     }
 
-    /// Whitelisted token at `index`, or None when `index >= count`.
     pub fn supported_token_at(env: Env, index: u32) -> Option<Address> {
         storage::supported_token_at(&env, index)
     }
@@ -226,15 +216,36 @@ impl EventsContract {
         event_ops::select_winners(&env, event_id, winners, op_id)
     }
 
+    pub fn claim_prize(
+        env: Env,
+        event_id: u64,
+        position: u32,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        event_ops::claim_prize(&env, event_id, position, op_id)
+    }
+
     // ============================================================
     // MANAGEMENT AUTHORITY (manager != funder/owner)
     // ============================================================
-    pub fn set_manager(env: Env, event_id: u64, new_manager: Address) -> Result<(), Error> {
-        event_ops::set_manager(&env, event_id, new_manager)
+    pub fn propose_manager(env: Env, event_id: u64, new_manager: Address) -> Result<(), Error> {
+        event_ops::propose_manager(&env, event_id, new_manager)
+    }
+
+    pub fn accept_manager(env: Env, event_id: u64) -> Result<(), Error> {
+        event_ops::accept_manager(&env, event_id)
+    }
+
+    pub fn cancel_pending_manager(env: Env, event_id: u64) -> Result<(), Error> {
+        event_ops::cancel_pending_manager(&env, event_id)
     }
 
     pub fn get_manager(env: Env, event_id: u64) -> Result<Address, Error> {
         event_ops::get_manager(&env, event_id)
+    }
+
+    pub fn get_pending_manager(env: Env, event_id: u64) -> Result<Option<PendingManager>, Error> {
+        event_ops::get_pending_manager(&env, event_id)
     }
 
     pub fn claim_milestone(
@@ -339,7 +350,6 @@ impl EventsContract {
         admin::get_migrated_to_version(&env)
     }
 
-    // Internal helper exposed for off-chain inspection; emits no event.
     pub fn id_base(env: Env) -> u64 {
         idempotency::id_base(&env)
     }

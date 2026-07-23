@@ -1,10 +1,3 @@
-// boundless-events: bounty-specific behavior.
-//
-// Spec: boundless-platform-contract-prd.md Sections 6.3, 7.
-//
-// Bounties use ReleaseKind::Single. Credits (apply cost / refunds) are handled
-// off-chain; the contract only records applicants and ensures their profile.
-
 use soroban_sdk::{Address, BytesN, Env};
 
 use crate::admin;
@@ -40,11 +33,8 @@ pub fn apply(
 
     applicant.require_auth();
 
-    // append_applicant returns Err on duplicate or cap exceeded.
     storage::append_applicant(env, bounty_id, &applicant, MAX_APPLICANTS_PER_EVENT)?;
 
-    // Cross-contract: ensure the applicant has a profile (idempotent). Credits
-    // are charged off-chain now, so there is no on-chain spend here.
     let profile = profile_client::client(env);
     let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
     profile.bootstrap(&applicant, &bootstrap_op);
@@ -76,16 +66,11 @@ pub fn withdraw_application(
 
     applicant.require_auth();
 
-    // Reject withdrawal if the applicant already submitted.
     if storage::get_submission(env, bounty_id, &applicant).is_some() {
         return Err(Error::SubmissionAlreadyExists);
     }
 
-    // Membership check + swap-remove. Slot lookup is O(1), so this avoids
-    // the prior O(n) linear scan even at the cap.
     storage::remove_applicant(env, bounty_id, &applicant)?;
-
-    // Credits (including any withdrawal refund) are handled off-chain.
 
     evt::ApplicationWithdrawn {
         event_id: bounty_id,

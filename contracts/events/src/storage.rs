@@ -1,22 +1,3 @@
-// boundless-events: storage helpers.
-//
-// Storage layout (after the 2026-06 audit, H1-H4):
-//
-//   instance()    — admin + config + token whitelist + NextEventId.
-//   persistent()  — per-event Event records, per-event paged lists
-//                   (applicants, contributors, winners), and per-submission
-//                   entries. Each persistent read/write bumps TTL.
-//   temporary()   — OpSeen idempotency markers.
-//
-// Per-event lists are kept as count + indexed-entry pairs (e.g.
-// EventApplicantCount + EventApplicantAt(idx) + EventApplicantSlot(addr))
-// so a single growable Vec never overflows the 64KB ledger-entry cap and
-// presence checks stay O(1).
-//
-// Cap policy (event_ops::MAX_*_PER_EVENT) enforced at append time so that
-// cancel_event refund passes stay inside Soroban's per-tx footprint budget.
-// Paging cancel_event is a P1 follow-up before lifting the caps.
-
 #![allow(dead_code)]
 
 use soroban_sdk::{Address, BytesN, Env, Vec};
@@ -25,7 +6,8 @@ use soroban_sdk::String;
 
 use crate::errors::Error;
 use crate::types::{
-    CancellationState, DataKey, EventRecord, PendingAdmin, PendingUpgrade, Submission, Winner,
+    CancellationState, DataKey, EventRecord, PendingAdmin, PendingManager, PendingUpgrade,
+    PrizeAward, Submission, Winner,
 };
 
 // ============================================================
@@ -185,10 +167,6 @@ pub fn set_token_supported(env: &Env, token: &Address, supported: bool) {
         .set(&DataKey::SupportedToken(token.clone()), &supported);
 }
 
-// Enumerable whitelist index, kept in lockstep with the SupportedToken bool by
-// register/deregister. Mirrors the applicant index (count + at + slot, append
-// to tail, swap-with-last removal) but is global rather than per-event, so the
-// full whitelist can be read from state instead of replaying events.
 pub fn supported_token_count(env: &Env) -> u32 {
     env.storage()
         .instance()
@@ -209,8 +187,6 @@ pub fn supported_token_slot(env: &Env, token: &Address) -> u32 {
         .unwrap_or(0)
 }
 
-/// Append a token to the enumerable index. Idempotent: a token already indexed
-/// is left untouched (so re-registering does not duplicate it).
 pub fn append_supported_token(env: &Env, token: &Address) {
     if supported_token_slot(env, token) != 0 {
         return;
@@ -228,8 +204,6 @@ pub fn append_supported_token(env: &Env, token: &Address) {
         .set(&DataKey::SupportedTokenCount, &slot);
 }
 
-/// Remove a token from the enumerable index via swap-with-last. Idempotent: a
-/// token not in the index is a no-op.
 pub fn remove_supported_token(env: &Env, token: &Address) {
     let slot = supported_token_slot(env, token);
     if slot == 0 {
@@ -239,7 +213,6 @@ pub fn remove_supported_token(env: &Env, token: &Address) {
     let count = supported_token_count(env);
     let last_idx = count.saturating_sub(1);
 
-    // Move the last entry into the freed slot, unless we removed the tail.
     if idx != last_idx {
         if let Some(last) = supported_token_at(env, last_idx) {
             env.storage()
@@ -299,7 +272,6 @@ pub fn set_event(env: &Env, id: u64, record: &EventRecord) {
     touch_event_persistent(env, &key);
 }
 
-// Per-event management authority override (side map; absent => owner manages).
 pub fn get_event_manager(env: &Env, id: u64) -> Option<Address> {
     let key = DataKey::EventManager(id);
     let m: Option<Address> = env.storage().persistent().get(&key);
@@ -315,20 +287,29 @@ pub fn set_event_manager(env: &Env, id: u64, manager: &Address) {
     touch_event_persistent(env, &key);
 }
 
+pub fn get_pending_manager(env: &Env, id: u64) -> Option<PendingManager> {
+    let key = DataKey::PendingManager(id);
+    let p: Option<PendingManager> = env.storage().persistent().get(&key);
+    if p.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    p
+}
+
+pub fn set_pending_manager(env: &Env, id: u64, pending: &PendingManager) {
+    let key = DataKey::PendingManager(id);
+    env.storage().persistent().set(&key, pending);
+    touch_event_persistent(env, &key);
+}
+
+pub fn clear_pending_manager(env: &Env, id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::PendingManager(id));
+}
+
 // ============================================================
 // APPLICANTS (paged, persistent)
-//
-// applicant_count(id)        -> number of applicants in [0, count).
-// applicant_at(id, idx)      -> address at slot idx (Some only when idx < count).
-// applicant_slot(id, addr)   -> 1-based slot. 0 means absent. Stored 1-based
-//                               so a missing key (default 0) signals absence
-//                               without an Option round trip.
-// append_applicant(id, addr) -> appends to the tail. Returns the 1-based slot.
-//                               Fails with TooManyApplicants if cap is hit.
-// remove_applicant(id, addr) -> swap-with-last + decrement.
-// applicants_snapshot(id, max) -> Vec view capped at `max`; older callers
-//                                 that read the whole list should migrate
-//                                 to paged reads.
 // ============================================================
 pub fn applicant_count(env: &Env, id: u64) -> u32 {
     let key = DataKey::EventApplicantCount(id);
@@ -389,7 +370,6 @@ pub fn remove_applicant(env: &Env, id: u64, addr: &Address) -> Result<(), Error>
     let count = applicant_count(env, id);
     let last_idx = count.checked_sub(1).ok_or(Error::EventNotFound)?;
 
-    // If not the last entry, swap the last applicant into the freed slot.
     if idx != last_idx {
         let last_addr = applicant_at(env, id, last_idx).ok_or(Error::EventNotFound)?;
         let at_key = DataKey::EventApplicantAt(id, idx);
@@ -450,19 +430,60 @@ pub fn set_submission(env: &Env, id: u64, applicant: &Address, submission: &Subm
 }
 
 pub fn remove_submission(env: &Env, id: u64, applicant: &Address) {
+    // Idempotent: a no-op when there is nothing to remove, symmetrically
+    // with append_submission, so a caller that skips its own existence
+    // check can't silently corrupt the counter by decrementing for an
+    // applicant that never had a submission.
+    if get_submission(env, id, applicant).is_none() {
+        return;
+    }
+
     let key = DataKey::EventSubmission(id, applicant.clone());
     env.storage().persistent().remove(&key);
+
+    let count_key = DataKey::EventSubmissionCount(id);
+    let next = submission_count(env, id).saturating_sub(1);
+    if next == 0 {
+        env.storage().persistent().remove(&count_key);
+    } else {
+        env.storage().persistent().set(&count_key, &next);
+        touch_event_persistent(env, &count_key);
+    }
+}
+
+pub fn submission_count(env: &Env, id: u64) -> u32 {
+    let key = DataKey::EventSubmissionCount(id);
+    let n: Option<u32> = env.storage().persistent().get(&key);
+    if n.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    n.unwrap_or(0)
+}
+
+/// Reserve a submission slot against the per-event cap before writing the
+/// entry (mirrors `append_contributor`/`append_applicant`). A no-op when the
+/// applicant already has a submission — re-submission updates the existing
+/// entry in place and must not recount against the cap.
+///
+/// Returns `Error::TooManyContributors` on cap-exceed — reused rather than
+/// a new variant since the errors enum is at the 50-case XDR cap.
+pub fn append_submission(env: &Env, id: u64, addr: &Address, cap: u32) -> Result<(), Error> {
+    if get_submission(env, id, addr).is_some() {
+        return Ok(());
+    }
+    let cur = submission_count(env, id);
+    if cur >= cap {
+        return Err(Error::TooManyContributors);
+    }
+    let count_key = DataKey::EventSubmissionCount(id);
+    let next = cur.saturating_add(1);
+    env.storage().persistent().set(&count_key, &next);
+    touch_event_persistent(env, &count_key);
+    Ok(())
 }
 
 // ============================================================
 // WINNERS (paged, persistent)
-//
-// winner_count(id)         -> number of winner rows (anchors + per-milestone).
-// winner_at(id, idx)       -> Winner at slot idx.
-// append_winner(id, w)     -> append-only; select_winners and claim_milestone
-//                             never rewrite existing rows.
-// winners_snapshot(id,max) -> Vec view capped at `max`. Callers needing full
-//                             iteration should use the paged API.
 // ============================================================
 pub fn winner_count(env: &Env, id: u64) -> u32 {
     let key = DataKey::EventWinnerCount(id);
@@ -492,6 +513,75 @@ pub fn append_winner(env: &Env, id: u64, w: &Winner) {
     let new_count = cur.saturating_add(1);
     env.storage().persistent().set(&count_key, &new_count);
     touch_event_persistent(env, &count_key);
+}
+
+pub fn set_winner_at(env: &Env, id: u64, idx: u32, w: &Winner) {
+    let key = DataKey::EventWinnerAt(id, idx);
+    env.storage().persistent().set(&key, w);
+    touch_event_persistent(env, &key);
+}
+
+// ============================================================
+// PRIZE AWARDS (pull-model claims; persistent, keyed by (event, position))
+// ============================================================
+pub fn get_prize_award(env: &Env, id: u64, position: u32) -> Option<PrizeAward> {
+    let key = DataKey::EventPrizeAward(id, position);
+    let a: Option<PrizeAward> = env.storage().persistent().get(&key);
+    if a.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    a
+}
+
+pub fn set_prize_award(env: &Env, id: u64, position: u32, award: &PrizeAward) {
+    let key = DataKey::EventPrizeAward(id, position);
+    env.storage().persistent().set(&key, award);
+    touch_event_persistent(env, &key);
+}
+
+pub fn unclaimed_prize_count(env: &Env, id: u64) -> u32 {
+    let key = DataKey::EventUnclaimedPrizes(id);
+    let n: Option<u32> = env.storage().persistent().get(&key);
+    if n.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    n.unwrap_or(0)
+}
+
+pub fn set_unclaimed_prize_count(env: &Env, id: u64, count: u32) {
+    let key = DataKey::EventUnclaimedPrizes(id);
+    env.storage().persistent().set(&key, &count);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_prize_base_escrow(env: &Env, id: u64) -> Option<i128> {
+    let key = DataKey::EventPrizeBaseEscrow(id);
+    let b: Option<i128> = env.storage().persistent().get(&key);
+    if b.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    b
+}
+
+pub fn set_prize_base_escrow(env: &Env, id: u64, base: i128) {
+    let key = DataKey::EventPrizeBaseEscrow(id);
+    env.storage().persistent().set(&key, &base);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_prize_claim_expiry(env: &Env, id: u64) -> Option<u64> {
+    let key = DataKey::EventPrizeClaimExpiry(id);
+    let t: Option<u64> = env.storage().persistent().get(&key);
+    if t.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    t
+}
+
+pub fn set_prize_claim_expiry(env: &Env, id: u64, expires_at: u64) {
+    let key = DataKey::EventPrizeClaimExpiry(id);
+    env.storage().persistent().set(&key, &expires_at);
+    touch_event_persistent(env, &key);
 }
 
 pub fn winners_snapshot(env: &Env, id: u64, max: u32) -> Vec<Winner> {
@@ -524,6 +614,21 @@ pub fn set_contributor_amount(env: &Env, id: u64, contributor: &Address, amount:
     touch_event_persistent(env, &key);
 }
 
+pub fn get_non_owner_contribution_total(env: &Env, id: u64) -> Option<i128> {
+    let key = DataKey::NonOwnerContributionTotal(id);
+    let total: Option<i128> = env.storage().persistent().get(&key);
+    if total.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    total
+}
+
+pub fn set_non_owner_contribution_total(env: &Env, id: u64, total: i128) {
+    let key = DataKey::NonOwnerContributionTotal(id);
+    env.storage().persistent().set(&key, &total);
+    touch_event_persistent(env, &key);
+}
+
 pub fn contributor_count(env: &Env, id: u64) -> u32 {
     let key = DataKey::ContributorCount(id);
     let n: Option<u32> = env.storage().persistent().get(&key);
@@ -553,7 +658,7 @@ pub fn contributor_slot(env: &Env, id: u64, addr: &Address) -> u32 {
 
 pub fn append_contributor(env: &Env, id: u64, addr: &Address, cap: u32) -> Result<u32, Error> {
     if contributor_slot(env, id, addr) != 0 {
-        return Ok(0); // already present; caller treats 0 as "no-op"
+        return Ok(0);
     }
     let cur = contributor_count(env, id);
     if cur >= cap {

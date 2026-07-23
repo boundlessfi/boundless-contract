@@ -1,8 +1,3 @@
-// boundless-events: token whitelist tests (#27).
-//
-// Covers register_supported_token / deregister_supported_token /
-// is_supported_token + enforcement inside create_event.
-
 #![cfg(test)]
 
 use soroban_sdk::{

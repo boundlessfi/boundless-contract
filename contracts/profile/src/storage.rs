@@ -1,18 +1,3 @@
-// boundless-profile: storage helpers.
-//
-// Storage layout (after the 2026-06 audit):
-//
-//   instance()    — admin + config (events binding, bootstrap default,
-//                   paused, deployment seq). Single bag, auto-extended
-//                   when we call touch_instance(env).
-//   persistent()  — Profile(user) + EarningsByToken(user, token). Each
-//                   read/write bumps TTL via touch_profile_persistent so
-//                   active users stay live indefinitely.
-//   temporary()   — OpSeen idempotency markers.
-//
-// Pre-audit this module placed everything in persistent. Same fix as the
-// events contract.
-
 #![allow(dead_code)]
 
 use soroban_sdk::{Address, BytesN, Env};
@@ -186,15 +171,15 @@ pub fn set_earnings(env: &Env, user: &Address, token: &Address, amount: i128) {
 // ============================================================
 // IDEMPOTENCY (temporary; auto-TTL)
 // ============================================================
-pub fn is_op_seen(env: &Env, op_id: &BytesN<32>) -> bool {
+pub fn is_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) -> bool {
     env.storage()
         .temporary()
-        .get(&DataKey::OpSeen(op_id.clone()))
+        .get(&DataKey::OpSeen(domain.clone(), op_id.clone()))
         .unwrap_or(false)
 }
 
-pub fn mark_op_seen(env: &Env, op_id: &BytesN<32>) {
+pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {
     env.storage()
         .temporary()
-        .set(&DataKey::OpSeen(op_id.clone()), &true);
+        .set(&DataKey::OpSeen(domain.clone(), op_id.clone()), &true);
 }

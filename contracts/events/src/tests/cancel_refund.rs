@@ -1,21 +1,14 @@
-// boundless-events: cancel + refund batch tests (#28).
-//
-// Covers start_cancel / process_cancel_batch / finalize_cancel:
-//   - OwnerOnly branch settled inline.
-//   - FullPartnerThenResidual: partners full + owner residual.
-//   - ProRataPartners: remaining < non_owner_total.
-//   - Pagination across multiple batches.
-//   - Error variants: wrong state, replay, not finished.
-
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
+    testutils::{Address as _, BytesN as _, EnvTestConfig},
     token, Address, BytesN, Env, Map, String,
 };
 
 use super::common::drive_cancel;
-use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
+use crate::errors::Error;
+use crate::storage;
+use crate::types::{CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
@@ -27,6 +20,7 @@ const MIN_CONTRIB: i128 = 100_000_000_i128;
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
+    events_id: Address,
     profile: ProfileContractClient<'a>,
     owner: Address,
     token_addr: Address,
@@ -35,7 +29,10 @@ struct Ctx<'a> {
 }
 
 fn setup<'a>() -> Ctx<'a> {
-    let env = Env::default();
+    setup_with_env(Env::default())
+}
+
+fn setup_with_env<'a>(env: Env) -> Ctx<'a> {
     env.mock_all_auths_allowing_non_root_auth();
 
     let profile_admin = Address::generate(&env);
@@ -69,6 +66,7 @@ fn setup<'a>() -> Ctx<'a> {
     Ctx {
         env,
         events,
+        events_id,
         profile,
         owner,
         token_addr,
@@ -105,6 +103,27 @@ fn contribute(ctx: &Ctx, id: u64, who: &Address, amount: i128) {
     ctx.token_admin.mint(who, &(amount + fee));
     ctx.events
         .add_funds(&id, who, &amount, &BytesN::random(&ctx.env));
+}
+
+fn remove_running_total(ctx: &Ctx, id: u64) {
+    ctx.env.as_contract(&ctx.events_id, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .remove(&DataKey::NonOwnerContributionTotal(id));
+    });
+}
+
+fn stored_non_owner_total(ctx: &Ctx, id: u64) -> Option<i128> {
+    ctx.env.as_contract(&ctx.events_id, || {
+        storage::get_non_owner_contribution_total(&ctx.env, id)
+    })
+}
+
+fn has_cancellation_state(ctx: &Ctx, id: u64) -> bool {
+    ctx.env.as_contract(&ctx.events_id, || {
+        storage::get_cancellation_state(&ctx.env, id).is_some()
+    })
 }
 
 // ============================================================
@@ -235,15 +254,153 @@ fn paged_cancel_processes_in_batches() {
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
 }
 
+#[test]
+fn running_non_owner_total_tracks_repeated_contributions_but_not_owner_topups() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+    assert_eq!(stored_non_owner_total(&ctx, id), Some(0));
+
+    let owner_top_up = 200_0000000_i128;
+    ctx.events
+        .add_funds(&id, &ctx.owner, &owner_top_up, &BytesN::random(&ctx.env));
+    assert_eq!(
+        stored_non_owner_total(&ctx, id),
+        Some(0),
+        "owner funds are not contributor refund claims"
+    );
+
+    let partner = Address::generate(&ctx.env);
+    contribute(&ctx, id, &partner, 300_0000000_i128);
+    contribute(&ctx, id, &partner, 125_0000000_i128);
+    assert_eq!(
+        stored_non_owner_total(&ctx, id),
+        Some(425_0000000_i128),
+        "every credited non-owner top-up is included exactly once"
+    );
+}
+
+#[test]
+fn start_cancel_footprint_is_constant_with_many_contributors() {
+    let env = Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    let ctx = setup_with_env(env);
+    let id = create_hackathon(&ctx);
+
+    for _ in 0..220 {
+        let partner = Address::generate(&ctx.env);
+        contribute(&ctx, id, &partner, MIN_CONTRIB);
+    }
+
+    ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
+    let resources = ctx.env.cost_estimate().resources();
+    assert!(
+        resources.memory_read_entries < 40,
+        "start_cancel must read the aggregate, not every contributor: {resources:?}"
+    );
+    assert!(
+        resources.persistent_entry_rent_bumps < 40,
+        "TTL work must stay constant as contributor count grows: {resources:?}"
+    );
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelling);
+}
+
+#[test]
+fn non_manager_cranks_and_finalizes_with_exact_payout_deltas() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+    let manager = Address::generate(&ctx.env);
+    ctx.events.propose_manager(&id, &manager);
+    ctx.events.accept_manager(&id);
+    let p1 = Address::generate(&ctx.env);
+    let p2 = Address::generate(&ctx.env);
+    let p1_amount = 200_0000000_i128;
+    let p2_amount = 300_0000000_i128;
+    contribute(&ctx, id, &p1, p1_amount);
+    contribute(&ctx, id, &p2, p2_amount);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let p1_before = token.balance(&p1);
+    let p2_before = token.balance(&p2);
+    let owner_before = token.balance(&ctx.owner);
+    let fee_before = token.balance(&ctx.fee_account);
+
+    ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
+    let start_auths = ctx.env.auths();
+    assert_eq!(start_auths.len(), 1);
+    assert_eq!(start_auths[0].0, manager);
+
+    let remaining = ctx
+        .events
+        .process_cancel_batch(&id, &25_u32, &BytesN::random(&ctx.env));
+    assert_eq!(remaining, 0);
+    assert!(
+        ctx.env.auths().is_empty(),
+        "refund cranking must not request authorization"
+    );
+
+    ctx.events.finalize_cancel(&id, &BytesN::random(&ctx.env));
+    assert!(
+        ctx.env.auths().is_empty(),
+        "finalization must not request authorization"
+    );
+
+    assert_eq!(token.balance(&p1) - p1_before, p1_amount);
+    assert_eq!(token.balance(&p2) - p2_before, p2_amount);
+    assert_eq!(token.balance(&ctx.owner) - owner_before, TOTAL_BUDGET);
+    assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelled);
+    assert!(!has_cancellation_state(&ctx, id));
+    assert_eq!(stored_non_owner_total(&ctx, id), Some(0));
+}
+
+#[test]
+fn missing_running_total_initializes_for_an_empty_event() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+    remove_running_total(&ctx, id);
+
+    let partner = Address::generate(&ctx.env);
+    ctx.token_admin.mint(&partner, &200_0000000_i128);
+    ctx.events
+        .add_funds(&id, &partner, &100_0000000_i128, &BytesN::random(&ctx.env));
+    assert_eq!(stored_non_owner_total(&ctx, id), Some(100_0000000_i128));
+}
+
+#[test]
+fn missing_running_total_with_contributors_fails_closed() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+    let existing_partner = Address::generate(&ctx.env);
+    contribute(&ctx, id, &existing_partner, 100_0000000_i128);
+    remove_running_total(&ctx, id);
+
+    let partner = Address::generate(&ctx.env);
+    ctx.token_admin.mint(&partner, &200_0000000_i128);
+    let add_funds_err = ctx
+        .events
+        .try_add_funds(&id, &partner, &100_0000000_i128, &BytesN::random(&ctx.env))
+        .err()
+        .expect("missing total rejected")
+        .unwrap();
+    assert_eq!(add_funds_err, Error::CancellationTotalMissing);
+
+    let cancel_err = ctx
+        .events
+        .try_start_cancel(&id, &BytesN::random(&ctx.env))
+        .err()
+        .expect("missing total rejected")
+        .unwrap();
+    assert_eq!(cancel_err, Error::CancellationTotalMissing);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
+}
+
 // ============================================================
 // ProRataPartners branch (remaining < non_owner_total)
 // ============================================================
 
 #[test]
 fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
-    // escrow = 2000 (owner 1000 + p1 500 + p2 500); select_winners pays
-    // pos1 60% (1200) leaving remaining = 800. non_owner_total = 1000.
-    // 800 < 1000 -> ProRata: each partner gets 500 * 800 / 1000 = 400; owner = 0.
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
     dist.set(1, 60);
@@ -281,6 +438,11 @@ fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
     ];
     ctx.events
         .select_winners(&id, &winners, &BytesN::random(&ctx.env));
+
+    // Pull model: the winner claims (60% of 2000 = 1200) before the
+    // manager can cancel; the remainder splits pro-rata below.
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let p1_before = token.balance(&p1);
     let p2_before = token.balance(&p2);

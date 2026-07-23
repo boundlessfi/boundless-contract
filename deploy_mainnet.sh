@@ -14,7 +14,16 @@
 #   ./deploy_mainnet.sh deploy-events
 #   ./deploy_mainnet.sh register-token <token-sac-address>
 #   ./deploy_mainnet.sh rotate-admin <new-multisig-address>
-#   ./deploy_mainnet.sh upgrade-events <wasm-path>
+#   ./deploy_mainnet.sh upload-events-wasm <wasm-path>
+#   ./deploy_mainnet.sh prepare-pause-events <xdr-output>
+#   ./deploy_mainnet.sh prepare-propose-upgrade-events <wasm-path> <new-version> <xdr-output>
+#   ./deploy_mainnet.sh verify-proposed-upgrade-events <wasm-path> <new-version>
+#   ./deploy_mainnet.sh prepare-apply-upgrade-events <wasm-path> <expected-version> <xdr-output>
+#   ./deploy_mainnet.sh prepare-migrate-upgrade-events <expected-version> <xdr-output>
+#   ./deploy_mainnet.sh prepare-cancel-upgrade-events <xdr-output>
+#   ./deploy_mainnet.sh prepare-unpause-events <expected-version> <xdr-output>
+#   ./deploy_mainnet.sh verify-upgrade-events <wasm-path> <expected-version>
+#   ./deploy_mainnet.sh upgrade-status
 #   ./deploy_mainnet.sh verify
 
 set -euo pipefail
@@ -28,7 +37,7 @@ RED='\033[0;31m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-NETWORK="mainnet"
+NETWORK="${STELLAR_NETWORK:-}"
 NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015"
 DEPLOYMENTS_DIR="$(cd "$(dirname "$0")" && pwd)/deployments"
 DEPLOYMENT_FILE="$DEPLOYMENTS_DIR/mainnet.json"
@@ -48,6 +57,7 @@ ok() {
 
 confirm_mainnet() {
     echo -e "${BOLD}You are about to operate on Stellar MAINNET.${NC}"
+    echo "CLI network config: $NETWORK"
     echo "Network passphrase: $NETWORK_PASSPHRASE"
     echo ""
     read -rp "Type 'mainnet' to continue: " ack
@@ -64,10 +74,35 @@ require_env() {
 }
 
 require_cli() {
+    [ -n "$NETWORK" ] || \
+        err "set STELLAR_NETWORK to the configured mainnet network name"
     command -v stellar >/dev/null 2>&1 || err "stellar CLI not on PATH"
     command -v jq      >/dev/null 2>&1 || err "jq not on PATH"
+    command -v awk     >/dev/null 2>&1 || err "awk not on PATH"
     command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || \
         err "sha256sum or shasum not on PATH"
+    if [ -n "${STELLAR_RPC_URL:-}" ] || [ -n "${STELLAR_NETWORK_PASSPHRASE:-}" ]; then
+        err "unset STELLAR_RPC_URL and STELLAR_NETWORK_PASSPHRASE when using --network $NETWORK"
+    fi
+
+    local networks configured_rpc configured_passphrase
+    networks="$(stellar network ls --long)"
+    configured_rpc="$(printf '%s\n' "$networks" | awk -v target="$NETWORK" '
+        $0 == "Name: " target { found = 1; next }
+        found && /^RPC url: / { sub(/^RPC url: /, ""); print; exit }
+        found && /^Name: / { exit }
+    ')"
+    configured_passphrase="$(printf '%s\n' "$networks" | awk -v target="$NETWORK" '
+        $0 == "Name: " target { found = 1; next }
+        found && /^Network passphrase: / {
+            sub(/^Network passphrase: /, ""); print; exit
+        }
+        found && /^Name: / { exit }
+    ')"
+    [ "$configured_passphrase" = "$NETWORK_PASSPHRASE" ] || \
+        err "network $NETWORK is not configured with the Stellar public-network passphrase"
+    [ -n "$configured_rpc" ] && [[ "$configured_rpc" != "Bring Your Own:"* ]] || \
+        err "network $NETWORK does not have a usable RPC URL"
 }
 
 hash_wasm() {
@@ -105,6 +140,171 @@ deployment_set_raw() {
     tmp="$(mktemp)"
     jq ".\"$key\" = $val" "$DEPLOYMENT_FILE" > "$tmp"
     mv "$tmp" "$DEPLOYMENT_FILE"
+}
+
+events_contract_id() {
+    local events_id="${EVENTS_ID:-}"
+    if [ -z "$events_id" ] && [ -f "$DEPLOYMENT_FILE" ]; then
+        events_id="$(deployment_get events_contract)"
+    fi
+    [ -n "$events_id" ] || \
+        err "events contract id missing; set EVENTS_ID or restore deployments/mainnet.json"
+    printf '%s\n' "$events_id"
+}
+
+events_read() {
+    local events_id="$1"
+    shift
+    stellar contract invoke \
+        --send no \
+        --network "$NETWORK" \
+        --source "$ADMIN_SOURCE" \
+        --id "$events_id" \
+        -- "$@"
+}
+
+read_json_string() {
+    jq -er 'if type == "string" then . else error("expected JSON string") end'
+}
+
+assert_events_version() {
+    local events_id="$1" expected="$2"
+    local actual
+    actual="$(events_read "$events_id" version | read_json_string)" || \
+        err "could not read the current events contract version"
+    [ "$actual" = "$expected" ] || \
+        err "events version mismatch: expected $expected, got $actual"
+}
+
+assert_admin_source_matches() {
+    local events_id="$1"
+    local actual_admin
+    actual_admin="$(events_read "$events_id" get_admin | read_json_string)" || \
+        err "could not read the current events admin"
+    [ "$actual_admin" = "$ADMIN_SOURCE" ] || \
+        err "ADMIN_SOURCE mismatch: contract admin is $actual_admin, got $ADMIN_SOURCE"
+}
+
+assert_events_paused() {
+    local events_id="$1"
+    local paused
+    paused="$(events_read "$events_id" is_paused)" || \
+        err "could not read events.is_paused"
+    [ "$paused" = "true" ] || \
+        err "events contract is not paused; refusing to rely on a zero-event snapshot"
+}
+
+assert_events_unpaused() {
+    local events_id="$1"
+    local paused
+    paused="$(events_read "$events_id" is_paused)" || \
+        err "could not read events.is_paused"
+    [ "$paused" = "false" ] || \
+        err "events contract is still paused after unpause"
+}
+
+assert_no_pending_events_upgrade() {
+    local events_id="$1"
+    local pending
+    pending="$(events_read "$events_id" get_pending_upgrade)" || \
+        err "could not read pending events upgrade"
+    [ "$pending" = "null" ] || \
+        err "an events upgrade is already pending; inspect it with upgrade-status"
+}
+
+assert_pending_events_upgrade() {
+    local events_id="$1" expected_version="$2" expected_hash="$3"
+    local pending actual_version actual_hash
+    pending="$(events_read "$events_id" get_pending_upgrade)" || \
+        err "could not read pending events upgrade"
+    [ "$pending" != "null" ] || err "no events upgrade is pending"
+    actual_version="$(printf '%s' "$pending" | jq -er '.new_version')" || \
+        err "pending events upgrade did not contain new_version"
+    actual_hash="$(printf '%s' "$pending" | jq -er '.wasm_hash')" || \
+        err "pending events upgrade did not contain wasm_hash"
+    [ "$actual_version" = "$expected_version" ] || \
+        err "pending version mismatch: expected $expected_version, got $actual_version"
+    [ "$actual_hash" = "$expected_hash" ] || \
+        err "pending wasm mismatch: expected $expected_hash, got $actual_hash"
+}
+
+assert_no_events_exist() {
+    local events_id="$1"
+    local base first_event_id output status
+
+    base="$(events_read "$events_id" id_base)" || \
+        err "could not read events.id_base"
+    [[ "$base" =~ ^[0-9]+$ ]] || \
+        err "events.id_base returned a non-numeric value: $base"
+    first_event_id=$((base + 1))
+
+    set +e
+    output="$(events_read "$events_id" get_event --event_id "$first_event_id" 2>&1)"
+    status=$?
+    set -e
+
+    if [ "$status" -eq 0 ]; then
+        err "event $first_event_id exists; abort 1.2.0 and implement a legacy-total migration"
+    fi
+    if [[ "$output" != *"Error(Contract, #30)"* ]]; then
+        err "could not prove event $first_event_id is absent; refusing to continue: $output"
+    fi
+
+    ok "Zero-event guard confirmed: $first_event_id returned EventNotFound."
+}
+
+assert_migrated_version() {
+    local events_id="$1" expected="$2"
+    local migrated_version
+    migrated_version="$(events_read "$events_id" get_migrated_to_version | read_json_string)" || \
+        err "could not read migrated-to version"
+    [ "$migrated_version" = "$expected" ] || \
+        err "migration marker mismatch: expected $expected, got $migrated_version"
+}
+
+prepare_events_invoke() {
+    local events_id="$1" output_file="$2"
+    shift 2
+    local output_dir
+    output_dir="$(dirname "$output_file")"
+    [ -d "$output_dir" ] || err "XDR output directory does not exist: $output_dir"
+    assert_admin_source_matches "$events_id"
+
+    local tmp
+    tmp="$(mktemp)"
+    if ! stellar contract invoke \
+        --network "$NETWORK" \
+        --source-account "$ADMIN_SOURCE" \
+        --id "$events_id" \
+        --build-only \
+        -- "$@" \
+        | stellar tx simulate \
+            --network "$NETWORK" \
+            --source-account "$ADMIN_SOURCE" \
+            > "$tmp"; then
+        rm -f "$tmp"
+        err "could not build and simulate the multisig transaction"
+    fi
+    [ -s "$tmp" ] || {
+        rm -f "$tmp"
+        err "prepared transaction was empty"
+    }
+    mv "$tmp" "$output_file"
+    ok "Prepared simulated XDR: $output_file"
+    echo "Sign it sequentially with the required multi-sig quorum, then submit with:"
+    echo "  stellar tx send \"<signed-xdr>\" --network $NETWORK"
+}
+
+append_upgrade_log() {
+    local action="$1" version="$2" wasm_hash="${3:-}"
+    local upgrades_log="$DEPLOYMENTS_DIR/mainnet-upgrades.jsonl"
+    jq -nc \
+        --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg action "$action" \
+        --arg version "$version" \
+        --arg wasm_hash "$wasm_hash" \
+        '{timestamp: $timestamp, action: $action, version: $version, wasm_hash: $wasm_hash}' \
+        >> "$upgrades_log"
 }
 
 cmd_build_release() {
@@ -156,7 +356,7 @@ cmd_deploy_events() {
     [ -n "$profile_id" ] || err "deploy-profile first; profile_contract not set"
 
     if [ -n "$(deployment_get events_contract)" ]; then
-        err "events contract already deployed: $(deployment_get events_contract). Refusing to re-deploy. Use upgrade-events instead."
+        err "events contract already deployed: $(deployment_get events_contract). Refusing to re-deploy. Use the guarded upgrade flow in the mainnet runbook."
     fi
 
     cmd_build_release
@@ -259,40 +459,232 @@ cmd_rotate_admin() {
     echo "land, run 'verify' to confirm get_admin returns the new address."
 }
 
-cmd_upgrade_events() {
+cmd_upload_events_wasm() {
     local wasm="${1:-}"
-    [ -n "$wasm" ] || err "usage: upgrade-events <path-to-new-wasm>"
+    [ -n "$wasm" ] || err "usage: upload-events-wasm <path-to-new-wasm>"
     [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    require_env UPLOAD_SOURCE
     require_env ADMIN_SOURCE
     require_cli
     confirm_mainnet
+    ensure_deployments_dir
+
+    local events_id expected_hash uploaded_hash
+    events_id="$(events_contract_id)"
+    assert_events_version "$events_id" "1.1.0"
+    assert_admin_source_matches "$events_id"
+    expected_hash="$(hash_wasm "$wasm")"
+    uploaded_hash="$(stellar contract upload \
+        --source-account "$UPLOAD_SOURCE" \
+        --network "$NETWORK" \
+        --optimize=false \
+        --wasm "$wasm")"
+    [ "$uploaded_hash" = "$expected_hash" ] || \
+        err "uploaded wasm hash mismatch: expected $expected_hash, got $uploaded_hash"
+
+    append_upgrade_log "uploaded" "" "$uploaded_hash"
+    ok "Uploaded exact events WASM: $uploaded_hash"
+}
+
+cmd_prepare_pause_events() {
+    local output_file="${1:-}"
+    [ -n "$output_file" ] || err "usage: prepare-pause-events <xdr-output>"
+    require_env ADMIN_SOURCE
+    require_cli
 
     local events_id
-    events_id="$(deployment_get events_contract)"
-    [ -n "$events_id" ] || err "events contract not deployed"
+    events_id="$(events_contract_id)"
+    assert_events_version "$events_id" "1.1.0"
+    assert_events_unpaused "$events_id"
+    assert_no_pending_events_upgrade "$events_id"
+    assert_no_events_exist "$events_id"
+    prepare_events_invoke "$events_id" "$output_file" pause
+}
 
-    info "Uploading new wasm..."
-    local wasm_hash
-    wasm_hash=$(stellar contract upload \
-        --source-account "$ADMIN_SOURCE" \
-        --network "$NETWORK" \
-        --wasm "$wasm")
+cmd_prepare_propose_upgrade_events() {
+    local wasm="${1:-}" new_version="${2:-}" output_file="${3:-}"
+    [ -n "$wasm" ] || \
+        err "usage: prepare-propose-upgrade-events <path-to-new-wasm> <new-version> <xdr-output>"
+    [ -n "$new_version" ] || \
+        err "usage: prepare-propose-upgrade-events <path-to-new-wasm> <new-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-propose-upgrade-events <path-to-new-wasm> <new-version> <xdr-output>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    require_env ADMIN_SOURCE
+    require_cli
 
-    info "Upgrading events contract to $wasm_hash..."
-    stellar contract invoke \
-        --network "$NETWORK" \
-        --source "$ADMIN_SOURCE" \
-        --id "$events_id" \
-        -- upgrade \
-        --new_wasm_hash "$wasm_hash"
+    local events_id wasm_hash
+    events_id="$(events_contract_id)"
+    wasm_hash="$(hash_wasm "$wasm")"
+    assert_no_pending_events_upgrade "$events_id"
 
-    # Append to upgrade log.
-    local upgrades_log="$DEPLOYMENTS_DIR/mainnet-upgrades.jsonl"
-    echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"wasm_hash\":\"$wasm_hash\",\"wasm_path\":\"$wasm\"}" \
-        >> "$upgrades_log"
+    if [ "$new_version" = "1.2.0" ]; then
+        assert_events_version "$events_id" "1.1.0"
+        assert_events_paused "$events_id"
+        assert_no_events_exist "$events_id"
+    fi
 
-    deployment_set events_wasm_hash "$(hash_wasm "$wasm")"
-    ok "Events contract upgraded to $wasm_hash."
+    prepare_events_invoke "$events_id" "$output_file" propose_upgrade \
+        --new_wasm_hash "$wasm_hash" \
+        --new_version "$new_version"
+    echo "Expected version: $new_version"
+    echo "Expected WASM:    $wasm_hash"
+}
+
+cmd_verify_proposed_upgrade_events() {
+    local wasm="${1:-}" expected_version="${2:-}"
+    [ -n "$wasm" ] || \
+        err "usage: verify-proposed-upgrade-events <path-to-new-wasm> <expected-version>"
+    [ -n "$expected_version" ] || \
+        err "usage: verify-proposed-upgrade-events <path-to-new-wasm> <expected-version>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    require_env ADMIN_SOURCE
+    require_cli
+    ensure_deployments_dir
+
+    local events_id expected_hash
+    events_id="$(events_contract_id)"
+    expected_hash="$(hash_wasm "$wasm")"
+    assert_pending_events_upgrade "$events_id" "$expected_version" "$expected_hash"
+
+    if [ "$expected_version" = "1.2.0" ]; then
+        assert_events_version "$events_id" "1.1.0"
+        assert_events_paused "$events_id"
+        assert_no_events_exist "$events_id"
+    fi
+
+    append_upgrade_log "proposal-verified" "$expected_version" "$expected_hash"
+    ok "Queued events upgrade matches the expected version and exact WASM."
+}
+
+cmd_prepare_apply_upgrade_events() {
+    local wasm="${1:-}" expected_version="${2:-}" output_file="${3:-}"
+    [ -n "$wasm" ] || \
+        err "usage: prepare-apply-upgrade-events <path-to-new-wasm> <expected-version> <xdr-output>"
+    [ -n "$expected_version" ] || \
+        err "usage: prepare-apply-upgrade-events <path-to-new-wasm> <expected-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-apply-upgrade-events <path-to-new-wasm> <expected-version> <xdr-output>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local events_id expected_hash
+    events_id="$(events_contract_id)"
+    expected_hash="$(hash_wasm "$wasm")"
+    assert_pending_events_upgrade "$events_id" "$expected_version" "$expected_hash"
+
+    if [ "$expected_version" = "1.2.0" ]; then
+        assert_events_version "$events_id" "1.1.0"
+        assert_events_paused "$events_id"
+        assert_no_events_exist "$events_id"
+    fi
+
+    prepare_events_invoke "$events_id" "$output_file" apply_upgrade
+}
+
+cmd_prepare_migrate_upgrade_events() {
+    local expected_version="${1:-}" output_file="${2:-}"
+    [ -n "$expected_version" ] || \
+        err "usage: prepare-migrate-upgrade-events <expected-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-migrate-upgrade-events <expected-version> <xdr-output>"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local events_id migrated_version
+    events_id="$(events_contract_id)"
+    assert_events_version "$events_id" "$expected_version"
+    assert_no_pending_events_upgrade "$events_id"
+    if [ "$expected_version" = "1.2.0" ]; then
+        assert_events_paused "$events_id"
+    fi
+
+    migrated_version="$(events_read "$events_id" get_migrated_to_version | jq -r '. // empty')" || \
+        err "could not read migrated-to version"
+    [ "$migrated_version" != "$expected_version" ] || \
+        err "migration marker is already $expected_version; do not replay migrate"
+    prepare_events_invoke "$events_id" "$output_file" migrate
+}
+
+cmd_prepare_cancel_upgrade_events() {
+    local output_file="${1:-}"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-cancel-upgrade-events <xdr-output>"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local events_id pending_version
+    events_id="$(events_contract_id)"
+    pending_version="$(events_read "$events_id" get_pending_upgrade | jq -r '.new_version // empty')" || \
+        err "could not read pending events upgrade"
+    [ -n "$pending_version" ] || err "no events upgrade is pending"
+    prepare_events_invoke "$events_id" "$output_file" cancel_pending_upgrade
+    echo "Cancelling queued version: $pending_version"
+    echo "This transaction does not unpause the contract."
+}
+
+cmd_prepare_unpause_events() {
+    local expected_version="${1:-}" output_file="${2:-}"
+    [ -n "$expected_version" ] || \
+        err "usage: prepare-unpause-events <expected-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-unpause-events <expected-version> <xdr-output>"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local events_id
+    events_id="$(events_contract_id)"
+    assert_events_version "$events_id" "$expected_version"
+    assert_events_paused "$events_id"
+    assert_no_pending_events_upgrade "$events_id"
+    if [ "$expected_version" = "1.2.0" ]; then
+        assert_migrated_version "$events_id" "$expected_version"
+    fi
+    prepare_events_invoke "$events_id" "$output_file" unpause
+}
+
+cmd_verify_upgrade_events() {
+    local wasm="${1:-}" expected_version="${2:-}"
+    [ -n "$wasm" ] || \
+        err "usage: verify-upgrade-events <path-to-new-wasm> <expected-version>"
+    [ -n "$expected_version" ] || \
+        err "usage: verify-upgrade-events <path-to-new-wasm> <expected-version>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    require_env ADMIN_SOURCE
+    require_cli
+    ensure_deployments_dir
+
+    local events_id expected_hash
+    events_id="$(events_contract_id)"
+    expected_hash="$(hash_wasm "$wasm")"
+    assert_events_version "$events_id" "$expected_version"
+    assert_migrated_version "$events_id" "$expected_version"
+    assert_no_pending_events_upgrade "$events_id"
+    assert_events_unpaused "$events_id"
+
+    deployment_set events_contract "$events_id"
+    deployment_set events_wasm_hash "$expected_hash"
+    deployment_set events_version "$expected_version"
+    append_upgrade_log "upgrade-verified" "$expected_version" "$expected_hash"
+    ok "Events $expected_version is migrated, has no pending upgrade, and is unpaused."
+}
+
+cmd_upgrade_status() {
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local events_id
+    events_id="$(events_contract_id)"
+
+    echo "events.version:"
+    events_read "$events_id" version
+    echo "events.is_paused:"
+    events_read "$events_id" is_paused
+    echo "events.get_pending_upgrade:"
+    events_read "$events_id" get_pending_upgrade
+    echo "events.get_migrated_to_version:"
+    events_read "$events_id" get_migrated_to_version
 }
 
 cmd_verify() {
@@ -338,8 +730,41 @@ case "$ACTION" in
     "rotate-admin")
         cmd_rotate_admin "$@"
         ;;
+    "upload-events-wasm")
+        cmd_upload_events_wasm "$@"
+        ;;
+    "prepare-pause-events")
+        cmd_prepare_pause_events "$@"
+        ;;
+    "prepare-propose-upgrade-events")
+        cmd_prepare_propose_upgrade_events "$@"
+        ;;
+    "verify-proposed-upgrade-events")
+        cmd_verify_proposed_upgrade_events "$@"
+        ;;
+    "prepare-apply-upgrade-events")
+        cmd_prepare_apply_upgrade_events "$@"
+        ;;
+    "prepare-migrate-upgrade-events")
+        cmd_prepare_migrate_upgrade_events "$@"
+        ;;
+    "prepare-cancel-upgrade-events")
+        cmd_prepare_cancel_upgrade_events "$@"
+        ;;
+    "prepare-unpause-events")
+        cmd_prepare_unpause_events "$@"
+        ;;
+    "verify-upgrade-events")
+        cmd_verify_upgrade_events "$@"
+        ;;
+    "upgrade-status")
+        cmd_upgrade_status
+        ;;
     "upgrade-events")
-        cmd_upgrade_events "$@"
+        err "upgrade-events is removed; use the guarded prepare/sign/send flow in mainnet-deploy-runbook.md"
+        ;;
+    "propose-upgrade-events"|"apply-upgrade-events"|"migrate-upgrade-events"|"cancel-upgrade-events"|"unpause-events")
+        err "$ACTION cannot safely submit as the 2-of-3 admin; use the matching prepare-* action, sign sequentially, and send"
         ;;
     "verify")
         cmd_verify

@@ -15,7 +15,6 @@ on:
 permissions:
   contents: read
   actions: read
-  id-token: write
 
 jobs:
   rustfmt:
@@ -23,12 +22,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable (rust 1.97.1)
         with:
-          profile: minimal
           toolchain: stable
           components: rustfmt
 
