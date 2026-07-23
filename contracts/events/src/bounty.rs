@@ -28,7 +28,7 @@ pub fn apply(
     admin::require_not_paused(env)?;
 
     let event = storage::get_event(env, bounty_id).ok_or(Error::EventNotFound)?;
-    require_active_bounty(env, &event)?;
+    require_active_bounty(&event)?;
 
     applicant.require_auth();
     idempotency::require_unseen(env, &applicant, &op_id)?;
@@ -61,7 +61,7 @@ pub fn withdraw_application(
     admin::require_not_paused(env)?;
 
     let event = storage::get_event(env, bounty_id).ok_or(Error::EventNotFound)?;
-    require_active_bounty(env, &event)?;
+    require_active_bounty(&event)?;
 
     applicant.require_auth();
     idempotency::require_unseen(env, &applicant, &op_id)?;
@@ -85,17 +85,12 @@ pub fn withdraw_application(
 // ============================================================
 // HELPERS
 // ============================================================
-fn require_active_bounty(env: &Env, event: &EventRecord) -> Result<(), Error> {
+fn require_active_bounty(event: &EventRecord) -> Result<(), Error> {
     if !matches!(event.pillar, Pillar::Bounty) {
         return Err(Error::InvalidPillar);
     }
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
-    }
-    if let Some(deadline) = event.deadline {
-        if deadline <= env.ledger().timestamp() {
-            return Err(Error::DeadlinePassed);
-        }
     }
     Ok(())
 }

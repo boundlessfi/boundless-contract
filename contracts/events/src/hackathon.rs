@@ -9,8 +9,5 @@ pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Re
     if !matches!(record.release_kind, ReleaseKind::Single) {
         return Err(Error::InvalidReleaseKind);
     }
-    if record.deadline.is_none() {
-        return Err(Error::DeadlineRequired);
-    }
     Ok(())
 }

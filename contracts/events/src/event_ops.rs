@@ -81,12 +81,6 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
         return Err(Error::DistributionMismatch);
     }
 
-    if let Some(deadline) = params.deadline {
-        if deadline <= env.ledger().timestamp() {
-            return Err(Error::DeadlineMustBeFuture);
-        }
-    }
-
     if let Some(bps) = params.fee_bps_override {
         if bps > MAX_FEE_BPS {
             return Err(Error::InvalidFeeBps);
@@ -544,11 +538,6 @@ pub fn submit(
     if matches!(event.pillar, Pillar::Crowdfunding) {
         return Err(Error::InvalidPillar);
     }
-    if let Some(deadline) = event.deadline {
-        if deadline <= env.ledger().timestamp() {
-            return Err(Error::DeadlinePassed);
-        }
-    }
 
     applicant.require_auth();
     idempotency::require_unseen(env, &applicant, &op_id)?;
@@ -611,11 +600,6 @@ pub fn withdraw_submission(
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
-    }
-    if let Some(deadline) = event.deadline {
-        if deadline <= env.ledger().timestamp() {
-            return Err(Error::DeadlinePassed);
-        }
     }
 
     applicant.require_auth();

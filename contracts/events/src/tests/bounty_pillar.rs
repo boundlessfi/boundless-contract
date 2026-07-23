@@ -281,24 +281,6 @@ fn apply_on_completed_event_reverts() {
 }
 
 #[test]
-fn apply_after_deadline_reverts() {
-    let ctx = setup();
-    let deadline = ctx.env.ledger().timestamp() + 100;
-    let bounty_id = create_bounty_with_deadline(&ctx, deadline);
-
-    ctx.env.ledger().with_mut(|li| {
-        li.timestamp = deadline;
-    });
-
-    let op_id = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id),
-    );
-    assert_eq!(err, Error::DeadlinePassed);
-}
-
-#[test]
 fn apply_when_paused_reverts() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);

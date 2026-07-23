@@ -172,48 +172,6 @@ fn create_rejects_multi_release_kind() {
     assert!(res.is_err(), "hackathon must use Single release");
 }
 
-#[test]
-fn create_rejects_missing_deadline() {
-    let ctx = setup();
-    let params = CreateEventParams {
-        pillar: Pillar::Hackathon,
-        owner: ctx.owner.clone(),
-        token: ctx.token_addr.clone(),
-        total_budget: TOTAL_BUDGET,
-        release_kind: ReleaseKind::Single,
-        content_uri: String::from_str(&ctx.env, "uri"),
-        title: String::from_str(&ctx.env, "Hackathon"),
-        deadline: None,
-        winner_distribution: single_winner_dist(&ctx.env),
-        fee_bps_override: None,
-        manager: None,
-    };
-    let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_create_event(&params, &op);
-    assert!(res.is_err(), "hackathon requires a submission deadline");
-}
-
-#[test]
-fn create_rejects_past_deadline() {
-    let ctx = setup();
-    let params = CreateEventParams {
-        pillar: Pillar::Hackathon,
-        owner: ctx.owner.clone(),
-        token: ctx.token_addr.clone(),
-        total_budget: TOTAL_BUDGET,
-        release_kind: ReleaseKind::Single,
-        content_uri: String::from_str(&ctx.env, "uri"),
-        title: String::from_str(&ctx.env, "Hackathon"),
-        deadline: Some(ctx.env.ledger().timestamp()),
-        winner_distribution: single_winner_dist(&ctx.env),
-        fee_bps_override: None,
-        manager: None,
-    };
-    let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_create_event(&params, &op);
-    assert!(res.is_err(), "deadline must be in the future");
-}
-
 // ============================================================
 // submit (open submission model)
 // ============================================================
@@ -250,21 +208,6 @@ fn resubmit_keeps_original_timestamp_and_updates_uri() {
     let second = ctx.events.get_submission(&id, &ctx.applicant);
     assert_eq!(second.content_uri, uri_b);
     assert_eq!(second.submitted_at, first_time);
-}
-
-#[test]
-fn submit_after_deadline_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    ctx.env.ledger().with_mut(|li| {
-        li.timestamp += 2 * 86_400;
-    });
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../late.json");
-    let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
-    assert!(res.is_err(), "submission after the deadline must revert");
 }
 
 #[test]

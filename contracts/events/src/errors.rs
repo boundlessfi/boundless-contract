@@ -29,9 +29,8 @@ pub enum Error {
     InvalidReleaseKind = 33,
     InvalidDistribution = 34,
     InvalidBudget = 35,
-    DeadlineRequired = 36,
-    DeadlinePassed = 37,
-    DeadlineMustBeFuture = 38,
+    // 36-38 retired: deadline enforcement removed (submission windows are an
+    // off-chain/backend concern; the contract no longer gates on deadline).
     TitleTooLong = 39,
 
     ApplicantAlreadyApplied = 40,

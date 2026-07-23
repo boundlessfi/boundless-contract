@@ -11,10 +11,6 @@ pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Re
         _ => return Err(Error::InvalidReleaseKind),
     }
 
-    if record.deadline.is_none() {
-        return Err(Error::DeadlineRequired);
-    }
-
     if record.winner_distribution.len() != 1 {
         return Err(Error::InvalidDistribution);
     }
