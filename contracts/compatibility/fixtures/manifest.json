@@ -1,0 +1,62 @@
+{
+  "snapshot": {
+    "file": "mainnet-state-63617727.json",
+    "network": "mainnet",
+    "network_id": "7ac33997544e3175d266bd022439b22cdb16508c01163f26e5cb2a3e1045a979",
+    "ledger": 63617727,
+    "timestamp": 1784850182,
+    "protocol": 27,
+    "events_contract": "CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ",
+    "profile_contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+    "capture_script": "scripts/capture-mainnet-compat-snapshot.sh",
+    "sha256": "c5cff0b8668c985adef50d9f24568fbd23d510ca3e96da9a3c7c4f6f779d38d0"
+  },
+  "wasm": [
+    {
+      "file": "mainnet-events-1.1.0-sdk23.wasm",
+      "sha256": "2a8789bf5dd392b91ddfe6591072a0cb9fae70045abf379fd1dbbc2db4af1de3",
+      "source": "mainnet contract CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ",
+      "soroban_sdk": "23.5.3",
+      "protocol": 23,
+      "runtime_version": "1.1.0",
+      "contractmeta_version": "1.1.0"
+    },
+    {
+      "file": "mainnet-profile-1.1.0-sdk23.wasm",
+      "sha256": "b9e3500cfb559781e68359655f37775c78afffc5a8436daca9d1d1f8e3569b02",
+      "source": "mainnet contract CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+      "soroban_sdk": "23.5.3",
+      "protocol": 23,
+      "runtime_version": "1.1.0",
+      "contractmeta_version": "1.1.0"
+    },
+    {
+      "file": "events-1.3.0-sdk23.wasm",
+      "sha256": "6566d9b29d3880bb31c5c5ce3a3a7b7f9d0a085da5d51de01cfd611e3614f2d7",
+      "source": "commit 57aa591",
+      "soroban_sdk": "23.5.3",
+      "protocol": 23,
+      "runtime_version": "1.3.0",
+      "contractmeta_version": "1.2.0",
+      "note": "The source commit changed the runtime version to 1.3.0 without updating contractmeta. The fixture is retained byte-for-byte and the runtime version is asserted by the compatibility test."
+    },
+    {
+      "file": "events-1.5.0-sdk27.wasm",
+      "sha256": "98912da3856491ab21d451bfec6de504d23e5d3080c3b8046cbab21ac602b639",
+      "source": "release source based on commit 8e15770",
+      "soroban_sdk": "27.0.0",
+      "protocol": 27,
+      "runtime_version": "1.5.0",
+      "contractmeta_version": "1.5.0"
+    },
+    {
+      "file": "profile-1.2.0-sdk27.wasm",
+      "sha256": "0d5431380fb27eeec6105e2fdd1bfa7d1ad452266f3f1115fcd52e72df46b66e",
+      "source": "release source based on commit 8e15770",
+      "soroban_sdk": "27.0.0",
+      "protocol": 27,
+      "runtime_version": "1.2.0",
+      "contractmeta_version": "1.2.0"
+    }
+  ]
+}

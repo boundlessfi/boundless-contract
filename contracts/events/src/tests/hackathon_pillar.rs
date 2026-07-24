@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _, Ledger as _},
+    testutils::{Address as _, BytesN as _},
     token, Address, BytesN, Env, Map, String,
 };
 

@@ -31,7 +31,7 @@ deploy_contract() {
     cd $CONTRACT_DIR || { echo -e "${RED}Failed to change directory to $CONTRACT_DIR${NC}"; exit 1; }
     
     # Use stellar contract build which handles the reference-types issue
-    stellar contract build
+    stellar contract build --locked
     
     # Deploy the contract
     echo "Deploying contract..."
@@ -95,7 +95,7 @@ upgrade_contract() {
     cd $CONTRACT_DIR || { echo -e "${RED}Failed to change directory to $CONTRACT_DIR${NC}"; exit 1; }
     
     # Use stellar contract build which handles the reference-types issue
-    stellar contract build
+    stellar contract build --locked
     
     # Install the new WASM
     echo "Installing new WASM..."

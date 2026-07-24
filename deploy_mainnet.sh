@@ -14,14 +14,23 @@
 #   ./deploy_mainnet.sh deploy-events
 #   ./deploy_mainnet.sh register-token <token-sac-address>
 #   ./deploy_mainnet.sh rotate-admin <new-multisig-address>
+#   ./deploy_mainnet.sh upload-profile-wasm <wasm-path>
 #   ./deploy_mainnet.sh upload-events-wasm <wasm-path>
+#   ./deploy_mainnet.sh prepare-pause-profile <xdr-output>
 #   ./deploy_mainnet.sh prepare-pause-events <xdr-output>
+#   ./deploy_mainnet.sh prepare-propose-upgrade-profile <wasm-path> <new-version> <xdr-output>
 #   ./deploy_mainnet.sh prepare-propose-upgrade-events <wasm-path> <new-version> <xdr-output>
+#   ./deploy_mainnet.sh verify-proposed-upgrade-profile <wasm-path> <new-version>
 #   ./deploy_mainnet.sh verify-proposed-upgrade-events <wasm-path> <new-version>
+#   ./deploy_mainnet.sh prepare-apply-upgrade-profile <wasm-path> <expected-version> <xdr-output>
 #   ./deploy_mainnet.sh prepare-apply-upgrade-events <wasm-path> <expected-version> <xdr-output>
+#   ./deploy_mainnet.sh prepare-migrate-upgrade-profile <expected-version> <xdr-output>
 #   ./deploy_mainnet.sh prepare-migrate-upgrade-events <expected-version> <xdr-output>
+#   ./deploy_mainnet.sh prepare-cancel-upgrade-profile <xdr-output>
 #   ./deploy_mainnet.sh prepare-cancel-upgrade-events <xdr-output>
+#   ./deploy_mainnet.sh prepare-unpause-profile <expected-version> <xdr-output>
 #   ./deploy_mainnet.sh prepare-unpause-events <expected-version> <xdr-output>
+#   ./deploy_mainnet.sh verify-upgrade-profile <wasm-path> <expected-version>
 #   ./deploy_mainnet.sh verify-upgrade-events <wasm-path> <expected-version>
 #   ./deploy_mainnet.sh upgrade-status
 #   ./deploy_mainnet.sh verify
@@ -39,6 +48,11 @@ NC='\033[0m'
 
 NETWORK="${STELLAR_NETWORK:-}"
 NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015"
+REQUIRED_STELLAR_CLI_VERSION="27.0.0"
+SDK27_EVENTS_VERSION="1.5.0"
+SDK27_EVENTS_WASM_HASH="98912da3856491ab21d451bfec6de504d23e5d3080c3b8046cbab21ac602b639"
+SDK27_PROFILE_VERSION="1.2.0"
+SDK27_PROFILE_WASM_HASH="0d5431380fb27eeec6105e2fdd1bfa7d1ad452266f3f1115fcd52e72df46b66e"
 DEPLOYMENTS_DIR="$(cd "$(dirname "$0")" && pwd)/deployments"
 DEPLOYMENT_FILE="$DEPLOYMENTS_DIR/mainnet.json"
 
@@ -81,6 +95,10 @@ require_cli() {
     command -v awk     >/dev/null 2>&1 || err "awk not on PATH"
     command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || \
         err "sha256sum or shasum not on PATH"
+    local stellar_cli_version
+    stellar_cli_version="$(stellar --version | awk 'NR == 1 { print $2 }')"
+    [ "$stellar_cli_version" = "$REQUIRED_STELLAR_CLI_VERSION" ] || \
+        err "stellar CLI version mismatch: expected $REQUIRED_STELLAR_CLI_VERSION, got ${stellar_cli_version:-unknown}"
     if [ -n "${STELLAR_RPC_URL:-}" ] || [ -n "${STELLAR_NETWORK_PASSPHRASE:-}" ]; then
         err "unset STELLAR_RPC_URL and STELLAR_NETWORK_PASSPHRASE when using --network $NETWORK"
     fi
@@ -112,6 +130,66 @@ hash_wasm() {
     else
         shasum -a 256 "$f" | cut -d' ' -f1
     fi
+}
+
+deployed_wasm_hash() {
+    local contract_id="$1"
+    stellar contract info hash \
+        --network "$NETWORK" \
+        --contract-id "$contract_id"
+}
+
+assert_local_wasm_hash() {
+    local label="$1" wasm="$2" expected="$3"
+    local actual
+    actual="$(hash_wasm "$wasm")"
+    [ "$actual" = "$expected" ] || \
+        err "$label artifact hash mismatch: expected $expected, got $actual"
+}
+
+assert_deployed_wasm_hash() {
+    local label="$1" contract_id="$2" expected="$3"
+    local actual
+    actual="$(deployed_wasm_hash "$contract_id")" || \
+        err "could not read deployed $label WASM hash"
+    [ "$actual" = "$expected" ] || \
+        err "deployed $label WASM hash mismatch: expected $expected, got $actual"
+}
+
+assert_sdk27_profile_artifact() {
+    local wasm="$1" version="$2"
+    if [ "$version" = "$SDK27_PROFILE_VERSION" ]; then
+        assert_local_wasm_hash "profile SDK 27" "$wasm" "$SDK27_PROFILE_WASM_HASH"
+    fi
+}
+
+assert_sdk27_events_artifact() {
+    local wasm="$1" version="$2"
+    if [ "$version" = "$SDK27_EVENTS_VERSION" ]; then
+        assert_local_wasm_hash "events SDK 27" "$wasm" "$SDK27_EVENTS_WASM_HASH"
+    fi
+}
+
+assert_profile_sdk27_wasm_live() {
+    assert_deployed_wasm_hash "profile SDK 27" "$1" "$SDK27_PROFILE_WASM_HASH"
+}
+
+assert_events_sdk27_wasm_live() {
+    assert_deployed_wasm_hash "events SDK 27" "$1" "$SDK27_EVENTS_WASM_HASH"
+}
+
+assert_version_argument() {
+    local label="$1" actual="$2" expected="$3"
+    [ "$actual" = "$expected" ] || \
+        err "$label version must be $expected for this pinned mainnet flow; got $actual"
+}
+
+assert_unpause_version_argument() {
+    local label="$1" actual="$2" upgraded="$3"
+    case "$actual" in
+        "1.1.0"|"$upgraded") ;;
+        *) err "$label unpause version must be 1.1.0 for pre-apply recovery or $upgraded after upgrade; got $actual" ;;
+    esac
 }
 
 ensure_deployments_dir() {
@@ -152,6 +230,16 @@ events_contract_id() {
     printf '%s\n' "$events_id"
 }
 
+profile_contract_id() {
+    local profile_id="${PROFILE_ID:-}"
+    if [ -z "$profile_id" ] && [ -f "$DEPLOYMENT_FILE" ]; then
+        profile_id="$(deployment_get profile_contract)"
+    fi
+    [ -n "$profile_id" ] || \
+        err "profile contract id missing; set PROFILE_ID or restore deployments/mainnet.json"
+    printf '%s\n' "$profile_id"
+}
+
 events_read() {
     local events_id="$1"
     shift
@@ -160,6 +248,17 @@ events_read() {
         --network "$NETWORK" \
         --source "$ADMIN_SOURCE" \
         --id "$events_id" \
+        -- "$@"
+}
+
+profile_read() {
+    local profile_id="$1"
+    shift
+    stellar contract invoke \
+        --send no \
+        --network "$NETWORK" \
+        --source "$ADMIN_SOURCE" \
+        --id "$profile_id" \
         -- "$@"
 }
 
@@ -176,6 +275,15 @@ assert_events_version() {
         err "events version mismatch: expected $expected, got $actual"
 }
 
+assert_profile_version() {
+    local profile_id="$1" expected="$2"
+    local actual
+    actual="$(profile_read "$profile_id" version | read_json_string)" || \
+        err "could not read the current profile contract version"
+    [ "$actual" = "$expected" ] || \
+        err "profile version mismatch: expected $expected, got $actual"
+}
+
 assert_admin_source_matches() {
     local events_id="$1"
     local actual_admin
@@ -183,6 +291,41 @@ assert_admin_source_matches() {
         err "could not read the current events admin"
     [ "$actual_admin" = "$ADMIN_SOURCE" ] || \
         err "ADMIN_SOURCE mismatch: contract admin is $actual_admin, got $ADMIN_SOURCE"
+}
+
+assert_profile_admin_source_matches() {
+    local profile_id="$1"
+    local actual_admin
+    actual_admin="$(profile_read "$profile_id" get_admin | read_json_string)" || \
+        err "could not read the current profile admin"
+    [ "$actual_admin" = "$ADMIN_SOURCE" ] || \
+        err "ADMIN_SOURCE mismatch: profile contract admin is $actual_admin, got $ADMIN_SOURCE"
+}
+
+assert_profile_events_binding() {
+    local profile_id="$1" expected_events_id="$2"
+    local actual_events_id
+    actual_events_id="$(profile_read "$profile_id" get_events_contract | read_json_string)" || \
+        err "could not read profile.get_events_contract"
+    [ "$actual_events_id" = "$expected_events_id" ] || \
+        err "profile events-contract binding changed: expected $expected_events_id, got $actual_events_id"
+}
+
+assert_no_pending_events_contract_rotation() {
+    local profile_id="$1"
+    local pending
+    pending="$(profile_read "$profile_id" get_pending_events_contract)" || \
+        err "could not read profile.get_pending_events_contract"
+    [ "$pending" = "null" ] || \
+        err "a profile events-contract rotation is pending; cancel or complete it before the upgrade"
+}
+
+assert_upgrade_governance_stable() {
+    local profile_id="$1" events_id="$2"
+    assert_admin_source_matches "$events_id"
+    assert_profile_admin_source_matches "$profile_id"
+    assert_profile_events_binding "$profile_id" "$events_id"
+    assert_no_pending_events_contract_rotation "$profile_id"
 }
 
 assert_events_paused() {
@@ -201,6 +344,24 @@ assert_events_unpaused() {
         err "could not read events.is_paused"
     [ "$paused" = "false" ] || \
         err "events contract is still paused after unpause"
+}
+
+assert_profile_paused() {
+    local profile_id="$1"
+    local paused
+    paused="$(profile_read "$profile_id" is_paused)" || \
+        err "could not read profile.is_paused"
+    [ "$paused" = "true" ] || \
+        err "profile contract is not paused"
+}
+
+assert_profile_unpaused() {
+    local profile_id="$1"
+    local paused
+    paused="$(profile_read "$profile_id" is_paused)" || \
+        err "could not read profile.is_paused"
+    [ "$paused" = "false" ] || \
+        err "profile contract is still paused after unpause"
 }
 
 assert_no_pending_events_upgrade() {
@@ -228,6 +389,87 @@ assert_pending_events_upgrade() {
         err "pending wasm mismatch: expected $expected_hash, got $actual_hash"
 }
 
+assert_no_pending_profile_upgrade() {
+    local profile_id="$1"
+    local pending
+    pending="$(profile_read "$profile_id" get_pending_upgrade)" || \
+        err "could not read pending profile upgrade"
+    [ "$pending" = "null" ] || \
+        err "a profile upgrade is already pending; inspect it with upgrade-status"
+}
+
+assert_pending_profile_upgrade() {
+    local profile_id="$1" expected_version="$2" expected_hash="$3"
+    local pending actual_version actual_hash
+    pending="$(profile_read "$profile_id" get_pending_upgrade)" || \
+        err "could not read pending profile upgrade"
+    [ "$pending" != "null" ] || err "no profile upgrade is pending"
+    actual_version="$(printf '%s' "$pending" | jq -er '.new_version')" || \
+        err "pending profile upgrade did not contain new_version"
+    actual_hash="$(printf '%s' "$pending" | jq -er '.wasm_hash')" || \
+        err "pending profile upgrade did not contain wasm_hash"
+    [ "$actual_version" = "$expected_version" ] || \
+        err "pending profile version mismatch: expected $expected_version, got $actual_version"
+    [ "$actual_hash" = "$expected_hash" ] || \
+        err "pending profile wasm mismatch: expected $expected_hash, got $actual_hash"
+}
+
+assert_pending_events_version() {
+    local events_id="$1" expected_version="$2"
+    local pending actual_version
+    pending="$(events_read "$events_id" get_pending_upgrade)" || \
+        err "could not read pending events upgrade"
+    [ "$pending" != "null" ] || err "no events upgrade is pending"
+    actual_version="$(printf '%s' "$pending" | jq -er '.new_version')" || \
+        err "pending events upgrade did not contain new_version"
+    [ "$actual_version" = "$expected_version" ] || \
+        err "pending events version mismatch: expected $expected_version, got $actual_version"
+}
+
+assert_profile_sdk27_staged_or_applied() {
+    local profile_id="$1"
+    local version pending
+    version="$(profile_read "$profile_id" version | read_json_string)" || \
+        err "could not read the current profile contract version"
+    pending="$(profile_read "$profile_id" get_pending_upgrade)" || \
+        err "could not read pending profile upgrade"
+    assert_profile_paused "$profile_id"
+
+    if [ "$version" = "1.1.0" ]; then
+        assert_pending_profile_upgrade \
+            "$profile_id" "$SDK27_PROFILE_VERSION" "$SDK27_PROFILE_WASM_HASH"
+    elif [ "$version" = "1.2.0" ]; then
+        [ "$pending" = "null" ] || \
+            err "profile is 1.2.0 but still has a pending upgrade"
+        assert_profile_sdk27_wasm_live "$profile_id"
+    else
+        err "profile must be staged at 1.1.0 or applied at 1.2.0; got $version"
+    fi
+}
+
+assert_profile_sdk27_applied_paused() {
+    local profile_id="$1"
+    assert_profile_version "$profile_id" "1.2.0"
+    assert_profile_sdk27_wasm_live "$profile_id"
+    assert_profile_paused "$profile_id"
+    assert_no_pending_profile_upgrade "$profile_id"
+}
+
+assert_profile_sdk27_migrated_paused() {
+    local profile_id="$1"
+    assert_profile_sdk27_applied_paused "$profile_id"
+    assert_profile_migrated_version "$profile_id" "1.2.0"
+}
+
+assert_profile_sdk27_ready() {
+    local profile_id="$1"
+    assert_profile_version "$profile_id" "1.2.0"
+    assert_profile_sdk27_wasm_live "$profile_id"
+    assert_profile_migrated_version "$profile_id" "1.2.0"
+    assert_no_pending_profile_upgrade "$profile_id"
+    assert_profile_unpaused "$profile_id"
+}
+
 assert_no_events_exist() {
     local events_id="$1"
     local base first_event_id output status
@@ -244,13 +486,17 @@ assert_no_events_exist() {
     set -e
 
     if [ "$status" -eq 0 ]; then
-        err "event $first_event_id exists; abort 1.2.0 and implement a legacy-total migration"
+        err "event $first_event_id exists; abort the upgrade and implement a legacy-total migration"
     fi
     if [[ "$output" != *"Error(Contract, #30)"* ]]; then
         err "could not prove event $first_event_id is absent; refusing to continue: $output"
     fi
 
     ok "Zero-event guard confirmed: $first_event_id returned EventNotFound."
+}
+
+is_zero_event_guarded_target() {
+    [ "$1" = "$SDK27_EVENTS_VERSION" ]
 }
 
 assert_migrated_version() {
@@ -260,6 +506,15 @@ assert_migrated_version() {
         err "could not read migrated-to version"
     [ "$migrated_version" = "$expected" ] || \
         err "migration marker mismatch: expected $expected, got $migrated_version"
+}
+
+assert_profile_migrated_version() {
+    local profile_id="$1" expected="$2"
+    local migrated_version
+    migrated_version="$(profile_read "$profile_id" get_migrated_to_version | read_json_string)" || \
+        err "could not read profile migrated-to version"
+    [ "$migrated_version" = "$expected" ] || \
+        err "profile migration marker mismatch: expected $expected, got $migrated_version"
 }
 
 prepare_events_invoke() {
@@ -295,6 +550,39 @@ prepare_events_invoke() {
     echo "  stellar tx send \"<signed-xdr>\" --network $NETWORK"
 }
 
+prepare_profile_invoke() {
+    local profile_id="$1" output_file="$2"
+    shift 2
+    local output_dir
+    output_dir="$(dirname "$output_file")"
+    [ -d "$output_dir" ] || err "XDR output directory does not exist: $output_dir"
+    assert_profile_admin_source_matches "$profile_id"
+
+    local tmp
+    tmp="$(mktemp)"
+    if ! stellar contract invoke \
+        --network "$NETWORK" \
+        --source-account "$ADMIN_SOURCE" \
+        --id "$profile_id" \
+        --build-only \
+        -- "$@" \
+        | stellar tx simulate \
+            --network "$NETWORK" \
+            --source-account "$ADMIN_SOURCE" \
+            > "$tmp"; then
+        rm -f "$tmp"
+        err "could not build and simulate the profile multisig transaction"
+    fi
+    [ -s "$tmp" ] || {
+        rm -f "$tmp"
+        err "prepared profile transaction was empty"
+    }
+    mv "$tmp" "$output_file"
+    ok "Prepared simulated XDR: $output_file"
+    echo "Sign it sequentially with the required multi-sig quorum, then submit with:"
+    echo "  stellar tx send \"<signed-xdr>\" --network $NETWORK"
+}
+
 append_upgrade_log() {
     local action="$1" version="$2" wasm_hash="${3:-}"
     local upgrades_log="$DEPLOYMENTS_DIR/mainnet-upgrades.jsonl"
@@ -309,7 +597,7 @@ append_upgrade_log() {
 
 cmd_build_release() {
     info "Building contracts in release mode..."
-    stellar contract build
+    stellar contract build --locked
     ok "Build complete."
 }
 
@@ -459,6 +747,285 @@ cmd_rotate_admin() {
     echo "land, run 'verify' to confirm get_admin returns the new address."
 }
 
+cmd_upload_profile_wasm() {
+    local wasm="${1:-}"
+    [ -n "$wasm" ] || err "usage: upload-profile-wasm <path-to-new-wasm>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    require_env UPLOAD_SOURCE
+    require_env ADMIN_SOURCE
+    require_cli
+    confirm_mainnet
+    ensure_deployments_dir
+
+    local profile_id expected_hash uploaded_hash
+    profile_id="$(profile_contract_id)"
+    assert_profile_version "$profile_id" "1.1.0"
+    assert_profile_admin_source_matches "$profile_id"
+    expected_hash="$(hash_wasm "$wasm")"
+    assert_local_wasm_hash "profile SDK 27" "$wasm" "$SDK27_PROFILE_WASM_HASH"
+    uploaded_hash="$(stellar contract upload \
+        --source-account "$UPLOAD_SOURCE" \
+        --network "$NETWORK" \
+        --optimize=false \
+        --wasm "$wasm")"
+    [ "$uploaded_hash" = "$expected_hash" ] || \
+        err "uploaded profile wasm hash mismatch: expected $expected_hash, got $uploaded_hash"
+
+    append_upgrade_log "profile-uploaded" "" "$uploaded_hash"
+    ok "Uploaded exact profile WASM: $uploaded_hash"
+}
+
+cmd_prepare_pause_profile() {
+    local output_file="${1:-}"
+    [ -n "$output_file" ] || err "usage: prepare-pause-profile <xdr-output>"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local profile_id events_id
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    assert_events_version "$events_id" "1.1.0"
+    assert_events_paused "$events_id"
+    assert_no_events_exist "$events_id"
+    assert_no_pending_events_upgrade "$events_id"
+    assert_profile_version "$profile_id" "1.1.0"
+    assert_profile_unpaused "$profile_id"
+    assert_no_pending_profile_upgrade "$profile_id"
+    prepare_profile_invoke "$profile_id" "$output_file" pause
+}
+
+cmd_prepare_propose_upgrade_profile() {
+    local wasm="${1:-}" new_version="${2:-}" output_file="${3:-}"
+    [ -n "$wasm" ] || \
+        err "usage: prepare-propose-upgrade-profile <path-to-new-wasm> <new-version> <xdr-output>"
+    [ -n "$new_version" ] || \
+        err "usage: prepare-propose-upgrade-profile <path-to-new-wasm> <new-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-propose-upgrade-profile <path-to-new-wasm> <new-version> <xdr-output>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "profile upgrade" "$new_version" "$SDK27_PROFILE_VERSION"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local profile_id events_id wasm_hash
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    wasm_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_profile_artifact "$wasm" "$new_version"
+    assert_events_version "$events_id" "1.1.0"
+    assert_events_paused "$events_id"
+    assert_no_events_exist "$events_id"
+    assert_no_pending_events_upgrade "$events_id"
+    assert_no_pending_profile_upgrade "$profile_id"
+    assert_profile_paused "$profile_id"
+    if [ "$new_version" = "1.2.0" ]; then
+        assert_profile_version "$profile_id" "1.1.0"
+    fi
+
+    prepare_profile_invoke "$profile_id" "$output_file" propose_upgrade \
+        --new_wasm_hash "$wasm_hash" \
+        --new_version "$new_version"
+    echo "Expected profile version: $new_version"
+    echo "Expected profile WASM:    $wasm_hash"
+}
+
+cmd_verify_proposed_upgrade_profile() {
+    local wasm="${1:-}" expected_version="${2:-}"
+    [ -n "$wasm" ] || \
+        err "usage: verify-proposed-upgrade-profile <path-to-new-wasm> <expected-version>"
+    [ -n "$expected_version" ] || \
+        err "usage: verify-proposed-upgrade-profile <path-to-new-wasm> <expected-version>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "profile upgrade" "$expected_version" "$SDK27_PROFILE_VERSION"
+    require_env ADMIN_SOURCE
+    require_cli
+    ensure_deployments_dir
+
+    local profile_id events_id expected_hash
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    expected_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_profile_artifact "$wasm" "$expected_version"
+    assert_events_version "$events_id" "1.1.0"
+    assert_events_paused "$events_id"
+    assert_no_events_exist "$events_id"
+    assert_no_pending_events_upgrade "$events_id"
+    assert_pending_profile_upgrade "$profile_id" "$expected_version" "$expected_hash"
+    assert_profile_paused "$profile_id"
+    if [ "$expected_version" = "1.2.0" ]; then
+        assert_profile_version "$profile_id" "1.1.0"
+    fi
+
+    append_upgrade_log "profile-proposal-verified" "$expected_version" "$expected_hash"
+    ok "Queued profile upgrade matches the expected version and exact WASM."
+}
+
+cmd_prepare_apply_upgrade_profile() {
+    local wasm="${1:-}" expected_version="${2:-}" output_file="${3:-}"
+    [ -n "$wasm" ] || \
+        err "usage: prepare-apply-upgrade-profile <path-to-new-wasm> <expected-version> <xdr-output>"
+    [ -n "$expected_version" ] || \
+        err "usage: prepare-apply-upgrade-profile <path-to-new-wasm> <expected-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-apply-upgrade-profile <path-to-new-wasm> <expected-version> <xdr-output>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "profile upgrade" "$expected_version" "$SDK27_PROFILE_VERSION"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local profile_id events_id expected_hash
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    expected_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_profile_artifact "$wasm" "$expected_version"
+    assert_events_version "$events_id" "1.1.0"
+    assert_events_paused "$events_id"
+    assert_no_events_exist "$events_id"
+    assert_pending_events_upgrade \
+        "$events_id" "$SDK27_EVENTS_VERSION" "$SDK27_EVENTS_WASM_HASH"
+    assert_pending_profile_upgrade "$profile_id" "$expected_version" "$expected_hash"
+    assert_profile_paused "$profile_id"
+    if [ "$expected_version" = "1.2.0" ]; then
+        assert_profile_version "$profile_id" "1.1.0"
+    fi
+
+    prepare_profile_invoke "$profile_id" "$output_file" apply_upgrade
+}
+
+cmd_prepare_migrate_upgrade_profile() {
+    local expected_version="${1:-}" output_file="${2:-}"
+    [ -n "$expected_version" ] || \
+        err "usage: prepare-migrate-upgrade-profile <expected-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-migrate-upgrade-profile <expected-version> <xdr-output>"
+    assert_version_argument "profile upgrade" "$expected_version" "$SDK27_PROFILE_VERSION"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local profile_id events_id migrated_version
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    assert_events_version "$events_id" "1.5.0"
+    assert_events_sdk27_wasm_live "$events_id"
+    assert_events_paused "$events_id"
+    assert_no_pending_events_upgrade "$events_id"
+    assert_profile_version "$profile_id" "$expected_version"
+    if [ "$expected_version" = "$SDK27_PROFILE_VERSION" ]; then
+        assert_profile_sdk27_wasm_live "$profile_id"
+    fi
+    assert_profile_paused "$profile_id"
+    assert_no_pending_profile_upgrade "$profile_id"
+
+    migrated_version="$(profile_read "$profile_id" get_migrated_to_version | jq -r '. // empty')" || \
+        err "could not read profile migrated-to version"
+    [ "$migrated_version" != "$expected_version" ] || \
+        err "profile migration marker is already $expected_version; do not replay migrate"
+    prepare_profile_invoke "$profile_id" "$output_file" migrate
+}
+
+cmd_prepare_cancel_upgrade_profile() {
+    local output_file="${1:-}"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-cancel-upgrade-profile <xdr-output>"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local profile_id events_id pending_version
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    pending_version="$(profile_read "$profile_id" get_pending_upgrade | jq -r '.new_version // empty')" || \
+        err "could not read pending profile upgrade"
+    [ -n "$pending_version" ] || err "no profile upgrade is pending"
+    if [ "$pending_version" = "1.2.0" ]; then
+        assert_profile_version "$profile_id" "1.1.0"
+        assert_profile_paused "$profile_id"
+        assert_events_version "$events_id" "1.1.0"
+        assert_events_paused "$events_id"
+        assert_no_events_exist "$events_id"
+    fi
+    prepare_profile_invoke "$profile_id" "$output_file" cancel_pending_upgrade
+    echo "Cancelling queued profile version: $pending_version"
+    echo "This transaction does not unpause the profile contract."
+}
+
+cmd_prepare_unpause_profile() {
+    local expected_version="${1:-}" output_file="${2:-}"
+    [ -n "$expected_version" ] || \
+        err "usage: prepare-unpause-profile <expected-version> <xdr-output>"
+    [ -n "$output_file" ] || \
+        err "usage: prepare-unpause-profile <expected-version> <xdr-output>"
+    assert_unpause_version_argument "profile" "$expected_version" "$SDK27_PROFILE_VERSION"
+    require_env ADMIN_SOURCE
+    require_cli
+
+    local profile_id events_id
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    assert_profile_version "$profile_id" "$expected_version"
+    assert_profile_paused "$profile_id"
+    assert_no_pending_profile_upgrade "$profile_id"
+    if [ "$expected_version" = "1.2.0" ]; then
+        assert_profile_sdk27_wasm_live "$profile_id"
+        assert_profile_migrated_version "$profile_id" "$expected_version"
+        assert_events_version "$events_id" "1.5.0"
+        assert_events_sdk27_wasm_live "$events_id"
+        assert_events_paused "$events_id"
+        assert_no_pending_events_upgrade "$events_id"
+        assert_migrated_version "$events_id" "1.5.0"
+    elif [ "$expected_version" = "1.1.0" ]; then
+        assert_events_version "$events_id" "1.1.0"
+        assert_events_paused "$events_id"
+        assert_no_pending_events_upgrade "$events_id"
+        assert_no_events_exist "$events_id"
+    fi
+    prepare_profile_invoke "$profile_id" "$output_file" unpause
+}
+
+cmd_verify_upgrade_profile() {
+    local wasm="${1:-}" expected_version="${2:-}"
+    [ -n "$wasm" ] || \
+        err "usage: verify-upgrade-profile <path-to-new-wasm> <expected-version>"
+    [ -n "$expected_version" ] || \
+        err "usage: verify-upgrade-profile <path-to-new-wasm> <expected-version>"
+    [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "profile upgrade" "$expected_version" "$SDK27_PROFILE_VERSION"
+    require_env ADMIN_SOURCE
+    require_cli
+    ensure_deployments_dir
+
+    local profile_id events_id expected_hash
+    profile_id="$(profile_contract_id)"
+    events_id="$(events_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    expected_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_profile_artifact "$wasm" "$expected_version"
+    assert_profile_version "$profile_id" "$expected_version"
+    if [ "$expected_version" = "$SDK27_PROFILE_VERSION" ]; then
+        assert_profile_sdk27_wasm_live "$profile_id"
+    fi
+    assert_profile_migrated_version "$profile_id" "$expected_version"
+    assert_no_pending_profile_upgrade "$profile_id"
+    assert_profile_unpaused "$profile_id"
+    assert_events_version "$events_id" "1.5.0"
+    assert_events_sdk27_wasm_live "$events_id"
+    assert_migrated_version "$events_id" "1.5.0"
+    assert_no_pending_events_upgrade "$events_id"
+    assert_events_unpaused "$events_id"
+
+    deployment_set profile_contract "$profile_id"
+    deployment_set profile_wasm_hash "$expected_hash"
+    deployment_set profile_version "$expected_version"
+    append_upgrade_log "profile-upgrade-verified" "$expected_version" "$expected_hash"
+    ok "Profile $expected_version is migrated, has no pending upgrade, and is unpaused."
+}
+
 cmd_upload_events_wasm() {
     local wasm="${1:-}"
     [ -n "$wasm" ] || err "usage: upload-events-wasm <path-to-new-wasm>"
@@ -474,6 +1041,7 @@ cmd_upload_events_wasm() {
     assert_events_version "$events_id" "1.1.0"
     assert_admin_source_matches "$events_id"
     expected_hash="$(hash_wasm "$wasm")"
+    assert_local_wasm_hash "events SDK 27" "$wasm" "$SDK27_EVENTS_WASM_HASH"
     uploaded_hash="$(stellar contract upload \
         --source-account "$UPLOAD_SOURCE" \
         --network "$NETWORK" \
@@ -492,8 +1060,13 @@ cmd_prepare_pause_events() {
     require_env ADMIN_SOURCE
     require_cli
 
-    local events_id
+    local events_id profile_id
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
+    assert_profile_version "$profile_id" "1.1.0"
+    assert_profile_unpaused "$profile_id"
+    assert_no_pending_profile_upgrade "$profile_id"
     assert_events_version "$events_id" "1.1.0"
     assert_events_unpaused "$events_id"
     assert_no_pending_events_upgrade "$events_id"
@@ -510,18 +1083,25 @@ cmd_prepare_propose_upgrade_events() {
     [ -n "$output_file" ] || \
         err "usage: prepare-propose-upgrade-events <path-to-new-wasm> <new-version> <xdr-output>"
     [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "events upgrade" "$new_version" "$SDK27_EVENTS_VERSION"
     require_env ADMIN_SOURCE
     require_cli
 
-    local events_id wasm_hash
+    local events_id profile_id wasm_hash
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
     wasm_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_events_artifact "$wasm" "$new_version"
     assert_no_pending_events_upgrade "$events_id"
 
-    if [ "$new_version" = "1.2.0" ]; then
+    if is_zero_event_guarded_target "$new_version"; then
         assert_events_version "$events_id" "1.1.0"
         assert_events_paused "$events_id"
         assert_no_events_exist "$events_id"
+        if [ "$new_version" = "1.5.0" ]; then
+            assert_profile_sdk27_staged_or_applied "$profile_id"
+        fi
     fi
 
     prepare_events_invoke "$events_id" "$output_file" propose_upgrade \
@@ -538,19 +1118,26 @@ cmd_verify_proposed_upgrade_events() {
     [ -n "$expected_version" ] || \
         err "usage: verify-proposed-upgrade-events <path-to-new-wasm> <expected-version>"
     [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "events upgrade" "$expected_version" "$SDK27_EVENTS_VERSION"
     require_env ADMIN_SOURCE
     require_cli
     ensure_deployments_dir
 
-    local events_id expected_hash
+    local events_id profile_id expected_hash
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
     expected_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_events_artifact "$wasm" "$expected_version"
     assert_pending_events_upgrade "$events_id" "$expected_version" "$expected_hash"
 
-    if [ "$expected_version" = "1.2.0" ]; then
+    if is_zero_event_guarded_target "$expected_version"; then
         assert_events_version "$events_id" "1.1.0"
         assert_events_paused "$events_id"
         assert_no_events_exist "$events_id"
+        if [ "$expected_version" = "1.5.0" ]; then
+            assert_profile_sdk27_staged_or_applied "$profile_id"
+        fi
     fi
 
     append_upgrade_log "proposal-verified" "$expected_version" "$expected_hash"
@@ -566,18 +1153,25 @@ cmd_prepare_apply_upgrade_events() {
     [ -n "$output_file" ] || \
         err "usage: prepare-apply-upgrade-events <path-to-new-wasm> <expected-version> <xdr-output>"
     [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "events upgrade" "$expected_version" "$SDK27_EVENTS_VERSION"
     require_env ADMIN_SOURCE
     require_cli
 
-    local events_id expected_hash
+    local events_id profile_id expected_hash
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
     expected_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_events_artifact "$wasm" "$expected_version"
     assert_pending_events_upgrade "$events_id" "$expected_version" "$expected_hash"
 
-    if [ "$expected_version" = "1.2.0" ]; then
+    if is_zero_event_guarded_target "$expected_version"; then
         assert_events_version "$events_id" "1.1.0"
         assert_events_paused "$events_id"
         assert_no_events_exist "$events_id"
+        if [ "$expected_version" = "1.5.0" ]; then
+            assert_profile_sdk27_applied_paused "$profile_id"
+        fi
     fi
 
     prepare_events_invoke "$events_id" "$output_file" apply_upgrade
@@ -589,21 +1183,28 @@ cmd_prepare_migrate_upgrade_events() {
         err "usage: prepare-migrate-upgrade-events <expected-version> <xdr-output>"
     [ -n "$output_file" ] || \
         err "usage: prepare-migrate-upgrade-events <expected-version> <xdr-output>"
+    assert_version_argument "events upgrade" "$expected_version" "$SDK27_EVENTS_VERSION"
     require_env ADMIN_SOURCE
     require_cli
 
-    local events_id migrated_version
+    local events_id profile_id migrated_version
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
     assert_events_version "$events_id" "$expected_version"
-    assert_no_pending_events_upgrade "$events_id"
-    if [ "$expected_version" = "1.2.0" ]; then
-        assert_events_paused "$events_id"
+    if [ "$expected_version" = "$SDK27_EVENTS_VERSION" ]; then
+        assert_events_sdk27_wasm_live "$events_id"
     fi
+    assert_no_pending_events_upgrade "$events_id"
+    assert_events_paused "$events_id"
 
     migrated_version="$(events_read "$events_id" get_migrated_to_version | jq -r '. // empty')" || \
         err "could not read migrated-to version"
     [ "$migrated_version" != "$expected_version" ] || \
         err "migration marker is already $expected_version; do not replay migrate"
+    if [ "$expected_version" = "1.5.0" ]; then
+        assert_profile_sdk27_migrated_paused "$profile_id"
+    fi
     prepare_events_invoke "$events_id" "$output_file" migrate
 }
 
@@ -614,11 +1215,20 @@ cmd_prepare_cancel_upgrade_events() {
     require_env ADMIN_SOURCE
     require_cli
 
-    local events_id pending_version
+    local events_id profile_id pending_version
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
     pending_version="$(events_read "$events_id" get_pending_upgrade | jq -r '.new_version // empty')" || \
         err "could not read pending events upgrade"
     [ -n "$pending_version" ] || err "no events upgrade is pending"
+    if [ "$pending_version" = "1.5.0" ]; then
+        assert_events_version "$events_id" "1.1.0"
+        assert_events_paused "$events_id"
+        assert_no_events_exist "$events_id"
+        assert_profile_version "$profile_id" "1.1.0"
+        assert_profile_paused "$profile_id"
+    fi
     prepare_events_invoke "$events_id" "$output_file" cancel_pending_upgrade
     echo "Cancelling queued version: $pending_version"
     echo "This transaction does not unpause the contract."
@@ -630,16 +1240,30 @@ cmd_prepare_unpause_events() {
         err "usage: prepare-unpause-events <expected-version> <xdr-output>"
     [ -n "$output_file" ] || \
         err "usage: prepare-unpause-events <expected-version> <xdr-output>"
+    assert_unpause_version_argument "events" "$expected_version" "$SDK27_EVENTS_VERSION"
     require_env ADMIN_SOURCE
     require_cli
 
-    local events_id
+    local events_id profile_id
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
     assert_events_version "$events_id" "$expected_version"
+    if [ "$expected_version" = "$SDK27_EVENTS_VERSION" ]; then
+        assert_events_sdk27_wasm_live "$events_id"
+    fi
     assert_events_paused "$events_id"
     assert_no_pending_events_upgrade "$events_id"
-    if [ "$expected_version" = "1.2.0" ]; then
+    if is_zero_event_guarded_target "$expected_version"; then
         assert_migrated_version "$events_id" "$expected_version"
+    fi
+    if [ "$expected_version" = "1.5.0" ]; then
+        assert_profile_sdk27_ready "$profile_id"
+    elif [ "$expected_version" = "1.1.0" ]; then
+        assert_no_events_exist "$events_id"
+        assert_profile_version "$profile_id" "1.1.0"
+        assert_profile_unpaused "$profile_id"
+        assert_no_pending_profile_upgrade "$profile_id"
     fi
     prepare_events_invoke "$events_id" "$output_file" unpause
 }
@@ -651,17 +1275,27 @@ cmd_verify_upgrade_events() {
     [ -n "$expected_version" ] || \
         err "usage: verify-upgrade-events <path-to-new-wasm> <expected-version>"
     [ -f "$wasm" ] || err "wasm file not found: $wasm"
+    assert_version_argument "events upgrade" "$expected_version" "$SDK27_EVENTS_VERSION"
     require_env ADMIN_SOURCE
     require_cli
     ensure_deployments_dir
 
-    local events_id expected_hash
+    local events_id profile_id expected_hash
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
+    assert_upgrade_governance_stable "$profile_id" "$events_id"
     expected_hash="$(hash_wasm "$wasm")"
+    assert_sdk27_events_artifact "$wasm" "$expected_version"
     assert_events_version "$events_id" "$expected_version"
+    if [ "$expected_version" = "$SDK27_EVENTS_VERSION" ]; then
+        assert_events_sdk27_wasm_live "$events_id"
+    fi
     assert_migrated_version "$events_id" "$expected_version"
     assert_no_pending_events_upgrade "$events_id"
     assert_events_unpaused "$events_id"
+    if [ "$expected_version" = "1.5.0" ]; then
+        assert_profile_sdk27_ready "$profile_id"
+    fi
 
     deployment_set events_contract "$events_id"
     deployment_set events_wasm_hash "$expected_hash"
@@ -674,17 +1308,34 @@ cmd_upgrade_status() {
     require_env ADMIN_SOURCE
     require_cli
 
-    local events_id
+    local events_id profile_id
     events_id="$(events_contract_id)"
+    profile_id="$(profile_contract_id)"
 
     echo "events.version:"
     events_read "$events_id" version
+    echo "events.wasm_hash:"
+    deployed_wasm_hash "$events_id"
     echo "events.is_paused:"
     events_read "$events_id" is_paused
     echo "events.get_pending_upgrade:"
     events_read "$events_id" get_pending_upgrade
     echo "events.get_migrated_to_version:"
     events_read "$events_id" get_migrated_to_version
+    echo "profile.version:"
+    profile_read "$profile_id" version
+    echo "profile.wasm_hash:"
+    deployed_wasm_hash "$profile_id"
+    echo "profile.is_paused:"
+    profile_read "$profile_id" is_paused
+    echo "profile.get_pending_upgrade:"
+    profile_read "$profile_id" get_pending_upgrade
+    echo "profile.get_events_contract:"
+    profile_read "$profile_id" get_events_contract
+    echo "profile.get_pending_events_contract:"
+    profile_read "$profile_id" get_pending_events_contract
+    echo "profile.get_migrated_to_version:"
+    profile_read "$profile_id" get_migrated_to_version
 }
 
 cmd_verify() {
@@ -730,29 +1381,56 @@ case "$ACTION" in
     "rotate-admin")
         cmd_rotate_admin "$@"
         ;;
+    "upload-profile-wasm")
+        cmd_upload_profile_wasm "$@"
+        ;;
     "upload-events-wasm")
         cmd_upload_events_wasm "$@"
+        ;;
+    "prepare-pause-profile")
+        cmd_prepare_pause_profile "$@"
         ;;
     "prepare-pause-events")
         cmd_prepare_pause_events "$@"
         ;;
+    "prepare-propose-upgrade-profile")
+        cmd_prepare_propose_upgrade_profile "$@"
+        ;;
     "prepare-propose-upgrade-events")
         cmd_prepare_propose_upgrade_events "$@"
+        ;;
+    "verify-proposed-upgrade-profile")
+        cmd_verify_proposed_upgrade_profile "$@"
         ;;
     "verify-proposed-upgrade-events")
         cmd_verify_proposed_upgrade_events "$@"
         ;;
+    "prepare-apply-upgrade-profile")
+        cmd_prepare_apply_upgrade_profile "$@"
+        ;;
     "prepare-apply-upgrade-events")
         cmd_prepare_apply_upgrade_events "$@"
+        ;;
+    "prepare-migrate-upgrade-profile")
+        cmd_prepare_migrate_upgrade_profile "$@"
         ;;
     "prepare-migrate-upgrade-events")
         cmd_prepare_migrate_upgrade_events "$@"
         ;;
+    "prepare-cancel-upgrade-profile")
+        cmd_prepare_cancel_upgrade_profile "$@"
+        ;;
     "prepare-cancel-upgrade-events")
         cmd_prepare_cancel_upgrade_events "$@"
         ;;
+    "prepare-unpause-profile")
+        cmd_prepare_unpause_profile "$@"
+        ;;
     "prepare-unpause-events")
         cmd_prepare_unpause_events "$@"
+        ;;
+    "verify-upgrade-profile")
+        cmd_verify_upgrade_profile "$@"
         ;;
     "verify-upgrade-events")
         cmd_verify_upgrade_events "$@"
@@ -763,7 +1441,8 @@ case "$ACTION" in
     "upgrade-events")
         err "upgrade-events is removed; use the guarded prepare/sign/send flow in mainnet-deploy-runbook.md"
         ;;
-    "propose-upgrade-events"|"apply-upgrade-events"|"migrate-upgrade-events"|"cancel-upgrade-events"|"unpause-events")
+    "propose-upgrade-events"|"apply-upgrade-events"|"migrate-upgrade-events"|"cancel-upgrade-events"|"unpause-events"|\
+    "propose-upgrade-profile"|"apply-upgrade-profile"|"migrate-upgrade-profile"|"cancel-upgrade-profile"|"unpause-profile")
         err "$ACTION cannot safely submit as the 2-of-3 admin; use the matching prepare-* action, sign sequentially, and send"
         ;;
     "verify")

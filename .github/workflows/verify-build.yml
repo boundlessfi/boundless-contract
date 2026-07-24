@@ -11,6 +11,8 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
+      - 'deploy_mainnet.sh'
+      - 'scripts/**'
       - '.github/actions/setup-rust-stellar/**'
       - '.github/workflows/verify-build.yml'
   # Use pull_request (not pull_request_target): the check must run the workflow
@@ -28,6 +30,8 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
+      - 'deploy_mainnet.sh'
+      - 'scripts/**'
       - '.github/actions/setup-rust-stellar/**'
       - '.github/workflows/verify-build.yml'
       - '.github/workflows/rustfmt.yml'
@@ -49,11 +53,19 @@ jobs:
       - name: Setup Rust and Stellar
         uses: ./.github/actions/setup-rust-stellar
 
-      - name: Build events contract
-        run: cd contracts/events && make build
+      - name: Check release script syntax
+        run: |
+          bash -n deploy_mainnet.sh
+          bash -n scripts/capture-mainnet-compat-snapshot.sh
+          bash -n scripts/test-sdk27-compat.sh
+          bash -n scripts/test-mainnet-upgrade-guards.sh
+          bash -n scripts/testdata/mock-stellar
 
-      - name: Build profile contract
-        run: cd contracts/profile && make build
+      - name: Verify mainnet upgrade guards
+        run: ./scripts/test-mainnet-upgrade-guards.sh
+
+      - name: Build contracts reproducibly
+        run: stellar contract build --locked
 
       - name: Check WASM sizes (64 KB ceiling)
         run: |
@@ -66,6 +78,12 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Verify SDK 23 to SDK 27 storage compatibility
+        run: |
+          ./scripts/test-sdk27-compat.sh
+          git diff --exit-code -- contracts/compatibility/test_snapshots
+          test -z "$(git ls-files --others --exclude-standard -- contracts/compatibility/test_snapshots)"
 
       - name: Run tests
         run: cargo test --release

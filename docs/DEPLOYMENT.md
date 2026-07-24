@@ -40,8 +40,8 @@ stellar --version                      # confirm >= 26.0.0
 rustup target add wasm32v1-none
 
 # verify build still passes locally
-cd contracts/events && stellar contract build && cd ../..
-cd contracts/profile && stellar contract build && cd ../..
+cd contracts/events && stellar contract build --locked && cd ../..
+cd contracts/profile && stellar contract build --locked && cd ../..
 ```
 
 ### Create the admin identity (per network)

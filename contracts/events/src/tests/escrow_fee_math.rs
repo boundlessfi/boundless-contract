@@ -19,7 +19,6 @@ struct Ctx<'a> {
     #[allow(dead_code)]
     profile: ProfileContractClient<'a>,
     owner: Address,
-    admin: Address,
     token_addr: Address,
     fee_account: Address,
     token_admin: token::StellarAssetClient<'a>,
@@ -63,7 +62,6 @@ fn setup_with_bps<'a>(fee_bps: u32) -> Ctx<'a> {
         events,
         profile,
         owner,
-        admin: events_admin,
         token_addr,
         fee_account,
         token_admin,

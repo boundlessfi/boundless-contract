@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{contracttype, Address, BytesN, Env};
 
 use soroban_sdk::String;
 
@@ -15,6 +15,11 @@ const INSTANCE_TTL_BUMP: u32 = 518_400;
 
 const PROFILE_TTL_THRESHOLD: u32 = 86_400;
 const PROFILE_TTL_BUMP: u32 = 1_555_200;
+
+#[contracttype(export = false)]
+enum LegacyDataKey {
+    OpSeen(BytesN<32>),
+}
 
 pub fn touch_instance(env: &Env) {
     env.storage()
@@ -172,10 +177,17 @@ pub fn set_earnings(env: &Env, user: &Address, token: &Address, amount: i128) {
 // IDEMPOTENCY (temporary; auto-TTL)
 // ============================================================
 pub fn is_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) -> bool {
-    env.storage()
+    let scoped_seen = env
+        .storage()
         .temporary()
         .get(&DataKey::OpSeen(domain.clone(), op_id.clone()))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    scoped_seen
+        || env
+            .storage()
+            .temporary()
+            .get(&LegacyDataKey::OpSeen(op_id.clone()))
+            .unwrap_or(false)
 }
 
 pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {

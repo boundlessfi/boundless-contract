@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test-only CLI mock for test-mainnet-upgrade-guards.sh. It never uses a network.
+
+if [ "${1:-}" = "--version" ]; then
+    printf 'stellar 27.0.0 (test)\n'
+    exit 0
+fi
+
+if [ "${1:-}" = "network" ] && [ "${2:-}" = "ls" ]; then
+    cat <<'EOF'
+Name: mainnet-review
+RPC url: https://rpc.example.invalid
+Network passphrase: Public Global Stellar Network ; September 2015
+EOF
+    exit 0
+fi
+
+if [ "${1:-}" = "contract" ] && [ "${2:-}" = "info" ] && [ "${3:-}" = "hash" ]; then
+    contract_id=""
+    previous=""
+    for arg in "$@"; do
+        if [ "$previous" = "--contract-id" ] || [ "$previous" = "--id" ]; then
+            contract_id="$arg"
+            break
+        fi
+        previous="$arg"
+    done
+
+    case "$contract_id" in
+        EVENTS) printf '%s\n' "${FAKE_EVENTS_LIVE_HASH:?missing FAKE_EVENTS_LIVE_HASH}" ;;
+        PROFILE) printf '%s\n' "${FAKE_PROFILE_LIVE_HASH:?missing FAKE_PROFILE_LIVE_HASH}" ;;
+        *)
+            printf 'unknown fake contract id: %s\n' "$contract_id" >&2
+            exit 1
+            ;;
+    esac
+    exit 0
+fi
+
+if [ "${1:-}" = "tx" ] && [ "${2:-}" = "simulate" ]; then
+    payload="$(cat)"
+    [ -n "$payload" ]
+    printf 'SIMULATED-XDR\n'
+    exit 0
+fi
+
+if [ "${1:-}" = "contract" ] && [ "${2:-}" = "invoke" ]; then
+    contract_id=""
+    function_name=""
+    after_separator=false
+    previous=""
+
+    for arg in "$@"; do
+        if [ "$arg" = "--build-only" ]; then
+            printf 'BUILT-XDR\n'
+            exit 0
+        fi
+        if [ "$after_separator" = true ]; then
+            function_name="$arg"
+            break
+        fi
+        if [ "$arg" = "--" ]; then
+            after_separator=true
+        fi
+    done
+
+    for arg in "$@"; do
+        if [ "$previous" = "--id" ]; then
+            contract_id="$arg"
+            break
+        fi
+        previous="$arg"
+    done
+
+    if [ "$contract_id" = "EVENTS" ]; then
+        version="${FAKE_EVENTS_VERSION:-1.1.0}"
+        paused="${FAKE_EVENTS_PAUSED:-false}"
+        pending="${FAKE_EVENTS_PENDING:-null}"
+        migrated="${FAKE_EVENTS_MIGRATED:-null}"
+    elif [ "$contract_id" = "PROFILE" ]; then
+        version="${FAKE_PROFILE_VERSION:-1.1.0}"
+        paused="${FAKE_PROFILE_PAUSED:-false}"
+        pending="${FAKE_PROFILE_PENDING:-null}"
+        migrated="${FAKE_PROFILE_MIGRATED:-null}"
+        events_contract="${FAKE_PROFILE_EVENTS_CONTRACT:-EVENTS}"
+        pending_events_contract="${FAKE_PROFILE_EVENTS_PENDING:-null}"
+    else
+        printf 'unknown fake contract id: %s\n' "$contract_id" >&2
+        exit 1
+    fi
+
+    case "$function_name" in
+        version) printf '"%s"\n' "$version" ;;
+        get_admin) printf '"GADMIN"\n' ;;
+        is_paused) printf '%s\n' "$paused" ;;
+        get_pending_upgrade) printf '%s\n' "$pending" ;;
+        get_migrated_to_version) printf '%s\n' "$migrated" ;;
+        get_events_contract) printf '"%s"\n' "$events_contract" ;;
+        get_pending_events_contract) printf '%s\n' "$pending_events_contract" ;;
+        id_base) printf '271539957145796608\n' ;;
+        get_event)
+            printf 'HostError: Error(Contract, #30)\n' >&2
+            exit 1
+            ;;
+        *) printf 'null\n' ;;
+    esac
+    exit 0
+fi
+
+printf 'unsupported fake stellar invocation: %s\n' "$*" >&2
+exit 1

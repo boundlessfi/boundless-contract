@@ -7,9 +7,9 @@ runs:
       uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable (rust 1.97.1)
+      uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
       with:
-        toolchain: stable
+        toolchain: 1.93.0
         targets: wasm32v1-none
 
     - name: Add wasm32v1-none target

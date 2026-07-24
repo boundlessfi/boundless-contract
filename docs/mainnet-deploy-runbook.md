@@ -1,7 +1,7 @@
 # Mainnet deployment runbook
 
 **For:** the contracts engineer + the admin multi-sig signers.
-**Last updated:** 2026-07-17 (revised for the 1.1.0 → 1.2.0 cancellation-liveness upgrade guard).
+**Last updated:** 2026-07-24 (SDK 23 to SDK 27 storage compatibility result).
 
 This is the cold-deploy procedure for Boundless contracts on Stellar mainnet. Follow it in order. Do not skip the verification steps. Every transaction below is irreversible.
 
@@ -93,7 +93,7 @@ export USDC_SAC=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 
 ```bash
 cd boundless-contract
-stellar contract build
+stellar contract build --locked
 
 # Deploy boundless-profile first; events depends on its address.
 PROFILE_WASM=target/wasm32v1-none/release/boundless_profile.wasm
@@ -166,7 +166,7 @@ Verify the version label was written by the constructor:
 ```bash
 stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $PROFILE_ID -- version
 stellar contract invoke --network "$STELLAR_NETWORK" --source $INITIAL_ADMIN_KEY --id $EVENTS_ID -- version
-# For this tree: profile returns "1.1.0" and events returns "1.2.0".
+# For this tree: profile returns "1.2.0" and events returns "1.5.0".
 # For a tagged release, compare each result with that package's INITIAL_VERSION.
 ```
 
@@ -330,7 +330,7 @@ Sign `/tmp/events-emergency-pause.xdr` sequentially with two signers, submit wit
 
 Pause stops event-lifecycle mutations guarded by `require_not_paused`, including `create_event`, `add_funds`, `propose_manager`, `accept_manager`, `cancel_pending_manager`, `start_cancel`, `process_cancel_batch`, `finalize_cancel`, `select_winners`, `claim_milestone`, `apply_to_bounty`, `withdraw_application`, `submit`, and `withdraw_submission`. Reads continue.
 
-Pause intentionally does **not** block admin recovery and governance entrypoints such as `propose_upgrade`, `apply_upgrade`, `cancel_pending_upgrade`, `migrate`, configuration changes, token-list changes, admin rotation, or `unpause`. This is why the 1.1.0 → 1.2.0 upgrade can remain paused through its timelock.
+Pause intentionally does **not** block admin recovery and governance entrypoints such as `propose_upgrade`, `apply_upgrade`, `cancel_pending_upgrade`, `migrate`, configuration changes, token-list changes, admin rotation, or `unpause`. This is why the coordinated SDK 27 upgrade can remain paused through its timelock.
 
 Unpausing requires full quorum (see `admin-custody-policy.md` Section 4).
 
@@ -361,7 +361,7 @@ Unpausing requires full quorum (see `admin-custody-policy.md` Section 4).
 
 ## 7. Upgrades (timelocked; H6)
 
-The 2026-06 audit replaced the immediate-effect `upgrade(wasm_hash)` admin call with a three-step timelock flow. Use `deploy_mainnet.sh` for mainnet; it verifies the queued version and exact WASM hash and provides the special 1.1.0 → 1.2.0 zero-event guard. Direct contract calls below are only for diagnosis.
+The 2026-06 audit replaced the immediate-effect `upgrade(wasm_hash)` admin call with a three-step timelock flow. Use `deploy_mainnet.sh` for mainnet; it verifies the queued version and exact WASM hash for both contracts and preserves the zero-event guard through the SDK 27 timelock. Direct contract calls below are only for diagnosis.
 
 ### 7.1 Constants
 
@@ -372,92 +372,197 @@ The 2026-06 audit replaced the immediate-effect `upgrade(wasm_hash)` admin call 
 
 These are in `contracts/events/src/admin.rs` and `contracts/profile/src/admin.rs`. Verify against the live wasm before timing a window.
 
-### 7.2 Propose
+### SDK 27 compatibility gate
 
-For the 1.1.0 → 1.2.0 upgrade, the zero-event assumption must remain true for the entire timelock. Set the live contract ID explicitly if `deployments/mainnet.json` is not present. `ADMIN_SOURCE` is the admin multi-sig G-address, not a secret or single-signer alias. `UPLOAD_SOURCE` is a separate funded, signable CLI identity; uploading WASM does not require contract-admin authority.
+The suite upgrades the exact mainnet `1.1.0` WASMs and ledger `63617727`
+snapshot, plus synthetic SDK 23 rows for every persisted layout, through H6
+to the pinned events `1.5.0` and profile `1.2.0` WASMs. It then exercises
+configuration, governance, event reads, winners, submissions, contributions,
+cancellation, prize claims, earnings, indexes, cursors, and legacy replay
+markers. Fixture hashes, provenance, and regeneration are recorded in
+`docs/sdk27-compatibility-fixtures.md`.
+
+Before any SDK 27 mainnet proposal:
+
+```bash
+stellar contract build --locked
+./scripts/test-sdk27-compat.sh
+```
+
+Abort if a fixture or build hash differs, a compatibility test fails, or the
+zero-event check no longer returns `EventNotFound`. The SDK 27 contracts retain
+a read fallback for legacy temporary `OpSeen(BytesN<32>)` rows; new markers use
+the domain-scoped key.
+
+Sections 7.2 through 7.5 are the executable SDK 27 procedure for events `1.1.0` → `1.5.0` and profile `1.1.0` → `1.2.0`.
+The mainnet script intentionally rejects other upgrade target versions. A
+future release must update its reviewed version/hash pins and compatibility
+fixtures before preparing a proposal.
+
+### 7.2 Freeze and propose SDK 27
+
+This is a coordinated two-contract upgrade. Keep both contracts paused from before either proposal until both migrations and post-upgrade reads have succeeded. Set the live contract IDs explicitly if `deployments/mainnet.json` is unavailable. `ADMIN_SOURCE` is the admin multi-sig G-address, not a secret or single-signer alias. `UPLOAD_SOURCE` is a separate funded, signable CLI identity; uploading WASM does not require contract-admin authority.
+
+Freeze governance changes for the whole window: do not call `set_admin`,
+`accept_admin`, `propose_events_contract`, `accept_events_contract`, or
+`cancel_pending_events_contract` on either contract while upgrade XDRs are
+being prepared, signed, or submitted. Before every signed submission, rerun
+the corresponding preparation or verification command against current ledger
+state. The script requires both current admins to equal `ADMIN_SOURCE`, the
+profile's active events binding to equal `EVENTS_ID`, and
+`get_pending_events_contract` to be `null`.
 
 ```bash
 export EVENTS_ID=CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ
+export PROFILE_ID=CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC
 export ADMIN_SOURCE=$MULTISIG_ADMIN_ADDRESS
 export UPLOAD_SOURCE=boundless-upgrade-uploader
 
-stellar contract build
-EVENTS_WASM=target/wasm32v1-none/release/boundless_events.wasm
+stellar contract build --locked
+./scripts/test-sdk27-compat.sh
 
-# Upload the exact already-built artifact before starting downtime.
+EVENTS_WASM=target/wasm32v1-none/release/boundless_events.wasm
+PROFILE_WASM=target/wasm32v1-none/release/boundless_profile.wasm
+
+# Upload the exact compatibility-tested artifacts before downtime.
+./deploy_mainnet.sh upload-profile-wasm "$PROFILE_WASM"
 ./deploy_mainnet.sh upload-events-wasm "$EVENTS_WASM"
 
-# Guard the current 1.1.0 zero-event state and prepare the pause transaction.
-./deploy_mainnet.sh prepare-pause-events /tmp/events-1.2.0-pause.xdr
+# Freeze events first. This command only prepares XDR.
+./deploy_mainnet.sh prepare-pause-events /tmp/events-1.5.0-pause.xdr
 ```
 
-Sign `/tmp/events-1.2.0-pause.xdr` sequentially with the required quorum and submit it with `stellar tx send`. Then:
+Sign and submit the events pause XDR. Only after it lands, prepare, sign, and submit the profile pause:
+
+```bash
+./deploy_mainnet.sh prepare-pause-profile /tmp/profile-1.2.0-pause.xdr
+```
+
+Never prepare the next admin XDR before the prior one lands; each uses the multi-sig source account's current sequence. Then:
 
 ```bash
 ./deploy_mainnet.sh upgrade-status
-# is_paused must be true.
-
-# Recheck version + pause + zero-event state, then prepare the proposal.
-./deploy_mainnet.sh prepare-propose-upgrade-events \
-  "$EVENTS_WASM" "1.2.0" /tmp/events-1.2.0-propose.xdr
+# Both is_paused values must be true, both versions must be 1.1.0,
+# both pending-upgrade values must be null, profile.get_events_contract must
+# equal EVENTS_ID, and profile.get_pending_events_contract must be null.
 ```
 
-Sign and submit `/tmp/events-1.2.0-propose.xdr`, then verify what actually landed:
+Prepare the profile proposal:
 
 ```bash
-./deploy_mainnet.sh verify-proposed-upgrade-events "$EVENTS_WASM" "1.2.0"
+./deploy_mainnet.sh prepare-propose-upgrade-profile \
+  "$PROFILE_WASM" "1.2.0" /tmp/profile-1.2.0-propose.xdr
+```
+
+Sign and submit it, then verify what landed:
+
+```bash
+./deploy_mainnet.sh verify-proposed-upgrade-profile "$PROFILE_WASM" "1.2.0"
+```
+
+Only then prepare, sign, and submit the events proposal:
+
+```bash
+./deploy_mainnet.sh prepare-propose-upgrade-events \
+  "$EVENTS_WASM" "1.5.0" /tmp/events-1.5.0-propose.xdr
+```
+
+Verify the events proposal and inspect both contracts:
+
+```bash
+./deploy_mainnet.sh verify-proposed-upgrade-events "$EVENTS_WASM" "1.5.0"
 ./deploy_mainnet.sh upgrade-status
 ```
 
 The guarded preparation and verification:
 
-- requires the live version to be `1.1.0` and no other upgrade to be pending;
-- requires the pause transaction to have landed and `is_paused` to read back as `true`;
-- derives the first possible event ID from `id_base` and requires `get_event` to fail specifically with `EventNotFound`;
-- uploads without re-optimizing and requires the returned hash to equal the local file's SHA-256;
-- builds and simulates the admin transaction without attempting to bypass the 2-of-3 signing flow;
-- reads back both the queued version and exact WASM hash after the signed proposal lands.
+- requires both live versions to be `1.1.0`, both contracts to be paused, and no conflicting upgrade to be pending;
+- rechecks both active admins, the profile-to-events binding, and the absence of a pending profile events-contract rotation at every prepared or verified upgrade step;
+- derives the first possible event ID from `id_base` and requires `get_event` to fail specifically with `EventNotFound` before the events pause, proposal, and apply;
+- requires Stellar CLI `27.0.0` and pins the local events and profile files to the exact compatibility-tested SDK 27 hashes;
+- uploads without re-optimizing and requires each returned hash to equal the local file's SHA-256;
+- builds and simulates every admin transaction without bypassing the 2-of-3 signing flow;
+- reads back each queued version and exact WASM hash after the signed proposals land;
+- queries each live contract's executable hash after apply and rechecks it before migration, unpause, and final verification.
 
-The contract remains paused after proposal. Do not unpause during the timelock: `is_paused == true` is what prevents a new event from invalidating the zero-event snapshot before apply. If the event check succeeds or returns any ambiguous RPC error, the script aborts fail-closed. Do not apply 1.2.0; implement a paginated legacy-total migration instead.
+Do not unpause either contract during the timelock. If the event check succeeds or returns an ambiguous RPC error, abort without applying either upgrade and investigate the live state. Publish both `proposed_at_ledger` and `available_at_ledger` values. Apply only after the later of the two `available_at_ledger` values has been reached.
 
-Publish the `proposed_at` ledger sequence and `available_at` ledger to the status page so the community has a window to inspect the new wasm before it lands.
+### 7.3 Apply, migrate, verify, and unpause
 
-### 7.3 Apply
+Keep the exact proposed artifacts. Apply profile first while both contracts remain paused:
 
-Wait for the current ledger sequence to reach `available_at_ledger`. Keep the exact proposed WASM artifact. On day-of:
+```bash
+./deploy_mainnet.sh upgrade-status
+./deploy_mainnet.sh prepare-apply-upgrade-profile \
+  "$PROFILE_WASM" "1.2.0" /tmp/profile-1.2.0-apply.xdr
+```
+
+Sign and submit the profile apply XDR. Confirm profile is `1.2.0`, has no pending proposal, and remains paused. Then prepare, sign, and submit events apply:
 
 ```bash
 ./deploy_mainnet.sh upgrade-status
 ./deploy_mainnet.sh prepare-apply-upgrade-events \
-  "$EVENTS_WASM" "1.2.0" /tmp/events-1.2.0-apply.xdr
+  "$EVENTS_WASM" "1.5.0" /tmp/events-1.5.0-apply.xdr
 ```
 
-Before preparing apply, the script rechecks the local WASM hash against the queued hash, current version, `is_paused == true`, and the zero-event invariant. Sign and submit `/tmp/events-1.2.0-apply.xdr`, then read status. It must show version `1.2.0`, no pending proposal, and still paused.
+Before preparing either apply transaction, the script rechecks the pinned
+local artifact, queued hash, current versions, pause state, both admins, the
+profile-to-events binding, and the absence of a pending events-contract
+rotation. Before events apply it also rechecks the zero-event invariant and
+the profile's live executable hash. After each signed apply lands, the next
+guarded command queries the contract's live executable hash and requires the
+exact pinned SDK 27 value. Status must show events `1.5.0`, profile `1.2.0`,
+no pending proposals, the original profile-to-events binding, no pending
+rotation, and both contracts still paused.
 
-Prepare, sign, and submit migration:
+Migrate profile first, then events. Prepare, sign, submit, and verify each transaction before moving to the next:
+
+```bash
+./deploy_mainnet.sh prepare-migrate-upgrade-profile \
+  "1.2.0" /tmp/profile-1.2.0-migrate.xdr
+```
+
+Sign and submit the profile migration. After it lands:
 
 ```bash
 ./deploy_mainnet.sh upgrade-status
+
 ./deploy_mainnet.sh prepare-migrate-upgrade-events \
-  "1.2.0" /tmp/events-1.2.0-migrate.xdr
+  "1.5.0" /tmp/events-1.5.0-migrate.xdr
 ```
 
-After migration lands, prepare, sign, and submit unpause:
+Sign and submit the events migration. After it lands:
 
 ```bash
 ./deploy_mainnet.sh upgrade-status
-# get_migrated_to_version must be "1.2.0".
-./deploy_mainnet.sh prepare-unpause-events \
-  "1.2.0" /tmp/events-1.2.0-unpause.xdr
+# Migrated-to values must be profile 1.2.0 and events 1.5.0.
 ```
 
-Only after the signed unpause lands:
+Unpause profile first so events cannot accept work while its profile dependency is frozen. After the profile unpause lands, unpause events:
 
 ```bash
-./deploy_mainnet.sh verify-upgrade-events "$EVENTS_WASM" "1.2.0"
+./deploy_mainnet.sh prepare-unpause-profile \
+  "1.2.0" /tmp/profile-1.2.0-unpause.xdr
 ```
 
-The final verification requires version `1.2.0`, migration marker `1.2.0`, no pending proposal, and `is_paused == false` before updating the local deployment record.
+Sign and submit the profile unpause. After it lands:
+
+```bash
+./deploy_mainnet.sh prepare-unpause-events \
+  "1.5.0" /tmp/events-1.5.0-unpause.xdr
+```
+
+Sign and submit the events unpause.
+
+Only after both signed unpause transactions land:
+
+```bash
+./deploy_mainnet.sh verify-upgrade-profile "$PROFILE_WASM" "1.2.0"
+./deploy_mainnet.sh verify-upgrade-events "$EVENTS_WASM" "1.5.0"
+./deploy_mainnet.sh upgrade-status
+```
+
+Final verification requires the exact local and live executable hashes, expected versions and migration markers, no pending proposals or events-contract rotation, the original profile-to-events binding, both expected admins, and both pause flags to be `false` before updating the deployment records.
 
 Common contract errors:
 
@@ -498,35 +603,33 @@ Expiry is 7 days (`PENDING_EVENTS_CONTRACT_TTL_LEDGERS = 120_960`).
 
 ### 7.5 Recovery
 
-If a propose was wrong but not yet applied:
+Before either apply lands, cancel each affected proposal in profile-then-events
+order, signing and submitting each XDR before preparing the next:
 
 ```bash
+./deploy_mainnet.sh prepare-cancel-upgrade-profile \
+  /tmp/profile-1.2.0-cancel.xdr
 ./deploy_mainnet.sh prepare-cancel-upgrade-events \
-  /tmp/events-1.2.0-cancel.xdr
+  /tmp/events-1.5.0-cancel.xdr
 ```
 
-Sign and submit the cancel XDR. Cancellation deliberately leaves the pause state unchanged. Either propose the corrected artifact while still paused, or inspect `upgrade-status` and, only when abandoning the upgrade, prepare/sign/send an unpause for the still-live version:
+Only prepare a cancel for a contract with a pending proposal. Cancellation
+leaves both contracts paused. Either restart the proposal sequence or, when
+abandoning the upgrade, unpause profile and then events, again submitting each
+XDR before preparing the next:
 
 ```bash
+./deploy_mainnet.sh prepare-unpause-profile \
+  "1.1.0" /tmp/profile-abandon-upgrade-unpause.xdr
 ./deploy_mainnet.sh prepare-unpause-events \
   "1.1.0" /tmp/events-abandon-upgrade-unpause.xdr
 ```
 
-`apply_upgrade` itself is atomic: a failed apply leaves the old WASM and pending proposal in place. Regenerate the prepared apply XDR because simulated transactions have time bounds. Migration is a separate transaction. If apply lands but migration or final verification fails, 1.2.0 remains paused and the pending proposal is already cleared. Recover with:
-
-```bash
-./deploy_mainnet.sh upgrade-status
-./deploy_mainnet.sh prepare-migrate-upgrade-events \
-  "1.2.0" /tmp/events-1.2.0-migrate-recovery.xdr
-# Sign and submit the migration XDR.
-./deploy_mainnet.sh upgrade-status
-./deploy_mainnet.sh prepare-unpause-events \
-  "1.2.0" /tmp/events-1.2.0-unpause-recovery.xdr
-# Sign and submit the unpause XDR.
-./deploy_mainnet.sh verify-upgrade-events "$EVENTS_WASM" "1.2.0"
-```
-
-`prepare-unpause-events` refuses to prepare a 1.2.0 unpause until its migration marker is exactly `1.2.0`.
+`apply_upgrade` is atomic per contract: a failed apply leaves that contract's
+old WASM and proposal in place. Once either apply lands, do not downgrade or
+unpause. Run `upgrade-status`, complete the other apply, and resume Section 7.3
+from the first missing migration or verification step. The unpause commands
+require the exact live WASM and migration markers.
 
 ---
 
@@ -584,4 +687,4 @@ Cap math: at `MAX_REFUNDS_PER_BATCH = 25`, refunding 5_000 contributors takes 20
 
 The paged-cancel automation worker lives in `boundless-nestjs` (see its own BACKLOG for the worker's status). The orchestrator's `beginStartCancel` kicks off step 1. Any account can sponsor steps 2 and 3, so an unavailable event manager cannot strand a cancellation already in progress.
 
-For the 1.1.0 → 1.2.0 mainnet upgrade, `deploy_mainnet.sh` freezes the zero-event assumption: it pauses before proposal, verifies `is_paused == true` and `EventNotFound`, keeps the contract paused through the timelock, and repeats both checks immediately before apply. Any existing event or ambiguous RPC result aborts the upgrade. New events initialize `NonOwnerContributionTotal` at zero and `add_funds` maintains it in O(1). An older event with no contributors initializes the missing total lazily. If an older event already has contributors, `add_funds` and `start_cancel` fail with `CancellationTotalMissing` instead of using an incomplete total.
+For the events `1.1.0` → `1.5.0` and profile `1.1.0` → `1.2.0` mainnet upgrade, `deploy_mainnet.sh` freezes the zero-event assumption: it pauses before proposal, verifies `is_paused == true` and `EventNotFound`, keeps the contract paused through the timelock, and repeats both checks immediately before apply. Any existing event or ambiguous RPC result aborts the upgrade. New events initialize `NonOwnerContributionTotal` at zero and `add_funds` maintains it in O(1). An older event with no contributors initializes the missing total lazily. If an older event already has contributors, `add_funds` and `start_cancel` fail with `CancellationTotalMissing` instead of using an incomplete total.

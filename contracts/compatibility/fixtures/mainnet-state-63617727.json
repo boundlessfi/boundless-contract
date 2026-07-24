@@ -1,0 +1,619 @@
+{
+  "protocol_version": 27,
+  "sequence_number": 63617727,
+  "timestamp": 1784850182,
+  "network_id": "7ac33997544e3175d266bd022439b22cdb16508c01163f26e5cb2a3e1045a979",
+  "base_reserve": 5000000,
+  "min_persistent_entry_ttl": 2073600,
+  "min_temp_entry_ttl": 17280,
+  "max_entry_ttl": 3110400,
+  "ledger_entries": [
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63315871,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ",
+            "key": "ledger_key_contract_instance",
+            "durability": "persistent",
+            "val": {
+              "contract_instance": {
+                "executable": {
+                  "wasm": "2a8789bf5dd392b91ddfe6591072a0cb9fae70045abf379fd1dbbc2db4af1de3"
+                },
+                "storage": [
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "Admin"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "address": "GCVK72I6TVJVDTTY4UKU6MQT4QJ2T2AAG3NULNEUDM46L3UOQYDSO4O2"
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "DeploymentSeq"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "u32": 63222823
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "FeeAccount"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "address": "GADSIP2HPINWTMEUNMVYA5NJRL372OV52HDEJTRTLDZXMHADIPQNYH55"
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "FeeBps"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "u32": 250
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "Paused"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "bool": false
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "ProfileContract"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "address": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC"
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "SupportedToken"
+                        },
+                        {
+                          "address": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "bool": true
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "SupportedToken"
+                        },
+                        {
+                          "address": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "bool": true
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "SupportedTokenAt"
+                        },
+                        {
+                          "u32": 0
+                        }
+                      ]
+                    },
+                    "val": {
+                      "address": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "SupportedTokenAt"
+                        },
+                        {
+                          "u32": 1
+                        }
+                      ]
+                    },
+                    "val": {
+                      "address": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "SupportedTokenCount"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "u32": 2
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "SupportedTokenSlot"
+                        },
+                        {
+                          "address": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "u32": 2
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "SupportedTokenSlot"
+                        },
+                        {
+                          "address": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "u32": 1
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "Version"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "string": "1.1.0"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63315890,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": "ledger_key_contract_instance",
+            "durability": "persistent",
+            "val": {
+              "contract_instance": {
+                "executable": {
+                  "wasm": "b9e3500cfb559781e68359655f37775c78afffc5a8436daca9d1d1f8e3569b02"
+                },
+                "storage": [
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "Admin"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "address": "GCVK72I6TVJVDTTY4UKU6MQT4QJ2T2AAG3NULNEUDM46L3UOQYDSO4O2"
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "DefaultBootstrapCredits"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "u32": 10
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "DeploymentSeq"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "u32": 63222664
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "EventsContract"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "address": "CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ"
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "Paused"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "bool": false
+                    }
+                  },
+                  {
+                    "key": {
+                      "vec": [
+                        {
+                          "symbol": "Version"
+                        }
+                      ]
+                    },
+                    "val": {
+                      "string": "1.1.0"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63585475,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "OpSeen"
+                },
+                {
+                  "bytes": "22f9dff5b7184344e5bac394f9fb141af5b1da8e71ae36e7612fb1aa68f2f1bc"
+                }
+              ]
+            },
+            "durability": "temporary",
+            "val": {
+              "bool": true
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63597602,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "OpSeen"
+                },
+                {
+                  "bytes": "d01286fa654b4f924eb2a165e3d8386142917b07af9a22f222420ba8d2b01ad8"
+                }
+              ]
+            },
+            "durability": "temporary",
+            "val": {
+              "bool": true
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63593387,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "OpSeen"
+                },
+                {
+                  "bytes": "d456ce7dbe62e2f5949dc2cce2b6a99900ce9ed08ee44237219af22755fa71d5"
+                }
+              ]
+            },
+            "durability": "temporary",
+            "val": {
+              "bool": true
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63585475,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Profile"
+                },
+                {
+                  "address": "GAHGDV4MWDLT3BXOUT5A2T774IUAE54DZ6BUCBH4O7PG5TJGWXSV3OJO"
+                }
+              ]
+            },
+            "durability": "persistent",
+            "val": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "bootstrapped_at"
+                  },
+                  "val": {
+                    "u64": "1784668845"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reputation"
+                  },
+                  "val": {
+                    "u64": "0"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63593387,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Profile"
+                },
+                {
+                  "address": "GBVQKBWHZGO6YED3EVXOZW76VPNYUMJLBLKE5IN4XE5LTT262UXCBIR7"
+                }
+              ]
+            },
+            "durability": "persistent",
+            "val": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "bootstrapped_at"
+                  },
+                  "val": {
+                    "u64": "1784713278"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reputation"
+                  },
+                  "val": {
+                    "u64": "0"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63539164,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Profile"
+                },
+                {
+                  "address": "GCCCPDSWYDVTD2VSXNXDKWWNENSRTA637CHVHIIXISTKSK4FV6T7G3HV"
+                }
+              ]
+            },
+            "durability": "persistent",
+            "val": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "bootstrapped_at"
+                  },
+                  "val": {
+                    "u64": "1784408398"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reputation"
+                  },
+                  "val": {
+                    "u64": "0"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63519879,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Profile"
+                },
+                {
+                  "address": "GCS5XWO3M72B6PSMZVGOSB3CLQVWB5OJ6Z7FTFAP5FAZVWS3MLO4Y3WH"
+                }
+              ]
+            },
+            "durability": "persistent",
+            "val": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "bootstrapped_at"
+                  },
+                  "val": {
+                    "u64": "1784300085"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reputation"
+                  },
+                  "val": {
+                    "u64": "0"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    },
+    {
+      "entry": {
+        "last_modified_ledger_seq": 63597602,
+        "data": {
+          "contract_data": {
+            "ext": "v0",
+            "contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Profile"
+                },
+                {
+                  "address": "GDCLE5VYYAZ5HYSBSG3PIKQEXHPYNSHF2W7PSW2R7WEIPP2AD275EL4S"
+                }
+              ]
+            },
+            "durability": "persistent",
+            "val": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "bootstrapped_at"
+                  },
+                  "val": {
+                    "u64": "1784736975"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reputation"
+                  },
+                  "val": {
+                    "u64": "0"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "ext": "v0"
+      },
+      "live_until": 4294967295
+    }
+  ]
+}

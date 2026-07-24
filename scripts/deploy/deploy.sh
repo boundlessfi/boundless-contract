@@ -99,9 +99,9 @@ if [[ "$NETWORK" == "testnet" || "$NETWORK" == "futurenet" ]]; then
   BUILD_FEATURES="--features testnet"
 fi
 # shellcheck disable=SC2086
-( cd "$REPO_ROOT/contracts/events"  && stellar contract build $BUILD_FEATURES )
+( cd "$REPO_ROOT/contracts/events"  && stellar contract build --locked $BUILD_FEATURES )
 # shellcheck disable=SC2086
-( cd "$REPO_ROOT/contracts/profile" && stellar contract build $BUILD_FEATURES )
+( cd "$REPO_ROOT/contracts/profile" && stellar contract build --locked $BUILD_FEATURES )
 
 EVENTS_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_events.wasm"
 PROFILE_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_profile.wasm"

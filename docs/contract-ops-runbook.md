@@ -69,7 +69,7 @@ This mirrors the mainnet sequence end to end on throwaway testnet contracts. Wor
 ### 4.1 Build
 ```bash
 cd boundless-contract
-stellar contract build
+stellar contract build --locked
 # → target/wasm32v1-none/release/boundless_{events,profile}.wasm
 ```
 

@@ -72,9 +72,9 @@ build_contract() {
     # any non-testnet build) MUST omit it; the default keeps the full
     # audit-mandated timelock, so this fails safe.
     if [ "$NETWORK" = "testnet" ]; then
-        stellar contract build --package "boundless-$CONTRACT_KIND" --features testnet
+        stellar contract build --locked --package "boundless-$CONTRACT_KIND" --features testnet
     else
-        stellar contract build
+        stellar contract build --locked
     fi
 }
 
