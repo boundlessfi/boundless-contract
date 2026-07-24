@@ -26,8 +26,8 @@ another complete mainnet archive.
 ## WASM provenance and version checks
 
 The two `mainnet-*-1.1.0-sdk23.wasm` files were fetched from the live mainnet
-contract IDs above. Their SHA-256 values match the deployed hashes recorded in
-the manifest.
+contract IDs recorded in the manifest. Their SHA-256 values match the recorded
+deployed hashes.
 
 The SDK 23 prize/cancellation fixture comes from commit `57aa591`. Its runtime
 version is `1.3.0`, but its stale embedded contractmeta says `1.2.0`. Both are

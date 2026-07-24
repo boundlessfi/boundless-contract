@@ -379,11 +379,13 @@ fn sdk23_v110_rows_survive_h6_upgrade_to_sdk27() {
         grant_replay_error,
         new_events::Error::MilestoneAlreadyClaimed
     );
+    let fee_before_grant_claim = token.balance(&fee_account);
     events_v2.claim_milestone(&grant_id, &grant_recipient, &1, &5, &next_op(&env, &ops));
     assert_eq!(
         token.balance(&grant_recipient) - grant_balance_before,
         BUDGET
     );
+    assert_eq!(token.balance(&fee_account) - fee_before_grant_claim, 0);
     assert_eq!(
         events_v2.get_event(&grant_id).status,
         new_events::EventStatus::Completed
@@ -402,7 +404,19 @@ fn sdk23_v110_rows_survive_h6_upgrade_to_sdk27() {
         crowdfunding_replay_error,
         new_events::Error::MilestoneAlreadyClaimed
     );
+    let crowdfunding_remaining = events_v2.get_event(&crowdfunding_id).remaining_escrow;
+    let crowdfunding_balance_before = token.balance(&owner);
+    let fee_before_crowdfunding_claim = token.balance(&fee_account);
     events_v2.claim_milestone(&crowdfunding_id, &owner, &1, &0, &next_op(&env, &ops));
+    let crowdfunding_fee = crowdfunding_remaining * FEE_BPS as i128 / 10_000;
+    assert_eq!(
+        token.balance(&owner) - crowdfunding_balance_before,
+        crowdfunding_remaining - crowdfunding_fee
+    );
+    assert_eq!(
+        token.balance(&fee_account) - fee_before_crowdfunding_claim,
+        crowdfunding_fee
+    );
     assert_eq!(
         events_v2.get_event(&crowdfunding_id).status,
         new_events::EventStatus::Completed
@@ -517,10 +531,12 @@ fn sdk23_pre27_prize_and_cancellation_keys_work_after_upgrade() {
         ],
         &next_op(&env, &ops),
     );
+    let fee_before_prize_claims = token.balance(&fee_account);
     events_v2.claim_prize(&prize_id, &1, &next_op(&env, &ops));
     events_v2.claim_prize(&prize_id, &2, &next_op(&env, &ops));
     assert_eq!(token.balance(&winner), BUDGET / 2);
     assert_eq!(token.balance(&second_winner), BUDGET / 2);
+    assert_eq!(token.balance(&fee_account) - fee_before_prize_claims, 0);
     assert_eq!(
         events_v2.get_event(&prize_id).status,
         new_events::EventStatus::Completed

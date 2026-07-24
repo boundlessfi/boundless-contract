@@ -6,7 +6,7 @@ This repo holds the boundless-events and boundless-profile Soroban contracts. Re
 
 The Stellar Development Foundation publishes a Codex skill that bundles current Soroban patterns, audit checklists, SDK references, and SEP/CAP knowledge. Install once per machine:
 
-```
+```text
 /plugin marketplace add stellar/stellar-dev-skill
 /plugin install stellar-dev@stellar-dev
 ```

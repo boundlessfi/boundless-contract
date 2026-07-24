@@ -484,7 +484,11 @@ The guarded preparation and verification:
 - reads back each queued version and exact WASM hash after the signed proposals land;
 - queries each live contract's executable hash after apply and rechecks it before migration, unpause, and final verification.
 
-Do not unpause either contract during the timelock. If the event check succeeds or returns an ambiguous RPC error, abort without applying either upgrade and investigate the live state. Publish both `proposed_at_ledger` and `available_at_ledger` values. Apply only after the later of the two `available_at_ledger` values has been reached.
+Do not unpause either contract during the timelock. If `get_event` finds an
+event or returns anything other than `EventNotFound`, abort without applying
+either upgrade and investigate. Publish both `proposed_at_ledger` and
+`available_at_ledger` values. Apply only after the later
+`available_at_ledger` value has been reached.
 
 ### 7.3 Apply, migrate, verify, and unpause
 
