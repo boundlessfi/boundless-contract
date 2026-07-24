@@ -33,9 +33,10 @@ The SDK 23 prize/cancellation fixture comes from commit `57aa591`. Its runtime
 version is `1.3.0`, but its stale embedded contractmeta says `1.2.0`. Both are
 recorded and asserted without changing the fixture.
 
-The SDK 27 events `1.5.0` and profile `1.2.0` files are pinned artifacts built
-from release source based on commit `8e15770`. The compatibility gate requires
-a fresh locked build to match them before running the cross-version tests.
+The SDK 27 events `1.5.0` and profile `1.2.0` files are the canonical release
+artifacts built by GitHub Actions on Linux x86_64 with Rust and Stellar CLI
+`27.0.0` pinned. CI rebuilds the source and requires exact hash matches.
+Mainnet upgrades use these committed files, not a host-local rebuild.
 
 Synthetic compatibility cases use deterministic operation IDs so their
 Soroban ledger snapshots are reproducible. CI reruns the suite and rejects any

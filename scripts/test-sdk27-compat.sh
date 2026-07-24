@@ -86,21 +86,31 @@ jq -e \
     exit 1
 }
 
-EVENTS_WASM="$ROOT/target/wasm32v1-none/release/boundless_events.wasm"
-PROFILE_WASM="$ROOT/target/wasm32v1-none/release/boundless_profile.wasm"
-[ -f "$EVENTS_WASM" ] || {
-    echo "missing $EVENTS_WASM; run stellar contract build --locked first" >&2
-    exit 1
-}
-[ -f "$PROFILE_WASM" ] || {
-    echo "missing $PROFILE_WASM; run stellar contract build --locked first" >&2
-    exit 1
-}
+verify_build="${VERIFY_SDK27_BUILD:-0}"
+case "$verify_build" in
+    0) ;;
+    1)
+        EVENTS_WASM="$ROOT/target/wasm32v1-none/release/boundless_events.wasm"
+        PROFILE_WASM="$ROOT/target/wasm32v1-none/release/boundless_profile.wasm"
+        [ -f "$EVENTS_WASM" ] || {
+            echo "missing $EVENTS_WASM; run stellar contract build --locked first" >&2
+            exit 1
+        }
+        [ -f "$PROFILE_WASM" ] || {
+            echo "missing $PROFILE_WASM; run stellar contract build --locked first" >&2
+            exit 1
+        }
 
-events_hash="$(jq -r '.wasm[] | select(.file == "events-1.5.0-sdk27.wasm") | .sha256' "$MANIFEST")"
-profile_hash="$(jq -r '.wasm[] | select(.file == "profile-1.2.0-sdk27.wasm") | .sha256' "$MANIFEST")"
-check_hash "$EVENTS_WASM" "$events_hash"
-check_hash "$PROFILE_WASM" "$profile_hash"
+        events_hash="$(jq -r '.wasm[] | select(.file == "events-1.5.0-sdk27.wasm") | .sha256' "$MANIFEST")"
+        profile_hash="$(jq -r '.wasm[] | select(.file == "profile-1.2.0-sdk27.wasm") | .sha256' "$MANIFEST")"
+        check_hash "$EVENTS_WASM" "$events_hash"
+        check_hash "$PROFILE_WASM" "$profile_hash"
+        ;;
+    *)
+        echo "VERIFY_SDK27_BUILD must be 0 or 1" >&2
+        exit 1
+        ;;
+esac
 
 cd "$ROOT"
 cargo test --locked -p boundless-storage-compatibility

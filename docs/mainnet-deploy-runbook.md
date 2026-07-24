@@ -385,14 +385,14 @@ markers. Fixture hashes, provenance, and regeneration are recorded in
 Before any SDK 27 mainnet proposal:
 
 ```bash
-stellar contract build --locked
 ./scripts/test-sdk27-compat.sh
 ```
 
-Abort if a fixture or build hash differs, a compatibility test fails, or the
-zero-event check no longer returns `EventNotFound`. The SDK 27 contracts retain
-a read fallback for legacy temporary `OpSeen(BytesN<32>)` rows; new markers use
-the domain-scoped key.
+CI must have rebuilt the contracts and matched the pinned fixtures. Abort if a
+fixture hash differs, a compatibility test fails, or the zero-event check no
+longer returns `EventNotFound`. The SDK 27 contracts retain a read fallback for
+legacy temporary `OpSeen(BytesN<32>)` rows; new markers use the domain-scoped
+key.
 
 Sections 7.2 through 7.5 are the executable SDK 27 procedure for events `1.1.0` → `1.5.0` and profile `1.1.0` → `1.2.0`.
 The mainnet script intentionally rejects other upgrade target versions. A
@@ -418,11 +418,10 @@ export PROFILE_ID=CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC
 export ADMIN_SOURCE=$MULTISIG_ADMIN_ADDRESS
 export UPLOAD_SOURCE=boundless-upgrade-uploader
 
-stellar contract build --locked
 ./scripts/test-sdk27-compat.sh
 
-EVENTS_WASM=target/wasm32v1-none/release/boundless_events.wasm
-PROFILE_WASM=target/wasm32v1-none/release/boundless_profile.wasm
+EVENTS_WASM=contracts/compatibility/fixtures/events-1.5.0-sdk27.wasm
+PROFILE_WASM=contracts/compatibility/fixtures/profile-1.2.0-sdk27.wasm
 
 # Upload the exact compatibility-tested artifacts before downtime.
 ./deploy_mainnet.sh upload-profile-wasm "$PROFILE_WASM"
