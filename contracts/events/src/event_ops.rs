@@ -27,9 +27,13 @@ const PENDING_MANAGER_TTL_LEDGERS: u32 = 17_280;
 // before winners are selected). A per-event override needs a migration.
 pub const PRIZE_CLAIM_WINDOW_SECS: u64 = 90 * 24 * 60 * 60;
 
-pub const MAX_APPLICANTS_PER_EVENT: u32 = 5_000;
-pub const MAX_CONTRIBUTORS_PER_EVENT: u32 = 5_000;
-pub const MAX_SUBMISSIONS_PER_EVENT: u32 = 5_000;
+// Participant sets (applicants, contributors, submissions) are unbounded:
+// each entry is its own persistent ledger entry paid for by the participant's
+// own transaction, and no state-changing path iterates the full set in one
+// transaction (refunds are cranked in batches, winner selection takes an
+// explicit bounded list). Full-list reads page through VIEW_PAGE_LIMIT
+// entries per call so simulation stays inside per-tx read-entry limits.
+pub const VIEW_PAGE_LIMIT: u32 = 100;
 pub const MAX_CONTENT_URI_LEN: u32 = 256;
 
 pub const MAX_REFUNDS_PER_BATCH: u32 = 25;
@@ -298,7 +302,7 @@ pub fn add_funds(
     if is_non_owner {
         let prior = prior_contribution;
         if prior == 0 {
-            storage::append_contributor(env, event_id, &from, MAX_CONTRIBUTORS_PER_EVENT)?;
+            storage::append_contributor(env, event_id, &from)?;
         }
     }
 
@@ -557,11 +561,11 @@ pub fn submit(
         }
     }
 
-    // Reserve the slot before writing — Hackathon events have
-    // needs_application == false, so any address can call submit() with no
-    // prior gate. Without this cap, an attacker spamming fresh addresses
-    // grows persistent storage / rent burden without bound.
-    storage::append_submission(env, event_id, &applicant, MAX_SUBMISSIONS_PER_EVENT)?;
+    // Count the submission before writing. There is no cap: each submission
+    // is its own ledger entry whose write and rent are paid by the
+    // submitter's transaction, so spam addresses fund their own storage and
+    // cannot lock real participants out of a full event.
+    storage::append_submission(env, event_id, &applicant)?;
 
     let submitted_at = existing
         .as_ref()
@@ -906,12 +910,25 @@ pub fn get_submission(env: &Env, event_id: u64, applicant: Address) -> Result<Su
     storage::get_submission(env, event_id, &applicant).ok_or(Error::SubmissionNotFound)
 }
 
+// Full-list getters return the first VIEW_PAGE_LIMIT entries; use the
+// _page variants (or the per-index getters / the off-chain indexer) to
+// read beyond that.
 pub fn get_applicants(env: &Env, event_id: u64) -> Result<Vec<Address>, Error> {
+    get_applicants_page(env, event_id, 0, VIEW_PAGE_LIMIT)
+}
+
+pub fn get_applicants_page(
+    env: &Env,
+    event_id: u64,
+    start: u32,
+    limit: u32,
+) -> Result<Vec<Address>, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     Ok(storage::applicants_snapshot(
         env,
         event_id,
-        MAX_APPLICANTS_PER_EVENT,
+        start,
+        limit.min(VIEW_PAGE_LIMIT),
     ))
 }
 
@@ -926,11 +943,21 @@ pub fn get_applicant_at(env: &Env, event_id: u64, idx: u32) -> Result<Option<Add
 }
 
 pub fn get_winners(env: &Env, event_id: u64) -> Result<Vec<Winner>, Error> {
+    get_winners_page(env, event_id, 0, VIEW_PAGE_LIMIT)
+}
+
+pub fn get_winners_page(
+    env: &Env,
+    event_id: u64,
+    start: u32,
+    limit: u32,
+) -> Result<Vec<Winner>, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     Ok(storage::winners_snapshot(
         env,
         event_id,
-        MAX_WINNERS_PER_SELECT.saturating_mul(20),
+        start,
+        limit.min(VIEW_PAGE_LIMIT),
     ))
 }
 
@@ -945,11 +972,21 @@ pub fn get_winner_at(env: &Env, event_id: u64, idx: u32) -> Result<Option<Winner
 }
 
 pub fn get_contributors(env: &Env, event_id: u64) -> Result<Vec<Address>, Error> {
+    get_contributors_page(env, event_id, 0, VIEW_PAGE_LIMIT)
+}
+
+pub fn get_contributors_page(
+    env: &Env,
+    event_id: u64,
+    start: u32,
+    limit: u32,
+) -> Result<Vec<Address>, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     Ok(storage::contributors_snapshot(
         env,
         event_id,
-        MAX_CONTRIBUTORS_PER_EVENT,
+        start,
+        limit.min(VIEW_PAGE_LIMIT),
     ))
 }
 

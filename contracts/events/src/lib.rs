@@ -274,8 +274,19 @@ impl EventsContract {
         event_ops::get_submission(&env, event_id, applicant)
     }
 
+    // Full-list getters return the first page (VIEW_PAGE_LIMIT entries);
+    // page through the _page variants or the per-index getters for more.
     pub fn get_applicants(env: Env, event_id: u64) -> Result<Vec<Address>, Error> {
         event_ops::get_applicants(&env, event_id)
+    }
+
+    pub fn get_applicants_page(
+        env: Env,
+        event_id: u64,
+        start: u32,
+        limit: u32,
+    ) -> Result<Vec<Address>, Error> {
+        event_ops::get_applicants_page(&env, event_id, start, limit)
     }
 
     pub fn get_applicant_count(env: Env, event_id: u64) -> Result<u32, Error> {
@@ -290,6 +301,15 @@ impl EventsContract {
         event_ops::get_winners(&env, event_id)
     }
 
+    pub fn get_winners_page(
+        env: Env,
+        event_id: u64,
+        start: u32,
+        limit: u32,
+    ) -> Result<Vec<Winner>, Error> {
+        event_ops::get_winners_page(&env, event_id, start, limit)
+    }
+
     pub fn get_winner_count(env: Env, event_id: u64) -> Result<u32, Error> {
         event_ops::get_winner_count(&env, event_id)
     }
@@ -300,6 +320,15 @@ impl EventsContract {
 
     pub fn get_contributors(env: Env, event_id: u64) -> Result<Vec<Address>, Error> {
         event_ops::get_contributors(&env, event_id)
+    }
+
+    pub fn get_contributors_page(
+        env: Env,
+        event_id: u64,
+        start: u32,
+        limit: u32,
+    ) -> Result<Vec<Address>, Error> {
+        event_ops::get_contributors_page(&env, event_id, start, limit)
     }
 
     pub fn get_contributor_count(env: Env, event_id: u64) -> Result<u32, Error> {

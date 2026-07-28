@@ -7,7 +7,7 @@ use soroban_sdk::{
 
 use super::common::drive_cancel;
 use crate::errors::Error;
-use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
+use crate::types::{CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
@@ -292,6 +292,94 @@ fn apply_when_paused_reverts() {
             .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id),
     );
     assert_eq!(err, Error::Paused);
+}
+
+#[test]
+fn apply_beyond_former_cap_succeeds() {
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx);
+
+    // Fast-forward the per-event counter past the former 5,000 cap instead
+    // of performing that many real applications from distinct addresses.
+    ctx.env.as_contract(&ctx.events.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::EventApplicantCount(bounty_id), &5_000_u32);
+    });
+
+    let op_id = BytesN::random(&ctx.env);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_id);
+
+    assert_eq!(
+        ctx.events.get_applicant_count(&bounty_id),
+        5_001,
+        "applications are unbounded; the counter must keep advancing past the former cap"
+    );
+    assert_eq!(
+        ctx.events.get_applicant_at(&bounty_id, &5_000),
+        Some(ctx.applicant.clone()),
+        "the new applicant must land in the next slot"
+    );
+}
+
+#[test]
+fn apply_at_counter_overflow_reverts() {
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx);
+
+    ctx.env.as_contract(&ctx.events.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::EventApplicantCount(bounty_id), &u32::MAX);
+    });
+
+    let op_id = BytesN::random(&ctx.env);
+    let err = expect_op_err(
+        ctx.events
+            .try_apply_to_bounty(&bounty_id, &ctx.applicant, &op_id),
+    );
+    assert_eq!(
+        err,
+        Error::TooManyApplicants,
+        "an application that would overflow the u32 counter must revert"
+    );
+}
+
+#[test]
+fn applicants_page_respects_start_and_limit() {
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx);
+
+    let second = Address::generate(&ctx.env);
+    let third = Address::generate(&ctx.env);
+    for applicant in [&ctx.applicant, &second, &third] {
+        ctx.events
+            .apply_to_bounty(&bounty_id, applicant, &BytesN::random(&ctx.env));
+    }
+
+    let tail = ctx.events.get_applicants_page(&bounty_id, &1, &10);
+    assert_eq!(tail.len(), 2);
+    assert_eq!(tail.get(0).unwrap(), second);
+    assert_eq!(tail.get(1).unwrap(), third);
+
+    assert_eq!(
+        ctx.events.get_applicants_page(&bounty_id, &0, &0).len(),
+        0,
+        "limit 0 must return an empty page"
+    );
+    assert_eq!(
+        ctx.events.get_applicants_page(&bounty_id, &10, &5).len(),
+        0,
+        "a start past the end must return an empty page"
+    );
+    assert_eq!(
+        ctx.events.get_applicants_page(&bounty_id, &0, &1_000).len(),
+        3,
+        "an oversized limit is clamped, not an error"
+    );
 }
 
 #[test]

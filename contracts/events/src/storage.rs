@@ -338,20 +338,20 @@ pub fn applicant_slot(env: &Env, id: u64, addr: &Address) -> u32 {
     slot.unwrap_or(0)
 }
 
-pub fn append_applicant(env: &Env, id: u64, addr: &Address, cap: u32) -> Result<u32, Error> {
+pub fn append_applicant(env: &Env, id: u64, addr: &Address) -> Result<u32, Error> {
     if applicant_slot(env, id, addr) != 0 {
         return Err(Error::ApplicantAlreadyApplied);
     }
     let cur = applicant_count(env, id);
-    if cur >= cap {
-        return Err(Error::TooManyApplicants);
-    }
+    // No product cap: each applicant is its own ledger entry paid for by the
+    // applicant's own transaction, so growth is O(1) per append. Only guard
+    // the u32 counter itself.
+    let slot = cur.checked_add(1).ok_or(Error::TooManyApplicants)?;
     let at_key = DataKey::EventApplicantAt(id, cur);
     env.storage().persistent().set(&at_key, addr);
     touch_event_persistent(env, &at_key);
 
     let slot_key = DataKey::EventApplicantSlot(id, addr.clone());
-    let slot = cur.saturating_add(1);
     env.storage().persistent().set(&slot_key, &slot);
     touch_event_persistent(env, &slot_key);
 
@@ -399,11 +399,11 @@ pub fn remove_applicant(env: &Env, id: u64, addr: &Address) -> Result<(), Error>
     Ok(())
 }
 
-pub fn applicants_snapshot(env: &Env, id: u64, max: u32) -> Vec<Address> {
+pub fn applicants_snapshot(env: &Env, id: u64, start: u32, limit: u32) -> Vec<Address> {
     let count = applicant_count(env, id);
-    let upper = if count < max { count } else { max };
+    let end = start.saturating_add(limit).min(count);
     let mut out: Vec<Address> = Vec::new(env);
-    for idx in 0..upper {
+    for idx in start..end {
         if let Some(addr) = applicant_at(env, id, idx) {
             out.push_back(addr);
         }
@@ -460,23 +460,21 @@ pub fn submission_count(env: &Env, id: u64) -> u32 {
     n.unwrap_or(0)
 }
 
-/// Reserve a submission slot against the per-event cap before writing the
-/// entry (mirrors `append_contributor`/`append_applicant`). A no-op when the
-/// applicant already has a submission — re-submission updates the existing
-/// entry in place and must not recount against the cap.
+/// Count a new submission before writing the entry (mirrors
+/// `append_contributor`/`append_applicant`). A no-op when the applicant
+/// already has a submission — re-submission updates the existing entry in
+/// place and must not recount.
 ///
-/// Returns `Error::TooManyContributors` on cap-exceed — reused rather than
-/// a new variant since the errors enum is at the 50-case XDR cap.
-pub fn append_submission(env: &Env, id: u64, addr: &Address, cap: u32) -> Result<(), Error> {
+/// Returns `Error::TooManyContributors` only on u32 counter overflow —
+/// reused rather than a new variant since the errors enum is at the
+/// 50-case XDR cap.
+pub fn append_submission(env: &Env, id: u64, addr: &Address) -> Result<(), Error> {
     if get_submission(env, id, addr).is_some() {
         return Ok(());
     }
     let cur = submission_count(env, id);
-    if cur >= cap {
-        return Err(Error::TooManyContributors);
-    }
+    let next = cur.checked_add(1).ok_or(Error::TooManyContributors)?;
     let count_key = DataKey::EventSubmissionCount(id);
-    let next = cur.saturating_add(1);
     env.storage().persistent().set(&count_key, &next);
     touch_event_persistent(env, &count_key);
     Ok(())
@@ -584,11 +582,11 @@ pub fn set_prize_claim_expiry(env: &Env, id: u64, expires_at: u64) {
     touch_event_persistent(env, &key);
 }
 
-pub fn winners_snapshot(env: &Env, id: u64, max: u32) -> Vec<Winner> {
+pub fn winners_snapshot(env: &Env, id: u64, start: u32, limit: u32) -> Vec<Winner> {
     let count = winner_count(env, id);
-    let upper = if count < max { count } else { max };
+    let end = start.saturating_add(limit).min(count);
     let mut out: Vec<Winner> = Vec::new(env);
-    for idx in 0..upper {
+    for idx in start..end {
         if let Some(w) = winner_at(env, id, idx) {
             out.push_back(w);
         }
@@ -656,20 +654,18 @@ pub fn contributor_slot(env: &Env, id: u64, addr: &Address) -> u32 {
     slot.unwrap_or(0)
 }
 
-pub fn append_contributor(env: &Env, id: u64, addr: &Address, cap: u32) -> Result<u32, Error> {
+pub fn append_contributor(env: &Env, id: u64, addr: &Address) -> Result<u32, Error> {
     if contributor_slot(env, id, addr) != 0 {
         return Ok(0);
     }
     let cur = contributor_count(env, id);
-    if cur >= cap {
-        return Err(Error::TooManyContributors);
-    }
+    // No product cap (see append_applicant); guard only the u32 counter.
+    let slot = cur.checked_add(1).ok_or(Error::TooManyContributors)?;
     let at_key = DataKey::ContributorAt(id, cur);
     env.storage().persistent().set(&at_key, addr);
     touch_event_persistent(env, &at_key);
 
     let slot_key = DataKey::ContributorSlot(id, addr.clone());
-    let slot = cur.saturating_add(1);
     env.storage().persistent().set(&slot_key, &slot);
     touch_event_persistent(env, &slot_key);
 
@@ -679,11 +675,11 @@ pub fn append_contributor(env: &Env, id: u64, addr: &Address, cap: u32) -> Resul
     Ok(slot)
 }
 
-pub fn contributors_snapshot(env: &Env, id: u64, max: u32) -> Vec<Address> {
+pub fn contributors_snapshot(env: &Env, id: u64, start: u32, limit: u32) -> Vec<Address> {
     let count = contributor_count(env, id);
-    let upper = if count < max { count } else { max };
+    let end = start.saturating_add(limit).min(count);
     let mut out: Vec<Address> = Vec::new(env);
-    for idx in 0..upper {
+    for idx in start..end {
         if let Some(addr) = contributor_at(env, id, idx) {
             out.push_back(addr);
         }

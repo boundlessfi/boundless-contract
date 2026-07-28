@@ -50,12 +50,15 @@ pub enum Error {
     BelowMinimumContribution = 57,
     InvalidContributionAmount = 58,
 
+    // Per-event participant caps were removed (participant sets are
+    // unbounded; entries are per-participant and self-funded). 59 and 61 are
+    // kept for ABI stability and now only signal u32 counter overflow.
     TooManyApplicants = 59,
 
     OpAlreadySeen = 60,
 
-    // Also returned by append_submission's cap check: the hackathon submission
-    // cap reuses this rather than adding a near-duplicate "TooManySubmissions".
+    // Also returned by append_submission's overflow guard — reused rather
+    // than adding a near-duplicate "TooManySubmissions".
     TooManyContributors = 61,
 
     CancellationNotStarted = 62,

@@ -2,7 +2,6 @@ use soroban_sdk::{Address, BytesN, Env};
 
 use crate::admin;
 use crate::errors::Error;
-use crate::event_ops::MAX_APPLICANTS_PER_EVENT;
 use crate::events as evt;
 use crate::idempotency::{self, tag};
 use crate::profile_client;
@@ -33,7 +32,7 @@ pub fn apply(
     applicant.require_auth();
     idempotency::require_unseen(env, &applicant, &op_id)?;
 
-    storage::append_applicant(env, bounty_id, &applicant, MAX_APPLICANTS_PER_EVENT)?;
+    storage::append_applicant(env, bounty_id, &applicant)?;
 
     let profile = profile_client::client(env);
     let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);

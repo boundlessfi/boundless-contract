@@ -6,7 +6,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::Error;
-use crate::event_ops::{MAX_CONTENT_URI_LEN, MAX_SUBMISSIONS_PER_EVENT};
+use crate::event_ops::MAX_CONTENT_URI_LEN;
 use crate::storage;
 use crate::types::{CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
@@ -284,22 +284,47 @@ fn withdraw_submission_frees_the_slot_for_future_submitters() {
         .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
     assert_eq!(
         count, 0,
-        "withdrawing a submission must free its slot against the cap"
+        "withdrawing a submission must decrement the submission count"
     );
 }
 
 #[test]
-fn submit_beyond_cap_reverts() {
+fn submit_beyond_former_cap_succeeds() {
     let ctx = setup();
     let id = create_hackathon(&ctx);
 
-    // Fast-forward the per-event counter directly instead of performing
-    // MAX_SUBMISSIONS_PER_EVENT real submissions from distinct addresses.
+    // Fast-forward the per-event counter past the former 5,000 cap instead
+    // of performing that many real submissions from distinct addresses.
     ctx.env.as_contract(&ctx.events_id, || {
-        ctx.env.storage().persistent().set(
-            &DataKey::EventSubmissionCount(id),
-            &MAX_SUBMISSIONS_PER_EVENT,
-        );
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::EventSubmissionCount(id), &5_000_u32);
+    });
+
+    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v5001.json");
+    ctx.events
+        .submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
+
+    let count = ctx
+        .env
+        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
+    assert_eq!(
+        count, 5_001,
+        "submissions are unbounded; the counter must keep advancing past the former cap"
+    );
+}
+
+#[test]
+fn submit_at_counter_overflow_reverts() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    ctx.env.as_contract(&ctx.events_id, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::EventSubmissionCount(id), &u32::MAX);
     });
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../overflow.json");
@@ -308,7 +333,7 @@ fn submit_beyond_cap_reverts() {
     assert_eq!(
         err,
         Error::TooManyContributors,
-        "a submission at cap + 1 must revert"
+        "a submission that would overflow the u32 counter must revert"
     );
 }
 
