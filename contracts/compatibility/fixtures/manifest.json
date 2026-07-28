@@ -42,8 +42,8 @@
     },
     {
       "file": "events-1.5.0-sdk27.wasm",
-      "sha256": "52ead9e4374d1fe17704649da59747095bb59839f3e826978013da03508a7e7c",
-      "source": "GitHub Actions Linux x86_64 build from commit bc15269",
+      "sha256": "31b27e9d5fe554e0710161dd9387693e166bdd755d985a9771b1ed71b9e28321",
+      "source": "GitHub Actions Linux x86_64 build from commit d5959d0",
       "soroban_sdk": "27.0.0",
       "protocol": 27,
       "runtime_version": "1.5.0",
@@ -51,8 +51,8 @@
     },
     {
       "file": "profile-1.2.0-sdk27.wasm",
-      "sha256": "de2e90763462c67844bbf99707f67056f3aaa039d763c32366c445b73cf10802",
-      "source": "GitHub Actions Linux x86_64 build from commit bc15269",
+      "sha256": "d2d025d0f7c2c29e6dbd95401841cf62b8b61be608c48615cffb5934050890c0",
+      "source": "GitHub Actions Linux x86_64 build from commit d5959d0",
       "soroban_sdk": "27.0.0",
       "protocol": 27,
       "runtime_version": "1.2.0",

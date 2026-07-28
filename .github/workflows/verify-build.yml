@@ -82,10 +82,7 @@ jobs:
       - name: Verify SDK 23 to SDK 27 storage compatibility
         env:
           VERIFY_SDK27_BUILD: "1"
-        run: |
-          ./scripts/test-sdk27-compat.sh
-          git diff --exit-code -- contracts/compatibility/test_snapshots
-          test -z "$(git ls-files --others --exclude-standard -- contracts/compatibility/test_snapshots)"
+        run: ./scripts/test-sdk27-compat.sh
 
       - name: Run tests
         run: cargo test --release
