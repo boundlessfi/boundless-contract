@@ -1,7 +1,7 @@
 -- Boundless On-chain: Payout volume grouped by payment token
 -- Panel type: table
 --
--- Token address is on EventCreated (field 'token'); join to payout events by
+-- Token address is on event_created (field 'token'); join to payout events by
 -- event_id. Add a CASE map for readable token symbols.
 -- Decoding: see 10_event_created_decode_test.sql.
 
@@ -18,19 +18,19 @@ WITH ev AS (
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
       AND closed_at_date >= DATE '{{START_DATE}}'
       AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol')
-          IN ('EventCreated', 'WinnerPaid', 'MilestoneClaimed')
+          IN ('event_created', 'winner_paid', 'milestone_claimed')
 ),
 payouts AS (
     SELECT
         CAST(JSON_EXTRACT_SCALAR(f['event_id'], '$.u64') AS BIGINT)          AS event_id,
         CAST(JSON_EXTRACT_SCALAR(f['amount'], '$.i128') AS DOUBLE) / 1e7     AS amount_display
-    FROM ev WHERE ev_name IN ('WinnerPaid', 'MilestoneClaimed')
+    FROM ev WHERE ev_name IN ('winner_paid', 'milestone_claimed')
 ),
 created AS (
     SELECT
         CAST(JSON_EXTRACT_SCALAR(f['id'], '$.u64') AS BIGINT)  AS event_id,
         JSON_EXTRACT_SCALAR(f['token'], '$.address')          AS token_address
-    FROM ev WHERE ev_name = 'EventCreated'
+    FROM ev WHERE ev_name = 'event_created'
 )
 SELECT
     c.token_address,

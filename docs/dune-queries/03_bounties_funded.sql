@@ -1,7 +1,9 @@
 -- Boundless On-chain: Events created — count and budget by pillar and month
 -- Panel type: grouped bar chart  x=month  y=events_created  color=pillar
 --
--- Decoding: see 10_event_created_decode_test.sql.
+-- Decoding: see 10_event_created_decode_test.sql. Event name is snake_case
+-- on-chain (event_created); pillar enum value is PascalCase (Hackathon,
+-- Bounty, Grant, Crowdfunding) — verify with query 10's pillar_raw.
 
 WITH ev AS (
     SELECT
@@ -15,7 +17,7 @@ WITH ev AS (
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
       AND closed_at_date >= DATE '{{START_DATE}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol') = 'EventCreated'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol') = 'event_created'
 )
 SELECT
     month,

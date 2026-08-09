@@ -1,8 +1,14 @@
 -- Boundless On-chain: Unique builder and organizer wallets
 -- Panel type: counter (two rows: builders, organizers)
 --
--- Decoding: event name is topics_decoded '$[0].symbol'; addresses are read
--- from the data_decoded '$.map' as '$.address'. See 10_event_created_decode_test.sql.
+-- Builders participate through one of three on-chain footprints:
+--   applied    (Bounty — gated apply)
+--   submitted  (Hackathon — open submission, no prior apply)
+--   winner_paid / milestone_claimed (received a payout on any pillar)
+-- Counting only 'applied' would miss every hackathon entrant, since that
+-- pillar's participants submit without applying.
+-- Decoding: event name is snake_case; addresses read as '$.address'.
+-- See 10_event_created_decode_test.sql.
 
 WITH ev AS (
     SELECT
@@ -17,18 +23,18 @@ WITH ev AS (
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
       AND closed_at_date >= DATE '{{START_DATE}}'
       AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol')
-          IN ('Applied', 'WinnerPaid', 'MilestoneClaimed', 'EventCreated')
+          IN ('applied', 'submitted', 'winner_paid', 'milestone_claimed', 'event_created')
 )
--- Builders: applied to or received a payout from any event
+-- Builders: applied to, submitted to, or received a payout from any event
 SELECT
     'builders' AS role,
     COUNT(DISTINCT addr) AS unique_wallets
 FROM (
     SELECT JSON_EXTRACT_SCALAR(f['applicant'], '$.address') AS addr
-    FROM ev WHERE ev_name = 'Applied'
+    FROM ev WHERE ev_name IN ('applied', 'submitted')
     UNION
     SELECT JSON_EXTRACT_SCALAR(f['recipient'], '$.address')
-    FROM ev WHERE ev_name IN ('WinnerPaid', 'MilestoneClaimed')
+    FROM ev WHERE ev_name IN ('winner_paid', 'milestone_claimed')
 ) t
 
 UNION ALL
@@ -38,4 +44,4 @@ SELECT
     'organizers' AS role,
     COUNT(DISTINCT JSON_EXTRACT_SCALAR(f['owner'], '$.address')) AS unique_wallets
 FROM ev
-WHERE ev_name = 'EventCreated'
+WHERE ev_name = 'event_created'

@@ -2,8 +2,8 @@
 -- Panel type: area chart  x=day  y=tvl_display
 --
 -- Decoding (see 10_event_created_decode_test.sql): event name is
--- topics_decoded '$[0].symbol'; fields come from the data_decoded '$.map'
--- ScVal map, read by type ($.i128, ...).
+-- topics_decoded '$[0].symbol' (snake_case), fields come from the
+-- data_decoded '$.map' ScVal map, read by type ($.i128, ...).
 
 WITH ev AS (
     SELECT
@@ -25,24 +25,24 @@ signed AS (
         day,
         CASE
             -- Inflow: non-crowdfunding creation escrows the budget
-            WHEN ev_name = 'EventCreated'
+            WHEN ev_name = 'event_created'
               AND JSON_EXTRACT_SCALAR(f['pillar'], '$.vec[0].symbol') <> 'Crowdfunding'
             THEN  CAST(JSON_EXTRACT_SCALAR(f['total_budget'], '$.i128') AS DOUBLE)
 
             -- Inflow: add_funds (crowdfunding + partner top-ups)
-            WHEN ev_name = 'FundsAdded'
+            WHEN ev_name = 'funds_added'
             THEN  CAST(JSON_EXTRACT_SCALAR(f['amount'], '$.i128') AS DOUBLE)
 
             -- Outflow: payouts and refunds
-            WHEN ev_name IN ('WinnerPaid', 'MilestoneClaimed',
-                             'ContributorRefunded', 'OwnerResidualRefunded')
+            WHEN ev_name IN ('winner_paid', 'milestone_claimed',
+                             'contributor_refunded', 'owner_residual_refunded')
             THEN -CAST(JSON_EXTRACT_SCALAR(f['amount'], '$.i128') AS DOUBLE)
 
             ELSE 0
         END AS delta
     FROM ev
-    WHERE ev_name IN ('EventCreated', 'FundsAdded', 'WinnerPaid',
-                      'MilestoneClaimed', 'ContributorRefunded', 'OwnerResidualRefunded')
+    WHERE ev_name IN ('event_created', 'funds_added', 'winner_paid',
+                      'milestone_claimed', 'contributor_refunded', 'owner_residual_refunded')
 ),
 daily_delta AS (
     SELECT day, SUM(delta) / 1e7 AS daily_change_display

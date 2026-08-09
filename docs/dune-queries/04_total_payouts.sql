@@ -1,8 +1,10 @@
 -- Boundless On-chain: Total payouts to builders
 -- Panel type: bar chart  x=month  y=total_paid_display  color=payout_type
 --
--- WinnerPaid       -> Hackathon / Bounty (single-release; fires at claim_prize)
--- MilestoneClaimed -> Grant / Crowdfunding (multi-release, per milestone)
+-- winner_paid       -> Hackathon / Bounty (single-release; fires inside
+--                      select_winners — the contract pushes payment there,
+--                      there is no separate claim step)
+-- milestone_claimed -> Grant / Crowdfunding (multi-release, per milestone)
 -- Both carry event_id, recipient (address), amount (i128).
 -- Decoding: see 10_event_created_decode_test.sql.
 
@@ -19,7 +21,7 @@ WITH ev AS (
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
       AND closed_at_date >= DATE '{{START_DATE}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol') IN ('WinnerPaid', 'MilestoneClaimed')
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol') IN ('winner_paid', 'milestone_claimed')
 )
 SELECT
     month,

@@ -1,9 +1,11 @@
--- Boundless On-chain: EventCreated decode test
+-- Boundless On-chain: event_created decode test
 -- Run this FIRST to confirm the Dune pipeline decodes events for the contract.
 --
--- Real stellar.history_contract_events shapes (verified against live data):
+-- Real stellar.history_contract_events shapes (verified against live mainnet):
 --   topics_decoded : JSON array of ScVal objects. Event name is at $[0].symbol
---                    (e.g. [{"symbol":"EventCreated"}]), NOT $[0].
+--                    and is SNAKE_CASE — #[contractevent] lowercases the struct
+--                    name, so EventCreated is emitted as 'event_created',
+--                    WinnerPaid as 'winner_paid', etc. NOT PascalCase.
 --   data_decoded   : ScVal map — {"map":[{"key":{"symbol":"id"},"val":{"u64":"7"}}, ...]}.
 --                    Each field's value is wrapped by its ScVal type; there is no
 --                    flat $.id. We rebuild it into a MAP(field_name -> ScVal JSON)
@@ -28,7 +30,7 @@ WITH ev AS (
     FROM stellar.history_contract_events
     WHERE contract_id = '{{CONTRACT_ADDRESS}}'
       AND closed_at_date >= DATE '{{START_DATE}}'
-      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol') = 'EventCreated'
+      AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol') = 'event_created'
 )
 SELECT
     CAST(JSON_EXTRACT_SCALAR(f['id'], '$.u64') AS BIGINT)                    AS event_id,
