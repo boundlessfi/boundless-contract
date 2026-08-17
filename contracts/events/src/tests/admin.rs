@@ -7,7 +7,8 @@ use soroban_sdk::{
 
 use super::common::setup;
 use crate::errors::Error;
-use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind};
+use crate::storage;
+use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind, Submission};
 
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
@@ -220,6 +221,76 @@ fn migrate_rewrites_legacy_percentages_as_prize_floors() {
         migrated.title,
         String::from_str(&ctx.env, "Muwa Creator Bounty")
     );
+}
+
+#[test]
+fn migrate_moves_legacy_submissions_into_slot_zero() {
+    let ctx = setup(250);
+    let applicant = Address::generate(&ctx.env);
+    let event_id = ctx.client.id_base() + 1;
+
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 100_u32);
+    let legacy_event = LegacyEventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: 1_000_0000000_i128,
+        remaining_escrow: 0,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Completed,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/legacy"),
+        title: String::from_str(&ctx.env, "Legacy"),
+        created_at: 1,
+        deadline: None,
+        winner_distribution: dist,
+        fee_bps_override: None,
+    };
+    let legacy_submission = Submission {
+        applicant: applicant.clone(),
+        content_uri: String::from_str(&ctx.env, "ipfs://historical"),
+        submitted_at: 42,
+    };
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &legacy_event);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+        // The applicant index is what bounds the migration scan.
+        storage::append_applicant(&ctx.env, event_id, &applicant).unwrap();
+        ctx.env.storage().persistent().set(
+            &DataKey::EventSubmission(event_id, applicant.clone()),
+            &legacy_submission,
+        );
+    });
+
+    ctx.client.migrate();
+
+    let moved = ctx.client.get_submission(&event_id, &applicant, &0_u32);
+    assert_eq!(
+        moved.content_uri,
+        String::from_str(&ctx.env, "ipfs://historical")
+    );
+    assert_eq!(moved.submitted_at, 42, "the original timestamp survives");
+    assert_eq!(
+        ctx.client
+            .get_applicant_submission_count(&event_id, &applicant),
+        1
+    );
+
+    // The old row is gone rather than left as an unreachable duplicate.
+    ctx.env.as_contract(&ctx.client.address, || {
+        assert!(
+            storage::get_legacy_submission(&ctx.env, event_id, &applicant).is_none(),
+            "legacy row should be removed once copied"
+        );
+    });
 }
 
 #[test]

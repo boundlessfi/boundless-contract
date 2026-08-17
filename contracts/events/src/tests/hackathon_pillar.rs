@@ -183,9 +183,9 @@ fn submit_open_without_prior_apply_creates_anchor() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../project.json");
     let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op);
+    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
 
-    let sub = ctx.events.get_submission(&id, &ctx.applicant);
+    let sub = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
     assert_eq!(sub.applicant, ctx.applicant);
     assert_eq!(sub.content_uri, uri);
     assert_eq!(sub.submitted_at, ctx.env.ledger().timestamp());
@@ -198,14 +198,19 @@ fn resubmit_keeps_original_timestamp_and_updates_uri() {
 
     let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     let op_a = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri_a, &op_a);
-    let first_time = ctx.events.get_submission(&id, &ctx.applicant).submitted_at;
+    ctx.events
+        .submit(&id, &ctx.applicant, &0_u32, &uri_a, &op_a);
+    let first_time = ctx
+        .events
+        .get_submission(&id, &ctx.applicant, &0_u32)
+        .submitted_at;
 
     let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
     let op_b = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri_b, &op_b);
+    ctx.events
+        .submit(&id, &ctx.applicant, &0_u32, &uri_b, &op_b);
 
-    let second = ctx.events.get_submission(&id, &ctx.applicant);
+    let second = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
     assert_eq!(second.content_uri, uri_b);
     assert_eq!(second.submitted_at, first_time);
 }
@@ -217,9 +222,11 @@ fn submit_replayed_op_reverts() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op);
+    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
 
-    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
+    let res = ctx
+        .events
+        .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op);
     assert!(res.is_err(), "replayed submit op_id must revert");
 }
 
@@ -230,12 +237,13 @@ fn withdraw_submission_removes_anchor() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     let op_s = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op_s);
+    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op_s);
 
     let op_w = BytesN::random(&ctx.env);
-    ctx.events.withdraw_submission(&id, &ctx.applicant, &op_w);
+    ctx.events
+        .withdraw_submission(&id, &ctx.applicant, &0_u32, &op_w);
 
-    let res = ctx.events.try_get_submission(&id, &ctx.applicant);
+    let res = ctx.events.try_get_submission(&id, &ctx.applicant, &0_u32);
     assert!(res.is_err(), "withdrawn submission is no longer readable");
 }
 
@@ -248,6 +256,7 @@ fn remove_submission_on_nonexistent_entry_does_not_corrupt_counter() {
     ctx.events.submit(
         &id,
         &submitter,
+        &0_u32,
         &String::from_str(&ctx.env, "ipfs://Qm.../v1.json"),
         &BytesN::random(&ctx.env),
     );
@@ -256,7 +265,7 @@ fn remove_submission_on_nonexistent_entry_does_not_corrupt_counter() {
     // directly for it must be a no-op, not decrement the counter that
     // `submitter`'s real submission incremented.
     ctx.env.as_contract(&ctx.events_id, || {
-        storage::remove_submission(&ctx.env, id, &ctx.applicant);
+        storage::remove_submission(&ctx.env, id, &ctx.applicant, 0);
     });
 
     let count = ctx
@@ -275,9 +284,9 @@ fn withdraw_submission_frees_the_slot_for_future_submitters() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     ctx.events
-        .submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
+        .submit(&id, &ctx.applicant, &0_u32, &uri, &BytesN::random(&ctx.env));
     ctx.events
-        .withdraw_submission(&id, &ctx.applicant, &BytesN::random(&ctx.env));
+        .withdraw_submission(&id, &ctx.applicant, &0_u32, &BytesN::random(&ctx.env));
 
     let count = ctx
         .env
@@ -304,7 +313,7 @@ fn submit_beyond_former_cap_succeeds() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../v5001.json");
     ctx.events
-        .submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
+        .submit(&id, &ctx.applicant, &0_u32, &uri, &BytesN::random(&ctx.env));
 
     let count = ctx
         .env
@@ -329,7 +338,10 @@ fn submit_at_counter_overflow_reverts() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../overflow.json");
     let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_submit(&id, &ctx.applicant, &uri, &op));
+    let err = expect_op_err(
+        ctx.events
+            .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op),
+    );
     assert_eq!(
         err,
         Error::TooManyContributors,
@@ -345,7 +357,10 @@ fn submit_oversized_content_uri_reverts() {
     let too_long = "x".repeat((MAX_CONTENT_URI_LEN + 1) as usize);
     let uri = String::from_str(&ctx.env, &too_long);
     let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_submit(&id, &ctx.applicant, &uri, &op));
+    let err = expect_op_err(
+        ctx.events
+            .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op),
+    );
     // Reused rather than a new variant — stays inside the contracterror
     // 50-variant cap (see BACKLOG.md L7 for precedent).
     assert_eq!(
@@ -361,8 +376,13 @@ fn resubmit_by_existing_applicant_does_not_increment_submission_count() {
     let id = create_hackathon(&ctx);
 
     let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &uri_a, &BytesN::random(&ctx.env));
+    ctx.events.submit(
+        &id,
+        &ctx.applicant,
+        &0_u32,
+        &uri_a,
+        &BytesN::random(&ctx.env),
+    );
 
     let count_after_first = ctx
         .env
@@ -370,8 +390,13 @@ fn resubmit_by_existing_applicant_does_not_increment_submission_count() {
     assert_eq!(count_after_first, 1);
 
     let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &uri_b, &BytesN::random(&ctx.env));
+    ctx.events.submit(
+        &id,
+        &ctx.applicant,
+        &0_u32,
+        &uri_b,
+        &BytesN::random(&ctx.env),
+    );
 
     let count_after_second = ctx
         .env

@@ -410,7 +410,7 @@ fn submit_on_crowdfunding_reverts() {
 
     let op = BytesN::random(&ctx.env);
     let uri = String::from_str(&ctx.env, "ipfs://nope");
-    let res = ctx.events.try_submit(&id, &ctx.builder, &uri, &op);
+    let res = ctx.events.try_submit(&id, &ctx.builder, &0_u32, &uri, &op);
     assert!(res.is_err());
 }
 

@@ -175,6 +175,8 @@ pub enum DataKey {
     EventApplicantAt(u64, u32),
     EventApplicantSlot(u64, Address),
 
+    /// Pre-1.7.0 single-submission key. Read only by `migrate`, which moves
+    /// each row to slot 0 of `EventSubmissionEntry`. Never write this.
     EventSubmission(u64, Address),
 
     EventWinnerCount(u64),
@@ -222,6 +224,12 @@ pub enum DataKey {
     // only drops at claim time, so without this a second selection would see
     // funds an earlier winner is still entitled to and could promise them twice.
     EventOwedTotal(u64),
+
+    // Appended in 1.7.0. Submissions gain a caller-chosen slot, so one wallet
+    // may hold several distinct entries in one event. The contract assigns no
+    // meaning to the slot; callers use it for whatever separates their entries.
+    EventSubmissionEntry(u64, Address, u32),
+    EventApplicantSubmissionCount(u64, Address),
 }
 
 // ============================================================

@@ -447,7 +447,7 @@ fn withdraw_after_submit_reverts() {
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
     let op_submit = BytesN::random(&ctx.env);
     ctx.events
-        .submit(&bounty_id, &ctx.applicant, &uri, &op_submit);
+        .submit(&bounty_id, &ctx.applicant, &0_u32, &uri, &op_submit);
 
     let op_wd = BytesN::random(&ctx.env);
     let err = expect_op_err(ctx.events.try_withdraw_application(
@@ -526,4 +526,166 @@ fn withdraw_requires_applicant_auth() {
     let auths = ctx.env.auths();
     let applicant_required = auths.iter().any(|(addr, _)| *addr == ctx.applicant);
     assert!(applicant_required, "withdraw must demand applicant auth");
+}
+
+// ============================================================
+// Submission slots: several distinct entries per wallet
+// ============================================================
+
+#[test]
+fn one_wallet_holds_several_submissions_in_distinct_slots() {
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    ctx.events.submit(
+        &bounty_id,
+        &ctx.applicant,
+        &0_u32,
+        &String::from_str(&ctx.env, "ipfs://design"),
+        &BytesN::random(&ctx.env),
+    );
+    ctx.events.submit(
+        &bounty_id,
+        &ctx.applicant,
+        &1_u32,
+        &String::from_str(&ctx.env, "ipfs://article"),
+        &BytesN::random(&ctx.env),
+    );
+
+    // Neither entry overwrites the other; the slot is what tells them apart.
+    assert_eq!(
+        ctx.events
+            .get_submission(&bounty_id, &ctx.applicant, &0_u32)
+            .content_uri,
+        String::from_str(&ctx.env, "ipfs://design")
+    );
+    assert_eq!(
+        ctx.events
+            .get_submission(&bounty_id, &ctx.applicant, &1_u32)
+            .content_uri,
+        String::from_str(&ctx.env, "ipfs://article")
+    );
+    assert_eq!(
+        ctx.events
+            .get_applicant_submission_count(&bounty_id, &ctx.applicant),
+        2
+    );
+}
+
+#[test]
+fn resubmitting_to_an_occupied_slot_updates_it_without_recounting() {
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    ctx.events.submit(
+        &bounty_id,
+        &ctx.applicant,
+        &0_u32,
+        &String::from_str(&ctx.env, "ipfs://v1"),
+        &BytesN::random(&ctx.env),
+    );
+    let first = ctx
+        .events
+        .get_submission(&bounty_id, &ctx.applicant, &0_u32);
+
+    ctx.events.submit(
+        &bounty_id,
+        &ctx.applicant,
+        &0_u32,
+        &String::from_str(&ctx.env, "ipfs://v2"),
+        &BytesN::random(&ctx.env),
+    );
+    let second = ctx
+        .events
+        .get_submission(&bounty_id, &ctx.applicant, &0_u32);
+
+    assert_eq!(second.content_uri, String::from_str(&ctx.env, "ipfs://v2"));
+    assert_eq!(
+        second.submitted_at, first.submitted_at,
+        "an update keeps the original submission time"
+    );
+    assert_eq!(
+        ctx.events
+            .get_applicant_submission_count(&bounty_id, &ctx.applicant),
+        1
+    );
+}
+
+#[test]
+fn withdrawing_one_slot_leaves_the_others_intact() {
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    for slot in 0..3_u32 {
+        ctx.events.submit(
+            &bounty_id,
+            &ctx.applicant,
+            &slot,
+            &String::from_str(&ctx.env, "ipfs://entry"),
+            &BytesN::random(&ctx.env),
+        );
+    }
+
+    ctx.events.withdraw_submission(
+        &bounty_id,
+        &ctx.applicant,
+        &1_u32,
+        &BytesN::random(&ctx.env),
+    );
+
+    assert_eq!(
+        ctx.events
+            .get_applicant_submission_count(&bounty_id, &ctx.applicant),
+        2
+    );
+    assert!(ctx
+        .events
+        .try_get_submission(&bounty_id, &ctx.applicant, &1_u32)
+        .is_err());
+    assert!(ctx
+        .events
+        .try_get_submission(&bounty_id, &ctx.applicant, &0_u32)
+        .is_ok());
+    assert!(ctx
+        .events
+        .try_get_submission(&bounty_id, &ctx.applicant, &2_u32)
+        .is_ok());
+}
+
+#[test]
+fn application_withdrawal_stays_blocked_while_any_slot_is_filled() {
+    let ctx = setup();
+    let bounty_id = create_bounty(&ctx);
+    ctx.events
+        .apply_to_bounty(&bounty_id, &ctx.applicant, &BytesN::random(&ctx.env));
+
+    // Occupying a slot other than 0 must still block application withdrawal;
+    // the gate asks whether any entry exists, not whether slot 0 does.
+    ctx.events.submit(
+        &bounty_id,
+        &ctx.applicant,
+        &7_u32,
+        &String::from_str(&ctx.env, "ipfs://entry"),
+        &BytesN::random(&ctx.env),
+    );
+
+    assert!(ctx
+        .events
+        .try_withdraw_application(&bounty_id, &ctx.applicant, &BytesN::random(&ctx.env))
+        .is_err());
+
+    ctx.events.withdraw_submission(
+        &bounty_id,
+        &ctx.applicant,
+        &7_u32,
+        &BytesN::random(&ctx.env),
+    );
+    ctx.events
+        .withdraw_application(&bounty_id, &ctx.applicant, &BytesN::random(&ctx.env));
 }

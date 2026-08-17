@@ -544,6 +544,7 @@ pub fn submit(
     env: &Env,
     event_id: u64,
     applicant: Address,
+    slot: u32,
     content_uri: String,
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
@@ -566,20 +567,20 @@ pub fn submit(
         return Err(Error::TitleTooLong);
     }
 
-    let existing = storage::get_submission(env, event_id, &applicant);
+    let existing = storage::get_submission(env, event_id, &applicant, slot);
 
-    if existing.is_none() {
+    if !storage::has_any_submission(env, event_id, &applicant) {
         let needs_application = matches!(event.pillar, Pillar::Bounty | Pillar::Grant);
         if needs_application && storage::applicant_slot(env, event_id, &applicant) == 0 {
             return Err(Error::ApplicantNotApplied);
         }
     }
 
-    // Count the submission before writing. There is no cap: each submission
-    // is its own ledger entry whose write and rent are paid by the
-    // submitter's transaction, so spam addresses fund their own storage and
-    // cannot lock real participants out of a full event.
-    storage::append_submission(env, event_id, &applicant)?;
+    // Count the slot before writing. There is no cap: each entry is its own
+    // ledger entry whose write and rent are paid by the submitter's
+    // transaction, so spam addresses fund their own storage and cannot lock
+    // real participants out of a full event.
+    storage::append_submission(env, event_id, &applicant, slot)?;
 
     let submitted_at = existing
         .as_ref()
@@ -591,7 +592,7 @@ pub fn submit(
         content_uri: content_uri.clone(),
         submitted_at,
     };
-    storage::set_submission(env, event_id, &applicant, &submission);
+    storage::set_submission(env, event_id, &applicant, slot, &submission);
 
     evt::Submitted {
         event_id,
@@ -611,6 +612,7 @@ pub fn withdraw_submission(
     env: &Env,
     event_id: u64,
     applicant: Address,
+    slot: u32,
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
@@ -623,11 +625,11 @@ pub fn withdraw_submission(
     applicant.require_auth();
     idempotency::require_unseen(env, &applicant, &op_id)?;
 
-    if storage::get_submission(env, event_id, &applicant).is_none() {
+    if storage::get_submission(env, event_id, &applicant, slot).is_none() {
         return Err(Error::SubmissionNotFound);
     }
 
-    storage::remove_submission(env, event_id, &applicant);
+    storage::remove_submission(env, event_id, &applicant, slot);
 
     evt::SubmissionWithdrawn {
         event_id,
@@ -941,8 +943,13 @@ pub fn get_event(env: &Env, event_id: u64) -> Result<EventRecord, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)
 }
 
-pub fn get_submission(env: &Env, event_id: u64, applicant: Address) -> Result<Submission, Error> {
-    storage::get_submission(env, event_id, &applicant).ok_or(Error::SubmissionNotFound)
+pub fn get_submission(
+    env: &Env,
+    event_id: u64,
+    applicant: Address,
+    slot: u32,
+) -> Result<Submission, Error> {
+    storage::get_submission(env, event_id, &applicant, slot).ok_or(Error::SubmissionNotFound)
 }
 
 // Full-list getters return the first VIEW_PAGE_LIMIT entries; use the

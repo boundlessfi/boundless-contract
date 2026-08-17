@@ -340,8 +340,31 @@ fn migrate_prize_floors(env: &Env) {
             };
             env.storage().persistent().set(&key, &migrated);
         }
+        migrate_submissions_to_slots(env, id);
         id = id.saturating_add(1);
         scanned = scanned.saturating_add(1);
+    }
+}
+
+/// Moves each pre-1.7.0 submission to slot 0 of the slotted key and seeds the
+/// per-applicant counter. Without this the re-key would orphan every historical
+/// submission: the old rows would still occupy storage but no read path could
+/// reach them.
+///
+/// The applicant index bounds the work, so this only touches wallets the event
+/// already knows about.
+fn migrate_submissions_to_slots(env: &Env, event_id: u64) {
+    let applicants = storage::applicant_count(env, event_id);
+    for idx in 0..applicants {
+        let applicant = match storage::applicant_at(env, event_id, idx) {
+            Some(a) => a,
+            None => continue,
+        };
+        if let Some(legacy) = storage::get_legacy_submission(env, event_id, &applicant) {
+            storage::set_submission(env, event_id, &applicant, 0, &legacy);
+            storage::seed_applicant_submission_count(env, event_id, &applicant, 1);
+            storage::remove_legacy_submission(env, event_id, &applicant);
+        }
     }
 }
 

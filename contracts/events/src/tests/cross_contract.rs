@@ -579,9 +579,9 @@ fn hackathon_submit_creates_anchor_without_prior_apply() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../project.json");
     let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op);
+    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
 
-    let sub = ctx.events.get_submission(&id, &ctx.applicant);
+    let sub = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
     assert_eq!(sub.applicant, ctx.applicant);
     assert_eq!(sub.content_uri, uri);
     assert_eq!(sub.submitted_at, ctx.env.ledger().timestamp());
@@ -594,7 +594,9 @@ fn bounty_submit_requires_prior_application() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
     let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
+    let res = ctx
+        .events
+        .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op);
     assert!(res.is_err(), "submit before apply on bounty should revert");
 }
 
@@ -608,9 +610,10 @@ fn bounty_submit_succeeds_after_apply() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
     let op_submit = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op_submit);
+    ctx.events
+        .submit(&id, &ctx.applicant, &0_u32, &uri, &op_submit);
 
-    let sub = ctx.events.get_submission(&id, &ctx.applicant);
+    let sub = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
     assert_eq!(sub.content_uri, uri);
 }
 
@@ -621,16 +624,18 @@ fn resubmit_preserves_original_submitted_at_and_updates_uri() {
 
     let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     let op_a = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri_a, &op_a);
+    ctx.events
+        .submit(&id, &ctx.applicant, &0_u32, &uri_a, &op_a);
 
-    let first = ctx.events.get_submission(&id, &ctx.applicant);
+    let first = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
     let first_time = first.submitted_at;
 
     let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
     let op_b = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri_b, &op_b);
+    ctx.events
+        .submit(&id, &ctx.applicant, &0_u32, &uri_b, &op_b);
 
-    let second = ctx.events.get_submission(&id, &ctx.applicant);
+    let second = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
     assert_eq!(second.content_uri, uri_b);
     assert_eq!(
         second.submitted_at, first_time,
@@ -645,9 +650,11 @@ fn submit_replayed_reverts() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op);
+    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
 
-    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
+    let res = ctx
+        .events
+        .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op);
     assert!(res.is_err(), "replayed submit should revert");
 }
 
@@ -658,12 +665,14 @@ fn withdraw_submission_removes_anchor() {
 
     let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     let op_submit = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op_submit);
+    ctx.events
+        .submit(&id, &ctx.applicant, &0_u32, &uri, &op_submit);
 
     let op_wd = BytesN::random(&ctx.env);
-    ctx.events.withdraw_submission(&id, &ctx.applicant, &op_wd);
+    ctx.events
+        .withdraw_submission(&id, &ctx.applicant, &0_u32, &op_wd);
 
-    let res = ctx.events.try_get_submission(&id, &ctx.applicant);
+    let res = ctx.events.try_get_submission(&id, &ctx.applicant, &0_u32);
     assert!(res.is_err(), "withdrawn submission should not be readable");
 }
 
@@ -675,7 +684,7 @@ fn withdraw_submission_without_submission_reverts() {
     let op_wd = BytesN::random(&ctx.env);
     let res = ctx
         .events
-        .try_withdraw_submission(&id, &ctx.applicant, &op_wd);
+        .try_withdraw_submission(&id, &ctx.applicant, &0_u32, &op_wd);
     assert!(
         res.is_err(),
         "withdraw without prior submission should revert"
