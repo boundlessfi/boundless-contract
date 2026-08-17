@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, panic_with_error, Address, BytesN, Env, Map, String};
+use soroban_sdk::{contracttype, panic_with_error, Address, BytesN, Env, Map, String, Symbol, Val};
 
 use crate::errors::Error;
 use crate::events as evt;
@@ -275,9 +275,12 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     // ============================================================
     // PER-(from -> to) MIGRATION DISPATCH
     // ============================================================
-    if current == String::from_str(env, INITIAL_VERSION) {
-        migrate_prize_floors(env)?;
-    }
+    // Run unconditionally rather than gating on an exact version string:
+    // propose_upgrade accepts any non-empty version, so a differently-spelled
+    // one would silently skip the rewrite and still stamp the marker, leaving
+    // every legacy event undecodable with no way to re-run. The pass skips
+    // rows already in the current layout, so running it always is safe.
+    migrate_prize_floors(env)?;
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);
@@ -315,7 +318,20 @@ fn migrate_prize_floors(env: &Env) -> Result<(), Error> {
 
     while id < next {
         let key = DataKey::Event(id);
-        let legacy: Option<LegacyEventRecord> = env.storage().persistent().get(&key);
+        // Decode defensively. `get::<LegacyEventRecord>` unwraps the
+        // conversion, and a missing field escalates to a host error rather
+        // than a catchable one, so a row already in the 1.7.0 layout would
+        // abort the whole invocation instead of being skipped. A contracttype
+        // struct is stored as a map keyed by field name, so the old layout is
+        // identified by the field that only it carries.
+        let fields: Option<Map<Symbol, Val>> = env.storage().persistent().get(&key);
+        let is_legacy =
+            fields.is_some_and(|f| f.contains_key(Symbol::new(env, "winner_distribution")));
+        let legacy: Option<LegacyEventRecord> = if is_legacy {
+            env.storage().persistent().get(&key)
+        } else {
+            None
+        };
         if let Some(old) = legacy {
             let mut floors: Map<u32, i128> = Map::new(env);
             for (position, percent) in old.winner_distribution.iter() {

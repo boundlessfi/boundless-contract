@@ -519,9 +519,13 @@ pub fn append_submission(env: &Env, id: u64, addr: &Address, slot: u32) -> Resul
     // already counted in the per-event total before the upgrade.
     if slot == 0 && get_legacy_submission(env, id, addr).is_some() {
         remove_legacy_submission(env, id, addr);
-        if applicant_submission_count(env, id, addr) == 0 {
-            set_applicant_submission_count(env, id, addr, 1);
-        }
+        // Increment rather than set: the applicant may already hold slotted
+        // entries, and folding adds one more. Setting it to 1 would undercount
+        // and let has_any_submission go false while a slot is still occupied.
+        let per_applicant = applicant_submission_count(env, id, addr)
+            .checked_add(1)
+            .ok_or(Error::TooManyContributors)?;
+        set_applicant_submission_count(env, id, addr, per_applicant);
         return Ok(());
     }
     if get_submission(env, id, addr, slot).is_some() {

@@ -410,6 +410,137 @@ fn migrate_refuses_to_stamp_when_the_id_range_exceeds_the_cap() {
 }
 
 #[test]
+fn migrate_skips_rows_already_in_the_current_layout() {
+    // A fresh 1.7.0 deployment writes new-layout events, and the runbook still
+    // calls migrate() after apply. Decoding those as the legacy shape used to
+    // abort the whole invocation.
+    let ctx = setup(250);
+    let event_id = ctx.client.id_base() + 1;
+    let mut floors = Map::new(&ctx.env);
+    floors.set(1, 500_i128);
+    let current = crate::types::EventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: 1_000_i128,
+        remaining_escrow: 1_000_i128,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Active,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/new"),
+        title: String::from_str(&ctx.env, "Already Migrated"),
+        created_at: 1,
+        deadline: None,
+        prize_floors: floors,
+        fee_bps_override: None,
+    };
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &current);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+    });
+
+    ctx.client.migrate();
+
+    let after = ctx.client.get_event(&event_id);
+    assert_eq!(after.prize_floors.get(1), Some(500_i128));
+    assert_eq!(after.title, String::from_str(&ctx.env, "Already Migrated"));
+}
+
+#[test]
+fn migrate_runs_regardless_of_how_the_version_was_spelled() {
+    // propose_upgrade accepts any non-empty string. Gating the rewrite on an
+    // exact match would silently skip it and still stamp the marker.
+    let ctx = setup(250);
+    let event_id = ctx.client.id_base() + 1;
+    let budget = 1_000_0000000_i128;
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 100_u32);
+    let legacy = LegacyEventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: budget,
+        remaining_escrow: 0,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Completed,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/legacy"),
+        title: String::from_str(&ctx.env, "Oddly Versioned"),
+        created_at: 1,
+        deadline: None,
+        winner_distribution: dist,
+        fee_bps_override: None,
+    };
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &legacy);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+        // The operator proposed the upgrade as "v1.7.0" rather than "1.7.0".
+        storage::set_version(&ctx.env, &String::from_str(&ctx.env, "v1.7.0"));
+    });
+
+    ctx.client.migrate();
+
+    let migrated = ctx.client.get_event(&event_id);
+    assert_eq!(migrated.prize_floors.get(1), Some(budget));
+}
+
+#[test]
+fn folding_a_legacy_row_adds_to_the_applicants_existing_slots() {
+    let ctx = setup(250);
+    let applicant = Address::generate(&ctx.env);
+    let event_id = ctx.client.id_base() + 1;
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        // An unmigrated row, plus a slotted entry the applicant already holds.
+        ctx.env.storage().persistent().set(
+            &DataKey::EventSubmission(event_id, applicant.clone()),
+            &Submission {
+                applicant: applicant.clone(),
+                content_uri: String::from_str(&ctx.env, "ipfs://legacy"),
+                submitted_at: 1,
+            },
+        );
+        storage::append_submission(&ctx.env, event_id, &applicant, 1).unwrap();
+        storage::set_submission(
+            &ctx.env,
+            event_id,
+            &applicant,
+            1,
+            &Submission {
+                applicant: applicant.clone(),
+                content_uri: String::from_str(&ctx.env, "ipfs://slot-one"),
+                submitted_at: 2,
+            },
+        );
+
+        // Folding the legacy row into slot 0 must count it, not overwrite.
+        storage::append_submission(&ctx.env, event_id, &applicant, 0).unwrap();
+        assert_eq!(
+            storage::applicant_submission_count(&ctx.env, event_id, &applicant),
+            2
+        );
+
+        storage::remove_submission(&ctx.env, event_id, &applicant, 0);
+        assert!(
+            storage::has_any_submission(&ctx.env, event_id, &applicant),
+            "slot 1 is still occupied, so the application must stay locked"
+        );
+    });
+}
+
+#[test]
 fn migrate_is_a_no_op_on_a_fresh_deployment() {
     let ctx = setup(250);
     ctx.client.migrate();
