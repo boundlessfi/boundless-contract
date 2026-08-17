@@ -424,8 +424,16 @@ pub fn get_submission(env: &Env, id: u64, applicant: &Address, slot: u32) -> Opt
     let s: Option<Submission> = env.storage().persistent().get(&key);
     if s.is_some() {
         touch_event_persistent(env, &key);
+        return s;
     }
-    s
+    // Pre-1.7.0 rows have no slot and `migrate` can only reach the ones whose
+    // applicant is in the applicant index, which hackathons never populate.
+    // Reading them as slot 0 keeps every historical submission addressable
+    // regardless of pillar; the first write folds them into the slotted layout.
+    if slot == 0 {
+        return get_legacy_submission(env, id, applicant);
+    }
+    None
 }
 
 pub fn set_submission(env: &Env, id: u64, applicant: &Address, slot: u32, submission: &Submission) {
@@ -448,6 +456,7 @@ pub fn applicant_submission_count(env: &Env, id: u64, applicant: &Address) -> u3
 
 pub fn has_any_submission(env: &Env, id: u64, applicant: &Address) -> bool {
     applicant_submission_count(env, id, applicant) > 0
+        || get_legacy_submission(env, id, applicant).is_some()
 }
 
 fn set_applicant_submission_count(env: &Env, id: u64, applicant: &Address, count: u32) {
@@ -469,6 +478,11 @@ pub fn remove_submission(env: &Env, id: u64, applicant: &Address, slot: u32) {
 
     let key = DataKey::EventSubmissionEntry(id, applicant.clone(), slot);
     env.storage().persistent().remove(&key);
+    // An unmigrated row is addressed as slot 0; drop it too or it would keep
+    // answering reads after the withdrawal.
+    if slot == 0 {
+        remove_legacy_submission(env, id, applicant);
+    }
 
     let per_applicant = applicant_submission_count(env, id, applicant).saturating_sub(1);
     set_applicant_submission_count(env, id, applicant, per_applicant);
@@ -500,6 +514,16 @@ pub fn submission_count(env: &Env, id: u64) -> u32 {
 /// Returns `Error::TooManyContributors` only on u32 counter overflow — reused
 /// rather than a new variant since the errors enum is at the 50-case XDR cap.
 pub fn append_submission(env: &Env, id: u64, addr: &Address, slot: u32) -> Result<(), Error> {
+    // Fold an unmigrated pre-1.7.0 row into the slotted layout on first write,
+    // so the legacy key cannot linger and disagree with the counters. It was
+    // already counted in the per-event total before the upgrade.
+    if slot == 0 && get_legacy_submission(env, id, addr).is_some() {
+        remove_legacy_submission(env, id, addr);
+        if applicant_submission_count(env, id, addr) == 0 {
+            set_applicant_submission_count(env, id, addr, 1);
+        }
+        return Ok(());
+    }
     if get_submission(env, id, addr, slot).is_some() {
         return Ok(());
     }

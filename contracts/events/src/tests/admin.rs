@@ -8,7 +8,7 @@ use soroban_sdk::{
 use super::common::setup;
 use crate::errors::Error;
 use crate::storage;
-use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind, Submission};
+use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind, Submission, Winner};
 
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
@@ -291,6 +291,122 @@ fn migrate_moves_legacy_submissions_into_slot_zero() {
             "legacy row should be removed once copied"
         );
     });
+}
+
+#[test]
+fn legacy_submission_is_readable_when_the_applicant_index_never_saw_it() {
+    // Hackathon submitters never enter the applicant index, so migrate cannot
+    // enumerate them. Their rows must still be reachable as slot 0.
+    let ctx = setup(250);
+    let submitter = Address::generate(&ctx.env);
+    let event_id = ctx.client.id_base() + 1;
+
+    let legacy_submission = Submission {
+        applicant: submitter.clone(),
+        content_uri: String::from_str(&ctx.env, "ipfs://hackathon-entry"),
+        submitted_at: 7,
+    };
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env.storage().persistent().set(
+            &DataKey::EventSubmission(event_id, submitter.clone()),
+            &legacy_submission,
+        );
+    });
+
+    let found = ctx.client.get_submission(&event_id, &submitter, &0_u32);
+    assert_eq!(
+        found.content_uri,
+        String::from_str(&ctx.env, "ipfs://hackathon-entry")
+    );
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        assert!(
+            storage::has_any_submission(&ctx.env, event_id, &submitter),
+            "an unmigrated row must still block application withdrawal"
+        );
+    });
+}
+
+#[test]
+fn migrate_rewrites_zero_amount_grant_winners() {
+    // Pre-1.7.0 Multi selections stored amount 0 on the anchor row; leaving
+    // that would make every milestone claim revert with nothing to pay.
+    let ctx = setup(250);
+    let recipient = Address::generate(&ctx.env);
+    let event_id = ctx.client.id_base() + 1;
+    let budget = 1_000_0000000_i128;
+
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 100_u32);
+    let legacy_event = LegacyEventRecord {
+        id: event_id,
+        pillar: Pillar::Grant,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: budget,
+        remaining_escrow: budget,
+        release_kind: ReleaseKind::Multi(2),
+        status: EventStatus::Active,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant"),
+        title: String::from_str(&ctx.env, "Legacy Grant"),
+        created_at: 1,
+        deadline: None,
+        winner_distribution: dist,
+        fee_bps_override: None,
+    };
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &legacy_event);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+        storage::append_winner(
+            &ctx.env,
+            event_id,
+            &Winner {
+                recipient: recipient.clone(),
+                position: 1,
+                amount: 0,
+                milestone: None,
+                paid_at: None,
+            },
+        );
+    });
+
+    ctx.client.migrate();
+
+    let rows = ctx.client.get_winners(&event_id);
+    assert_eq!(
+        rows.get(0).unwrap().amount,
+        budget,
+        "the anchor must carry what the old percentage would have paid"
+    );
+}
+
+#[test]
+fn migrate_refuses_to_stamp_when_the_id_range_exceeds_the_cap() {
+    let ctx = setup(250);
+    let base = ctx.client.id_base();
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(base + 1_000));
+    });
+
+    assert!(
+        ctx.client.try_migrate().is_err(),
+        "a range beyond the cap must abort rather than half-migrate"
+    );
+    assert_eq!(
+        ctx.client.get_migrated_to_version(),
+        None,
+        "nothing may be stamped when work would be left undone"
+    );
 }
 
 #[test]

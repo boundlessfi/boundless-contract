@@ -125,7 +125,11 @@ pub fn claim_milestone(
     if !is_crowdfunding {
         // Crowdfunding never reserves, since it has no winner selection.
         let owed = storage::owed_total(env, event_id);
-        storage::set_owed_total(env, event_id, (owed - amount).max(0));
+        let owed_after = owed.checked_sub(amount).ok_or(Error::InsufficientEscrow)?;
+        if owed_after < 0 {
+            return Err(Error::InsufficientEscrow);
+        }
+        storage::set_owed_total(env, event_id, owed_after);
     }
     storage::mark_milestone_claimed(env, event_id, &recipient, milestone);
     if is_crowdfunding {

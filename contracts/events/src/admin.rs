@@ -5,7 +5,7 @@ use crate::events as evt;
 use crate::idempotency;
 use crate::storage;
 use crate::types::{
-    DataKey, EventRecord, EventStatus, PendingAdmin, PendingUpgrade, Pillar, ReleaseKind,
+    DataKey, EventRecord, EventStatus, PendingAdmin, PendingUpgrade, Pillar, ReleaseKind, Winner,
 };
 
 /// The pre-1.7.0 `EventRecord`, kept only so `migrate` can decode rows written
@@ -276,7 +276,7 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     // PER-(from -> to) MIGRATION DISPATCH
     // ============================================================
     if current == String::from_str(env, INITIAL_VERSION) {
-        migrate_prize_floors(env);
+        migrate_prize_floors(env)?;
     }
 
     storage::set_migrated_to_version(env, &current);
@@ -298,17 +298,22 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
 /// percent / 100` reproduces exactly what each position would have been paid.
 ///
 /// Bounded by the id counter: ids run from `id_base + 1` up to the next id to
-/// be issued, and the cap is a backstop against a corrupt counter rather than
-/// an expected limit.
-fn migrate_prize_floors(env: &Env) {
+/// be issued. The cap is a backstop against a corrupt counter, and it fails
+/// closed: exceeding it aborts before anything is stamped, because `migrate`
+/// is one-shot and a half-finished pass would leave the remaining events in a
+/// layout the current struct cannot decode, with no way to resume.
+fn migrate_prize_floors(env: &Env) -> Result<(), Error> {
     const MAX_ROWS: u64 = 256;
 
     let base = idempotency::id_base(env);
     let next = storage::get_next_event_id(env, base.saturating_add(1));
     let mut id = base.saturating_add(1);
-    let mut scanned: u64 = 0;
 
-    while id < next && scanned < MAX_ROWS {
+    if next.saturating_sub(id) > MAX_ROWS {
+        return Err(Error::EventIdOverflow);
+    }
+
+    while id < next {
         let key = DataKey::Event(id);
         let legacy: Option<LegacyEventRecord> = env.storage().persistent().get(&key);
         if let Some(old) = legacy {
@@ -341,8 +346,53 @@ fn migrate_prize_floors(env: &Env) {
             env.storage().persistent().set(&key, &migrated);
         }
         migrate_submissions_to_slots(env, id);
+        migrate_winner_amounts(env, id);
         id = id.saturating_add(1);
-        scanned = scanned.saturating_add(1);
+    }
+    Ok(())
+}
+
+/// Pre-1.7.0 `Multi` selections stored `amount: 0` on the anchor winner row,
+/// because a grant milestone derived its payout from the percentage
+/// distribution at claim time. `claim_milestone` now reads that amount, so an
+/// unrewritten row would compute a payout of zero and revert on every claim,
+/// with no way to re-select and no exit but cancelling the grant.
+///
+/// The floor for the winner's position is exactly what the old formula would
+/// have produced, since both are `total_budget * percent / 100`.
+fn migrate_winner_amounts(env: &Env, event_id: u64) {
+    let event = match storage::get_event(env, event_id) {
+        Some(e) => e,
+        None => return,
+    };
+    if !matches!(event.release_kind, ReleaseKind::Multi(_)) {
+        return;
+    }
+    let count = storage::winner_count(env, event_id);
+    for idx in 0..count {
+        let w = match storage::winner_at(env, event_id, idx) {
+            Some(w) => w,
+            None => continue,
+        };
+        // Milestone rows already carry what was actually paid; only the anchor
+        // was written with a placeholder amount.
+        if w.milestone.is_some() || w.amount != 0 {
+            continue;
+        }
+        if let Some(floor) = event.prize_floors.get(w.position) {
+            storage::set_winner_at(
+                env,
+                event_id,
+                idx,
+                &Winner {
+                    recipient: w.recipient.clone(),
+                    position: w.position,
+                    amount: floor,
+                    milestone: None,
+                    paid_at: w.paid_at,
+                },
+            );
+        }
     }
 }
 

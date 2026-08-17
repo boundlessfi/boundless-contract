@@ -597,6 +597,7 @@ pub fn submit(
     evt::Submitted {
         event_id,
         applicant: applicant.clone(),
+        slot,
         content_uri,
     }
     .publish(env);
@@ -634,6 +635,7 @@ pub fn withdraw_submission(
     evt::SubmissionWithdrawn {
         event_id,
         applicant: applicant.clone(),
+        slot,
     }
     .publish(env);
 
@@ -892,9 +894,15 @@ pub fn claim_prize(
     storage::set_unclaimed_prize_count(env, event_id, unclaimed.saturating_sub(1));
 
     // Claiming converts owed into paid; both balances drop together so the
-    // reservation in select_winners stays exact.
+    // reservation in select_winners stays exact. Checked rather than clamped:
+    // owed dropping below a claim means the reservation has already drifted,
+    // and swallowing that would let the next selection over-promise the pool.
     let owed = storage::owed_total(env, event_id);
-    storage::set_owed_total(env, event_id, (owed - amount).max(0));
+    let owed_after = owed.checked_sub(amount).ok_or(Error::InsufficientEscrow)?;
+    if owed_after < 0 {
+        return Err(Error::InsufficientEscrow);
+    }
+    storage::set_owed_total(env, event_id, owed_after);
 
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     if event.remaining_escrow == 0 {
