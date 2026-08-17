@@ -71,9 +71,9 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn single_dist_100_at_1(env: &Env) -> Map<u32, u32> {
+fn single_dist_100_at_1(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 10000000000_i128);
     m
 }
 
@@ -87,7 +87,7 @@ fn create_campaign(ctx: &Ctx, milestones: u32) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/cf/1"),
         title: String::from_str(&ctx.env, "Open-Source Crawler"),
         deadline: Some(ctx.env.ledger().timestamp() + 30 * 86_400),
-        winner_distribution: single_dist_100_at_1(&ctx.env),
+        prize_floors: single_dist_100_at_1(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -149,7 +149,7 @@ fn create_rejects_single_release_kind() {
         content_uri: String::from_str(&ctx.env, "uri"),
         title: String::from_str(&ctx.env, "Bad CF"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist_100_at_1(&ctx.env),
+        prize_floors: single_dist_100_at_1(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -159,11 +159,11 @@ fn create_rejects_single_release_kind() {
 }
 
 #[test]
-fn create_rejects_distribution_with_multiple_positions() {
+fn create_rejects_floors_above_the_funding_goal() {
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 60);
-    dist.set(2, 40);
+    dist.set(1, FUNDING_GOAL);
+    dist.set(2, 1_i128);
     let params = CreateEventParams {
         pillar: Pillar::Crowdfunding,
         owner: ctx.builder.clone(),
@@ -173,7 +173,7 @@ fn create_rejects_distribution_with_multiple_positions() {
         content_uri: String::from_str(&ctx.env, "uri"),
         title: String::from_str(&ctx.env, "Bad CF"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -392,6 +392,7 @@ fn select_winners_on_crowdfunding_reverts() {
     let spec = WinnerSpec {
         recipient: ctx.builder.clone(),
         position: 1,
+        amount: 1_000_0000000_i128,
         reputation_bump: 0,
     };
     let mut winners = SorobanVec::new(&ctx.env);

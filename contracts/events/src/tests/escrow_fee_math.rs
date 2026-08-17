@@ -72,9 +72,11 @@ fn setup<'a>() -> Ctx<'a> {
     setup_with_bps(FEE_BPS)
 }
 
-fn single_dist(env: &Env) -> Map<u32, u32> {
+fn single_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    // Nominal: a floor is a minimum, so 1 stroop never constrains an
+    // award. Tests that exercise the floor rule set a real one.
+    m.set(1, 1_i128);
     m
 }
 
@@ -88,7 +90,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/fee-test"),
         title: String::from_str(&ctx.env, "Fee Math Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -106,7 +108,7 @@ fn create_hackathon_with_override(ctx: &Ctx, override_bps: u32) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/override"),
         title: String::from_str(&ctx.env, "Override BPS Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: Some(override_bps),
         manager: None,
     };
@@ -114,7 +116,7 @@ fn create_hackathon_with_override(ctx: &Ctx, override_bps: u32) -> u64 {
     ctx.events.create_event(&params, &op)
 }
 
-fn create_hackathon_with_dist(ctx: &Ctx, dist: Map<u32, u32>) -> u64 {
+fn create_hackathon_with_dist(ctx: &Ctx, dist: Map<u32, i128>) -> u64 {
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -124,7 +126,7 @@ fn create_hackathon_with_dist(ctx: &Ctx, dist: Map<u32, u32>) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/dist-test"),
         title: String::from_str(&ctx.env, "Dist Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -142,7 +144,7 @@ fn create_grant(ctx: &Ctx, milestones: u32) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant"),
         title: String::from_str(&ctx.env, "Grant Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -214,7 +216,7 @@ fn override_bps_above_max_rejected() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/bad"),
         title: String::from_str(&ctx.env, "Bad Override"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: Some(1001), // MAX_FEE_BPS = 1000
         manager: None,
     };
@@ -252,7 +254,7 @@ fn fee_rounds_down_non_divisible_amount() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/tiny"),
         title: String::from_str(&ctx.env, "Tiny"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -280,7 +282,7 @@ fn fee_rounding_on_odd_amounts() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/odd"),
         title: String::from_str(&ctx.env, "Odd"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -373,6 +375,7 @@ fn single_release_pays_full_escrow_for_100_percent() {
         WinnerSpec {
             recipient: winner.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50,
         },
     ];
@@ -393,9 +396,9 @@ fn multi_position_split_pays_correct_amounts() {
     let ctx = setup();
 
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 50);
-    dist.set(2, 30);
-    dist.set(3, 20);
+    dist.set(1, TOTAL_BUDGET * 50 / 100);
+    dist.set(2, TOTAL_BUDGET * 30 / 100);
+    dist.set(3, TOTAL_BUDGET * 20 / 100);
     let id = create_hackathon_with_dist(&ctx, dist);
 
     let w1 = Address::generate(&ctx.env);
@@ -406,16 +409,19 @@ fn multi_position_split_pays_correct_amounts() {
         WinnerSpec {
             recipient: w1.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 50
         },
         WinnerSpec {
             recipient: w2.clone(),
             position: 2,
+            amount: TOTAL_BUDGET * 30 / 100,
             reputation_bump: 30
         },
         WinnerSpec {
             recipient: w3.clone(),
             position: 3,
+            amount: TOTAL_BUDGET * 20 / 100,
             reputation_bump: 20
         },
     ];
@@ -443,9 +449,9 @@ fn three_way_33_33_34_split_rounding() {
     let ctx = setup();
 
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 33);
-    dist.set(2, 33);
-    dist.set(3, 34);
+    dist.set(1, TOTAL_BUDGET * 33 / 100);
+    dist.set(2, TOTAL_BUDGET * 33 / 100);
+    dist.set(3, TOTAL_BUDGET * 34 / 100);
     let id = create_hackathon_with_dist(&ctx, dist);
 
     let w1 = Address::generate(&ctx.env);
@@ -456,16 +462,19 @@ fn three_way_33_33_34_split_rounding() {
         WinnerSpec {
             recipient: w1.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 33 / 100,
             reputation_bump: 50
         },
         WinnerSpec {
             recipient: w2.clone(),
             position: 2,
+            amount: TOTAL_BUDGET * 33 / 100,
             reputation_bump: 30
         },
         WinnerSpec {
             recipient: w3.clone(),
             position: 3,
+            amount: TOTAL_BUDGET * 34 / 100,
             reputation_bump: 20
         },
     ];
@@ -493,8 +502,8 @@ fn partial_position_fill_leaves_residual_escrow() {
     let ctx = setup();
 
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 60);
-    dist.set(2, 40);
+    dist.set(1, TOTAL_BUDGET * 60 / 100);
+    dist.set(2, TOTAL_BUDGET * 40 / 100);
     let id = create_hackathon_with_dist(&ctx, dist);
 
     let w1 = Address::generate(&ctx.env);
@@ -503,6 +512,7 @@ fn partial_position_fill_leaves_residual_escrow() {
         WinnerSpec {
             recipient: w1.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 60 / 100,
             reputation_bump: 50
         },
     ];
@@ -526,7 +536,7 @@ fn partial_position_fill_leaves_residual_escrow() {
 // ============================================================
 
 #[test]
-fn partner_funds_grow_winner_payout() {
+fn partner_funds_enlarge_the_pool_without_repricing_awards() {
     let ctx = setup();
     let id = create_hackathon(&ctx);
 
@@ -538,15 +548,17 @@ fn partner_funds_grow_winner_payout() {
     ctx.events.add_funds(&id, &partner, &contrib, &op_add);
 
     let event = ctx.events.get_event(&id);
-    let escrow_at_select = event.remaining_escrow;
-    assert_eq!(escrow_at_select, TOTAL_BUDGET + contrib);
+    assert_eq!(event.remaining_escrow, TOTAL_BUDGET + contrib);
 
+    // A top-up has exactly one consequence: the pool is larger. Awards name
+    // their own amount, so nothing already advertised is silently repriced.
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: winner.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 50
         },
     ];
@@ -556,7 +568,111 @@ fn partner_funds_grow_winner_payout() {
         .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
-    assert_eq!(token.balance(&winner), escrow_at_select);
+    assert_eq!(token.balance(&winner), TOTAL_BUDGET);
+    assert_eq!(
+        ctx.events.get_event(&id).remaining_escrow,
+        contrib,
+        "the top-up stays in the pool, available to award or reclaim"
+    );
+}
+
+#[test]
+fn a_topped_up_pool_can_fund_a_position_that_had_no_floor() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let partner = Address::generate(&ctx.env);
+    let contrib = 500_0000000_i128;
+    let fee = contrib * FEE_BPS as i128 / 10_000;
+    fund(&ctx, &partner, contrib + fee);
+    ctx.events
+        .add_funds(&id, &partner, &contrib, &BytesN::random(&ctx.env));
+
+    let w1 = Address::generate(&ctx.env);
+    let w2 = Address::generate(&ctx.env);
+    ctx.events.select_winners(
+        &id,
+        &soroban_sdk::vec![
+            &ctx.env,
+            WinnerSpec {
+                recipient: w1.clone(),
+                position: 1,
+                amount: TOTAL_BUDGET,
+                reputation_bump: 0
+            },
+        ],
+        &BytesN::random(&ctx.env),
+    );
+    // Adding a prize after publish: position 2 carries no floor and is paid
+    // out of the headroom the top-up created.
+    ctx.events.select_winners(
+        &id,
+        &soroban_sdk::vec![
+            &ctx.env,
+            WinnerSpec {
+                recipient: w2.clone(),
+                position: 2,
+                amount: contrib,
+                reputation_bump: 0
+            },
+        ],
+        &BytesN::random(&ctx.env),
+    );
+
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    ctx.events
+        .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    assert_eq!(token.balance(&w1), TOTAL_BUDGET);
+    assert_eq!(token.balance(&w2), contrib);
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
+}
+
+#[test]
+fn second_batch_cannot_promise_funds_an_unclaimed_winner_is_owed() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let w1 = Address::generate(&ctx.env);
+    ctx.events.select_winners(
+        &id,
+        &soroban_sdk::vec![
+            &ctx.env,
+            WinnerSpec {
+                recipient: w1.clone(),
+                position: 1,
+                amount: TOTAL_BUDGET,
+                reputation_bump: 0
+            },
+        ],
+        &BytesN::random(&ctx.env),
+    );
+
+    // remaining_escrow still reads the full budget because w1 has not claimed.
+    // Without the owed reservation this second batch would be accepted and
+    // one of the two winners could never be paid.
+    let w2 = Address::generate(&ctx.env);
+    let res = ctx.events.try_select_winners(
+        &id,
+        &soroban_sdk::vec![
+            &ctx.env,
+            WinnerSpec {
+                recipient: w2.clone(),
+                position: 2,
+                amount: 1_i128,
+                reputation_bump: 0
+            },
+        ],
+        &BytesN::random(&ctx.env),
+    );
+    assert!(res.is_err(), "owed funds must not be promised twice");
+
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    assert_eq!(token.balance(&w1), TOTAL_BUDGET);
 }
 
 // ============================================================
@@ -575,6 +691,7 @@ fn grant_milestone_pays_floored_per_milestone() {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50
         },
     ];
@@ -616,6 +733,7 @@ fn grant_milestone_double_claim_rejected() {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50
         },
     ];
@@ -644,6 +762,7 @@ fn grant_milestone_out_of_range_rejected() {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50
         },
     ];
@@ -667,7 +786,7 @@ fn crowdfunding_dynamic_milestone_split() {
     let milestones = 3_u32;
 
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 100);
+    dist.set(1, TOTAL_BUDGET * 100 / 100);
     let params = CreateEventParams {
         pillar: Pillar::Crowdfunding,
         owner: ctx.owner.clone(),
@@ -677,7 +796,7 @@ fn crowdfunding_dynamic_milestone_split() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/crowd"),
         title: String::from_str(&ctx.env, "Crowd Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -725,7 +844,7 @@ fn crowdfunding_dynamic_rounding_no_dust() {
     let milestones = 3_u32;
 
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 100);
+    dist.set(1, TOTAL_BUDGET * 100 / 100);
     let params = CreateEventParams {
         pillar: Pillar::Crowdfunding,
         owner: ctx.owner.clone(),
@@ -735,7 +854,7 @@ fn crowdfunding_dynamic_rounding_no_dust() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/dust"),
         title: String::from_str(&ctx.env, "Dust Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -803,7 +922,7 @@ fn replayed_create_event_reverts() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/replay"),
         title: String::from_str(&ctx.env, "Replay"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -825,6 +944,7 @@ fn replayed_select_winners_reverts() {
         WinnerSpec {
             recipient: winner.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50
         },
     ];
@@ -848,6 +968,7 @@ fn select_winners_on_nonexistent_event_reverts() {
         WinnerSpec {
             recipient: winner.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50
         },
     ];
@@ -860,8 +981,8 @@ fn select_winners_on_nonexistent_event_reverts() {
 fn select_winners_duplicate_position_reverts() {
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 50);
-    dist.set(2, 50);
+    dist.set(1, TOTAL_BUDGET * 50 / 100);
+    dist.set(2, TOTAL_BUDGET * 50 / 100);
     let id = create_hackathon_with_dist(&ctx, dist);
 
     let w1 = Address::generate(&ctx.env);
@@ -871,11 +992,13 @@ fn select_winners_duplicate_position_reverts() {
         WinnerSpec {
             recipient: w1.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 50
         },
         WinnerSpec {
             recipient: w2.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 30
         },
     ];
@@ -885,9 +1008,9 @@ fn select_winners_duplicate_position_reverts() {
 }
 
 #[test]
-fn select_winners_invalid_position_reverts() {
+fn select_winners_accepts_a_position_with_no_floor() {
     let ctx = setup();
-    let id = create_hackathon(&ctx); // dist has only position 1
+    let id = create_hackathon(&ctx); // floors cover position 1 only
 
     let w = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
@@ -895,12 +1018,47 @@ fn select_winners_invalid_position_reverts() {
         WinnerSpec {
             recipient: w.clone(),
             position: 99,
+            amount: 10_0000000_i128,
+            reputation_bump: 50
+        },
+    ];
+    let op = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&id, &winners, &op);
+    ctx.events
+        .claim_prize(&id, &99_u32, &BytesN::random(&ctx.env));
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    assert_eq!(
+        token.balance(&w),
+        10_0000000_i128,
+        "a position with no floor is payable at any positive amount; this is \
+         how a prize is added after publish"
+    );
+}
+
+#[test]
+fn select_winners_below_floor_reverts() {
+    let ctx = setup();
+    let mut floors = Map::new(&ctx.env);
+    floors.set(1, TOTAL_BUDGET);
+    let id = create_hackathon_with_dist(&ctx, floors);
+
+    let w = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 1,
+            amount: TOTAL_BUDGET - 1,
             reputation_bump: 50
         },
     ];
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &winners, &op);
-    assert!(res.is_err(), "position not in distribution must revert");
+    assert!(
+        res.is_err(),
+        "an award below its advertised floor must revert"
+    );
 }
 
 #[test]
@@ -925,6 +1083,7 @@ fn select_winners_twice_reverts() {
         WinnerSpec {
             recipient: w.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50
         },
     ];
@@ -959,7 +1118,7 @@ fn large_budget_fee_does_not_overflow() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/big"),
         title: String::from_str(&ctx.env, "Big"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -1019,6 +1178,7 @@ fn select_winners_on_cancelled_event_reverts() {
         WinnerSpec {
             recipient: w.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50
         },
     ];
@@ -1051,12 +1211,15 @@ fn fee_and_winner_balances_consistent() {
 
     let escrow = TOTAL_BUDGET + contrib;
 
+    // Awarding the whole pool, top-up included, is a deliberate choice the
+    // selection makes rather than something a percentage does for it.
     let winner = Address::generate(&ctx.env);
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: winner.clone(),
             position: 1,
+            amount: escrow,
             reputation_bump: 50
         },
     ];
@@ -1066,7 +1229,11 @@ fn fee_and_winner_balances_consistent() {
         .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 
     assert_eq!(token.balance(&winner), escrow);
-    assert_eq!(token.balance(&ctx.fee_account), create_fee + contrib_fee);
+    assert_eq!(
+        token.balance(&ctx.fee_account),
+        create_fee + contrib_fee,
+        "fees are charged at funding, never at release"
+    );
 
     let event = ctx.events.get_event(&id);
     assert_eq!(event.remaining_escrow, 0);

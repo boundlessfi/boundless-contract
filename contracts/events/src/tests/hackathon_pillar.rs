@@ -87,21 +87,21 @@ fn expect_op_err<T, E>(
     }
 }
 
-fn single_winner_dist(env: &Env) -> Map<u32, u32> {
+fn single_winner_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 100000000000_i128);
     m
 }
 
-fn three_way_dist(env: &Env) -> Map<u32, u32> {
+fn three_way_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 50);
-    m.set(2, 30);
-    m.set(3, 20);
+    m.set(1, 50000000000_i128);
+    m.set(2, 30000000000_i128);
+    m.set(3, 20000000000_i128);
     m
 }
 
-fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, u32>, deadline: Option<u64>) -> u64 {
+fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, i128>, deadline: Option<u64>) -> u64 {
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -111,7 +111,7 @@ fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, u32>, deadline: Option<u64>) 
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Test Hackathon"),
         deadline,
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -163,7 +163,7 @@ fn create_rejects_multi_release_kind() {
         content_uri: String::from_str(&ctx.env, "uri"),
         title: String::from_str(&ctx.env, "Bad Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_winner_dist(&ctx.env),
+        prize_floors: single_winner_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -401,6 +401,7 @@ fn select_winners_single_recipient_sweeps_escrow() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 50,
         },
     ];
@@ -454,16 +455,19 @@ fn select_winners_multi_position_splits_by_distribution() {
         WinnerSpec {
             recipient: first.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 60,
         },
         WinnerSpec {
             recipient: second.clone(),
             position: 2,
+            amount: TOTAL_BUDGET * 30 / 100,
             reputation_bump: 40,
         },
         WinnerSpec {
             recipient: third.clone(),
             position: 3,
+            amount: TOTAL_BUDGET * 20 / 100,
             reputation_bump: 20,
         },
     ];
@@ -516,21 +520,25 @@ fn select_winners_empty_set_reverts() {
 }
 
 #[test]
-fn select_winners_position_not_in_distribution_reverts() {
+fn select_winners_allows_a_position_with_no_floor() {
     let ctx = setup();
-    let id = create_hackathon(&ctx); // distribution only has position 1
+    let id = create_hackathon(&ctx); // floors cover position 1 only
 
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 2,
+            amount: 1_0000000_i128,
             reputation_bump: 0,
         },
     ];
     let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_select_winners(&id, &winners, &op);
-    assert!(res.is_err(), "position outside distribution must revert");
+    ctx.events.select_winners(&id, &winners, &op);
+
+    let rows = ctx.events.get_winners(&id);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.get(0).unwrap().position, 2);
 }
 
 #[test]
@@ -545,11 +553,13 @@ fn select_winners_duplicate_position_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
         WinnerSpec {
             recipient: other,
             position: 1, // duplicate
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
     ];
@@ -569,6 +579,7 @@ fn select_winners_batches_append_and_position_replay_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
     ];
@@ -584,6 +595,7 @@ fn select_winners_batches_append_and_position_replay_reverts() {
         WinnerSpec {
             recipient: usurper,
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
     ];
@@ -601,11 +613,13 @@ fn select_winners_batches_append_and_position_replay_reverts() {
         WinnerSpec {
             recipient: second.clone(),
             position: 2,
+            amount: TOTAL_BUDGET * 30 / 100,
             reputation_bump: 0,
         },
         WinnerSpec {
             recipient: third.clone(),
             position: 3,
+            amount: TOTAL_BUDGET * 20 / 100,
             reputation_bump: 0,
         },
     ];
@@ -636,6 +650,7 @@ fn select_winners_replayed_op_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -654,6 +669,7 @@ fn select_winners_on_missing_event_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -672,6 +688,7 @@ fn select_winners_on_completed_event_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -689,6 +706,7 @@ fn select_winners_on_completed_event_reverts() {
         WinnerSpec {
             recipient: again,
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -710,6 +728,7 @@ fn select_winners_demands_owner_auth() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];

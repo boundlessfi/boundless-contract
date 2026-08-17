@@ -11,16 +11,7 @@ pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Re
         _ => return Err(Error::InvalidReleaseKind),
     }
 
-    if record.winner_distribution.len() != 1 {
-        return Err(Error::InvalidDistribution);
-    }
-    let percent = record
-        .winner_distribution
-        .get(1)
-        .ok_or(Error::InvalidDistribution)?;
-    if percent != 100 {
-        return Err(Error::DistributionMismatch);
-    }
-
+    // No floor check: crowdfunding pays milestones out of `remaining_escrow`
+    // divided by the milestones left, and never reads the prize floors.
     Ok(())
 }

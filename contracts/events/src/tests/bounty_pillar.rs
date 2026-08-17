@@ -69,9 +69,9 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn one_winner_distribution(env: &Env) -> Map<u32, u32> {
+fn one_winner_distribution(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 100000000000_i128);
     m
 }
 
@@ -89,7 +89,7 @@ fn create_bounty_with_deadline(ctx: &Ctx, deadline: u64) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/events/draft/x"),
         title: String::from_str(&ctx.env, "Test Bounty"),
         deadline: Some(deadline),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -107,7 +107,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Test Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -140,7 +140,7 @@ fn create_rejects_multi_release_kind() {
         content_uri: String::from_str(&ctx.env, "uri"),
         title: String::from_str(&ctx.env, "Bad Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -259,6 +259,7 @@ fn apply_on_completed_event_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: 10_000_0000000_i128,
             reputation_bump: 0,
         },
     ];

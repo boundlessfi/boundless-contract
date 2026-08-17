@@ -74,14 +74,22 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
         return Err(Error::InvalidBudget);
     }
 
-    if params.winner_distribution.is_empty() {
+    if params.prize_floors.is_empty() {
         return Err(Error::InvalidDistribution);
     }
-    let mut sum: u32 = 0;
-    for (_pos, percent) in params.winner_distribution.iter() {
-        sum = sum.saturating_add(percent);
+    // Floors may total less than the budget. The headroom is deliberate: it is
+    // what a later selection draws on to award a position that had no floor at
+    // create time.
+    let mut floor_sum: i128 = 0;
+    for (_pos, floor) in params.prize_floors.iter() {
+        if floor <= 0 {
+            return Err(Error::InvalidDistribution);
+        }
+        floor_sum = floor_sum
+            .checked_add(floor)
+            .ok_or(Error::DistributionMismatch)?;
     }
-    if sum != 100 {
+    if floor_sum > params.total_budget {
         return Err(Error::DistributionMismatch);
     }
 
@@ -112,7 +120,7 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
         title: params.title.clone(),
         created_at: env.ledger().timestamp(),
         deadline: params.deadline,
-        winner_distribution: params.winner_distribution.clone(),
+        prize_floors: params.prize_floors.clone(),
         fee_bps_override: params.fee_bps_override,
     };
     match params.pillar {
@@ -366,6 +374,12 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     let manager = resolve_manager(env, event_id, &event.owner);
     manager.require_auth();
     idempotency::require_unseen(env, &manager, &op_id)?;
+
+    // Cancelling supersedes every award: both claim paths require Active, so
+    // from here nothing can be claimed and the reservation must be released
+    // rather than withheld. Withholding it would strand the funds with no
+    // path back out. The guard above is what protects prizes still claimable.
+    storage::set_owed_total(env, event_id, 0);
 
     let remaining = event.remaining_escrow;
     let count = storage::contributor_count(env, event_id);
@@ -650,13 +664,9 @@ pub fn select_winners(
 
     let existing_count = storage::winner_count(env, event_id);
     match event.release_kind {
-        ReleaseKind::Single => {
-            // Winner rows but no base-escrow key means a pre-1.3.0 push-model
-            // event: keep it one-shot. New events award each position once.
-            if existing_count > 0 && storage::get_prize_base_escrow(env, event_id).is_none() {
-                return Err(Error::WinnersAlreadySelected);
-            }
-        }
+        // Single events award in as many batches as the manager likes; each
+        // position may be awarded once, enforced per position below.
+        ReleaseKind::Single => {}
         ReleaseKind::Multi(_) => {
             for idx in 0..existing_count {
                 if let Some(w) = storage::winner_at(env, event_id, idx) {
@@ -687,9 +697,6 @@ pub fn select_winners(
         if already {
             return Err(Error::DuplicateWinnerPosition);
         }
-        if event.winner_distribution.get(spec.position).is_none() {
-            return Err(Error::InvalidWinnerPosition);
-        }
         seen_positions.push_back(spec.position);
     }
 
@@ -697,42 +704,39 @@ pub fn select_winners(
 
     match event.release_kind {
         ReleaseKind::Single => {
-            // Amounts are fixed against the escrow baseline captured at the
-            // first selection; claim_prize does the transfer and profile calls.
-            let base_escrow = match storage::get_prize_base_escrow(env, event_id) {
-                Some(b) => b,
-                None => {
-                    let b = event.remaining_escrow;
-                    storage::set_prize_base_escrow(env, event_id, b);
-                    b
-                }
-            };
+            // `remaining_escrow` only drops at claim time, so a prize named by
+            // an earlier selection is still sitting in it. Reserving the owed
+            // total is what stops a later selection promising the same funds
+            // twice and leaving the second winner unable to claim.
+            let owed_before = storage::owed_total(env, event_id);
 
-            let mut total_owed: i128 = 0;
+            let mut batch_total: i128 = 0;
             for spec in winners.iter() {
                 if storage::get_prize_award(env, event_id, spec.position).is_some() {
                     return Err(Error::DuplicateWinnerPosition);
                 }
-                let percent = event
-                    .winner_distribution
-                    .get(spec.position)
-                    .ok_or(Error::InvalidDistribution)? as i128;
-                let amount = base_escrow.saturating_mul(percent) / 100_i128;
-                if amount <= 0 {
+                if spec.amount <= 0 {
                     return Err(Error::InvalidDistribution);
                 }
-                total_owed = total_owed.saturating_add(amount);
+                if let Some(floor) = event.prize_floors.get(spec.position) {
+                    if spec.amount < floor {
+                        return Err(Error::InvalidDistribution);
+                    }
+                }
+                batch_total = batch_total
+                    .checked_add(spec.amount)
+                    .ok_or(Error::InsufficientEscrow)?;
             }
-            if total_owed > event.remaining_escrow {
+            let committed = batch_total
+                .checked_add(owed_before)
+                .ok_or(Error::InsufficientEscrow)?;
+            if committed > event.remaining_escrow {
                 return Err(Error::InsufficientEscrow);
             }
+            storage::set_owed_total(env, event_id, committed);
 
             for (idx, spec) in winners.iter().enumerate() {
-                let percent = event
-                    .winner_distribution
-                    .get(spec.position)
-                    .ok_or(Error::InvalidDistribution)? as i128;
-                let amount = base_escrow.saturating_mul(percent) / 100_i128;
+                let amount = spec.amount;
 
                 let anchor_idx = existing_count + (idx as u32);
                 storage::append_winner(
@@ -773,6 +777,32 @@ pub fn select_winners(
             }
         }
         ReleaseKind::Multi(_) => {
+            // Same reservation as Single: milestone claims drain
+            // `remaining_escrow` gradually, so without it a second grantee
+            // could be awarded funds the first is still owed.
+            let owed_before = storage::owed_total(env, event_id);
+            let mut batch_total: i128 = 0;
+            for spec in winners.iter() {
+                if spec.amount <= 0 {
+                    return Err(Error::InvalidDistribution);
+                }
+                if let Some(floor) = event.prize_floors.get(spec.position) {
+                    if spec.amount < floor {
+                        return Err(Error::InvalidDistribution);
+                    }
+                }
+                batch_total = batch_total
+                    .checked_add(spec.amount)
+                    .ok_or(Error::InsufficientEscrow)?;
+            }
+            let committed = batch_total
+                .checked_add(owed_before)
+                .ok_or(Error::InsufficientEscrow)?;
+            if committed > event.remaining_escrow {
+                return Err(Error::InsufficientEscrow);
+            }
+            storage::set_owed_total(env, event_id, committed);
+
             for spec in winners.iter() {
                 storage::append_winner(
                     env,
@@ -780,7 +810,7 @@ pub fn select_winners(
                     &Winner {
                         recipient: spec.recipient.clone(),
                         position: spec.position,
-                        amount: 0,
+                        amount: spec.amount,
                         milestone: None,
                         paid_at: None,
                     },
@@ -858,6 +888,11 @@ pub fn claim_prize(
 
     let unclaimed = storage::unclaimed_prize_count(env, event_id);
     storage::set_unclaimed_prize_count(env, event_id, unclaimed.saturating_sub(1));
+
+    // Claiming converts owed into paid; both balances drop together so the
+    // reservation in select_winners stays exact.
+    let owed = storage::owed_total(env, event_id);
+    storage::set_owed_total(env, event_id, (owed - amount).max(0));
 
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     if event.remaining_escrow == 0 {

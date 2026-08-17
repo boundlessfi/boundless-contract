@@ -76,9 +76,9 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn dist_100(env: &Env) -> Map<u32, u32> {
+fn dist_100(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 100000000000_i128);
     m
 }
 
@@ -92,7 +92,7 @@ fn create_bounty(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/events/op-id-sec"),
         title: String::from_str(&ctx.env, "OpId Security"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist_100(&ctx.env),
+        prize_floors: dist_100(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -153,6 +153,7 @@ fn bootstrap_self_cannot_front_run_events_child_op_ids() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: 10_000_0000000_i128,
             reputation_bump: 50,
         },
     ];
@@ -236,7 +237,7 @@ fn event_id_overflow_reverts() {
         content_uri: String::from_str(env, "https://api.boundless.fi/events/overflow"),
         title: String::from_str(env, "Overflow"),
         deadline: Some(env.ledger().timestamp() + 86_400),
-        winner_distribution: dist_100(env),
+        prize_floors: dist_100(env),
         fee_bps_override: None,
         manager: None,
     };
@@ -295,6 +296,7 @@ fn permissionless_apply_cannot_squat_select_winners_op_id() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: 10_000_0000000_i128,
             reputation_bump: 0,
         },
     ];

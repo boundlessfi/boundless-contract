@@ -73,7 +73,11 @@ pub struct EventRecord {
     pub title: String,
     pub created_at: u64,
     pub deadline: Option<u64>,
-    pub winner_distribution: Map<u32, u32>,
+    /// Advertised minimum per position, in token-native units. `select_winners`
+    /// may pay above a floor but never below it, so a published prize table is
+    /// a guarantee rather than an estimate. Positions absent from the map carry
+    /// no floor and are payable at any positive amount.
+    pub prize_floors: Map<u32, i128>,
     pub fee_bps_override: Option<u32>,
 }
 
@@ -91,7 +95,7 @@ pub struct CreateEventParams {
     pub content_uri: String,
     pub title: String,
     pub deadline: Option<u64>,
-    pub winner_distribution: Map<u32, u32>,
+    pub prize_floors: Map<u32, i128>,
     pub fee_bps_override: Option<u32>,
     pub manager: Option<Address>,
 }
@@ -139,6 +143,10 @@ pub struct Winner {
 pub struct WinnerSpec {
     pub recipient: Address,
     pub position: u32,
+    /// Award amount in token-native units. Allocation happens here, at payout,
+    /// not at create: the event holds a pool and each selection names what it
+    /// spends from it.
+    pub amount: i128,
     pub reputation_bump: u32,
 }
 
@@ -209,6 +217,11 @@ pub enum DataKey {
 
     // Appended to cap per-event submission storage growth (security fix).
     EventSubmissionCount(u64),
+
+    // Appended in 1.7.0. Sum of awarded-but-unclaimed prizes. `remaining_escrow`
+    // only drops at claim time, so without this a second selection would see
+    // funds an earlier winner is still entitled to and could promise them twice.
+    EventOwedTotal(u64),
 }
 
 // ============================================================

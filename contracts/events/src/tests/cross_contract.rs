@@ -72,9 +72,11 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn one_winner_distribution(env: &Env) -> Map<u32, u32> {
+fn one_winner_distribution(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    // Nominal: a floor is a minimum, so 1 stroop never constrains an
+    // award. Tests that exercise the floor rule set a real one.
+    m.set(1, 1_i128);
     m
 }
 
@@ -88,7 +90,7 @@ fn create_bounty(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/events/draft/x"),
         title: String::from_str(&ctx.env, "Test Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -117,6 +119,7 @@ fn select_winners_pays_recipient_and_bumps_profile() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 50,
         },
     ];
@@ -152,7 +155,7 @@ fn select_winners_pays_recipient_and_bumps_profile() {
 }
 
 #[test]
-fn select_winners_requires_position_in_distribution() {
+fn select_winners_rejects_an_award_larger_than_the_pool() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);
 
@@ -160,7 +163,8 @@ fn select_winners_requires_position_in_distribution() {
         &ctx.env,
         WinnerSpec {
             recipient: ctx.applicant.clone(),
-            position: 2, // distribution only has position 1
+            position: 2,
+            amount: TOTAL_BUDGET + 1,
             reputation_bump: 50,
         },
     ];
@@ -168,7 +172,10 @@ fn select_winners_requires_position_in_distribution() {
     let res = ctx
         .events
         .try_select_winners(&bounty_id, &winners, &op_select);
-    assert!(res.is_err(), "invalid position should revert");
+    assert!(
+        res.is_err(),
+        "a position with no floor is allowed, but not one the pool cannot cover"
+    );
 }
 
 #[test]
@@ -177,8 +184,8 @@ fn select_winners_rejects_duplicate_position() {
     let owner = ctx.owner.clone();
     let token_addr = ctx.token_addr.clone();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 60);
-    dist.set(2, 40);
+    dist.set(1, 6_000_0000000_i128);
+    dist.set(2, 4_000_0000000_i128);
     let params = CreateEventParams {
         pillar: Pillar::Bounty,
         owner,
@@ -188,7 +195,7 @@ fn select_winners_rejects_duplicate_position() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/x"),
         title: String::from_str(&ctx.env, "Test Bounty 2"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -201,11 +208,13 @@ fn select_winners_rejects_duplicate_position() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 50,
         },
         WinnerSpec {
             recipient: other_recipient,
             position: 1, // duplicate
+            amount: TOTAL_BUDGET,
             reputation_bump: 25,
         },
     ];
@@ -220,8 +229,8 @@ fn select_winners_rejects_duplicate_position() {
 fn select_winners_handles_multi_recipient_distribution() {
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 60);
-    dist.set(2, 40);
+    dist.set(1, 6_000_0000000_i128);
+    dist.set(2, 4_000_0000000_i128);
     let params = CreateEventParams {
         pillar: Pillar::Bounty,
         owner: ctx.owner.clone(),
@@ -231,7 +240,7 @@ fn select_winners_handles_multi_recipient_distribution() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/multi"),
         title: String::from_str(&ctx.env, "Multi Winner"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -245,11 +254,13 @@ fn select_winners_handles_multi_recipient_distribution() {
         WinnerSpec {
             recipient: winner_a.clone(),
             position: 1,
+            amount: 6_000_0000000_i128,
             reputation_bump: 50,
         },
         WinnerSpec {
             recipient: winner_b.clone(),
             position: 2,
+            amount: 4_000_0000000_i128,
             reputation_bump: 25,
         },
     ];
@@ -288,6 +299,7 @@ fn select_winners_replayed_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 50,
         },
     ];
@@ -338,8 +350,8 @@ fn cancel_already_cancelled_reverts() {
 fn cancel_after_select_winners_refunds_only_remaining() {
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 60);
-    dist.set(2, 40);
+    dist.set(1, 6_000_0000000_i128);
+    dist.set(2, 4_000_0000000_i128);
     let params = CreateEventParams {
         pillar: Pillar::Bounty,
         owner: ctx.owner.clone(),
@@ -349,7 +361,7 @@ fn cancel_after_select_winners_refunds_only_remaining() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/partial"),
         title: String::from_str(&ctx.env, "Partial Pay Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -362,6 +374,7 @@ fn cancel_after_select_winners_refunds_only_remaining() {
         WinnerSpec {
             recipient: winner_a.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 60 / 100,
             reputation_bump: 50,
         },
     ];
@@ -391,7 +404,7 @@ fn cancel_after_select_winners_refunds_only_remaining() {
 
 fn create_grant(ctx: &Ctx, n_milestones: u32) -> u64 {
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 100);
+    dist.set(1, TOTAL_BUDGET * 100 / 100);
     let params = CreateEventParams {
         pillar: Pillar::Grant,
         owner: ctx.owner.clone(),
@@ -401,7 +414,7 @@ fn create_grant(ctx: &Ctx, n_milestones: u32) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant"),
         title: String::from_str(&ctx.env, "Test Grant"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -415,6 +428,7 @@ fn select_grant_winner(ctx: &Ctx, grant_id: u64, recipient: &Address) {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 100 / 100,
             reputation_bump: 0,
         },
     ];
@@ -496,6 +510,7 @@ fn claim_milestone_rejects_non_grant_events() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -539,7 +554,7 @@ fn claim_milestone_final_milestone_marks_event_completed() {
 
 fn create_hackathon(ctx: &Ctx) -> u64 {
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 100);
+    dist.set(1, TOTAL_BUDGET * 100 / 100);
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -549,7 +564,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Test Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -690,7 +705,7 @@ fn create_event_charges_override_rate_when_provided() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Hackathon at 1.5%"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: Some(override_bps),
         manager: None,
     };
@@ -723,7 +738,7 @@ fn add_funds_uses_event_override_not_global() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Promo Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: Some(override_bps),
         manager: None,
     };
@@ -769,7 +784,7 @@ fn create_event_with_waiver_charges_no_fee() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Comped Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: Some(0),
         manager: None,
     };
@@ -795,7 +810,7 @@ fn create_event_rejects_override_above_max_fee_bps() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Bad rate"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: Some(6000),
         manager: None,
     };
@@ -822,7 +837,7 @@ fn create_event_omitted_override_falls_back_to_global_default() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Default rate hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -851,6 +866,7 @@ fn select_winners_rejects_second_call_winners_already_selected() {
         WinnerSpec {
             recipient: r2.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -919,7 +935,7 @@ fn grant_last_milestone_sweeps_rounding_residue() {
 // ============================================================
 
 #[test]
-fn select_winners_pays_against_remaining_escrow_including_top_ups() {
+fn a_top_up_before_selection_enlarges_the_pool_not_the_award() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);
 
@@ -940,22 +956,26 @@ fn select_winners_pays_against_remaining_escrow_including_top_ups() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 50,
         },
     ];
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    // Pull model: claim; the pre-selection top-up is in the baseline.
     ctx.events
         .claim_prize(&bounty_id, &1_u32, &BytesN::random(&ctx.env));
 
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
-    assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET + top_up);
+    assert_eq!(
+        token.balance(&ctx.applicant),
+        TOTAL_BUDGET,
+        "the award is what the selection named, regardless of the top-up"
+    );
 
     let event_post = ctx.events.get_event(&bounty_id);
-    assert_eq!(event_post.remaining_escrow, 0);
-    assert_eq!(event_post.status, EventStatus::Completed);
+    assert_eq!(event_post.remaining_escrow, top_up);
+    assert_eq!(event_post.status, EventStatus::Active);
 }
 
 // ============================================================
@@ -971,7 +991,7 @@ fn create_bounty_with_manager(ctx: &Ctx, manager: &Address) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/events/draft/m"),
         title: String::from_str(&ctx.env, "Managed Bounty"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: one_winner_distribution(&ctx.env),
+        prize_floors: one_winner_distribution(&ctx.env),
         fee_bps_override: None,
         manager: Some(manager.clone()),
     };
@@ -985,6 +1005,7 @@ fn win_one(ctx: &Ctx) -> soroban_sdk::Vec<WinnerSpec> {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ]

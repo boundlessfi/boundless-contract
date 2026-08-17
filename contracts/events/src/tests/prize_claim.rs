@@ -71,7 +71,7 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn create_single(ctx: &Ctx, dist: Map<u32, u32>) -> u64 {
+fn create_single(ctx: &Ctx, dist: Map<u32, i128>) -> u64 {
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -81,32 +81,33 @@ fn create_single(ctx: &Ctx, dist: Map<u32, u32>) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/prize-claim"),
         title: String::from_str(&ctx.env, "Prize Claim Suite"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
     ctx.events.create_event(&params, &BytesN::random(&ctx.env))
 }
 
-fn dist_100(env: &Env) -> Map<u32, u32> {
+fn dist_100(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, TOTAL_BUDGET);
     m
 }
 
-fn dist_60_40(env: &Env) -> Map<u32, u32> {
+fn dist_60_40(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 60);
-    m.set(2, 40);
+    m.set(1, TOTAL_BUDGET * 60 / 100);
+    m.set(2, TOTAL_BUDGET * 40 / 100);
     m
 }
 
-fn select_one(ctx: &Ctx, id: u64, recipient: &Address, position: u32, bump: u32) {
+fn select_one(ctx: &Ctx, id: u64, recipient: &Address, position: u32, amount: i128, bump: u32) {
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: recipient.clone(),
             position,
+            amount,
             reputation_bump: bump,
         },
     ];
@@ -125,7 +126,7 @@ fn claim_pays_recipient_full_prize_and_no_release_fee() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 50);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 50);
 
     // Selection alone must not move funds or complete the event.
     assert_eq!(token.balance(&w), 0);
@@ -167,8 +168,8 @@ fn split_claims_pay_exact_amounts_each() {
 
     let a = Address::generate(&ctx.env);
     let b = Address::generate(&ctx.env);
-    select_one(&ctx, id, &a, 1, 10);
-    select_one(&ctx, id, &b, 2, 5);
+    select_one(&ctx, id, &a, 1, TOTAL_BUDGET * 60 / 100, 10);
+    select_one(&ctx, id, &b, 2, TOTAL_BUDGET * 40 / 100, 5);
 
     ctx.events
         .claim_prize(&id, &2_u32, &BytesN::random(&ctx.env));
@@ -193,7 +194,7 @@ fn topup_after_selection_stays_residual_for_refund() {
     let token_admin = token::StellarAssetClient::new(&ctx.env, &ctx.token_addr);
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 0);
 
     // A partner tops up AFTER selection: the prize amount stays anchored
     // to the selection-time baseline; the top-up is refundable residual.
@@ -227,7 +228,7 @@ fn claim_requires_recipient_auth() {
     let id = create_single(&ctx, dist_100(&ctx.env));
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 0);
 
     ctx.env.mock_auths(&[]);
     let res = ctx
@@ -242,7 +243,7 @@ fn claim_demands_the_award_recipients_auth_specifically() {
     let id = create_single(&ctx, dist_100(&ctx.env));
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 0);
 
     ctx.events
         .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
@@ -264,7 +265,7 @@ fn double_claim_reverts() {
     let id = create_single(&ctx, dist_60_40(&ctx.env));
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET * 60 / 100, 0);
 
     ctx.events
         .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
@@ -287,8 +288,8 @@ fn op_id_replay_reverts() {
     // not yet paid. (Cross-recipient op_id reuse is intentionally allowed —
     // OpSeen is namespaced per authorizing caller.)
     let a = Address::generate(&ctx.env);
-    select_one(&ctx, id, &a, 1, 0);
-    select_one(&ctx, id, &a, 2, 0);
+    select_one(&ctx, id, &a, 1, TOTAL_BUDGET * 60 / 100, 0);
+    select_one(&ctx, id, &a, 2, TOTAL_BUDGET * 40 / 100, 0);
 
     let op = BytesN::random(&ctx.env);
     ctx.events.claim_prize(&id, &1_u32, &op);
@@ -305,7 +306,7 @@ fn claim_of_unawarded_position_reverts() {
     let id = create_single(&ctx, dist_60_40(&ctx.env));
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET * 60 / 100, 0);
 
     // Position 2 is in the distribution but has no award yet.
     let res = ctx
@@ -332,14 +333,14 @@ fn claim_on_multi_release_event_reverts() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant"),
         title: String::from_str(&ctx.env, "Grant"),
         deadline: None,
-        winner_distribution: dist_100(&ctx.env),
+        prize_floors: dist_100(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
     let id = ctx.events.create_event(&params, &BytesN::random(&ctx.env));
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 0);
 
     let res = ctx
         .events
@@ -360,7 +361,7 @@ fn cancel_blocked_while_unclaimed_prizes_within_window() {
     let id = create_single(&ctx, dist_60_40(&ctx.env));
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET * 60 / 100, 0);
 
     let res = ctx.events.try_start_cancel(&id, &BytesN::random(&ctx.env));
     assert!(
@@ -387,7 +388,7 @@ fn cancel_after_window_expiry_sweeps_unclaimed_and_blocks_late_claim() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
 
     let w = Address::generate(&ctx.env);
-    select_one(&ctx, id, &w, 1, 0);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 0);
 
     ctx.env.ledger().with_mut(|li| {
         li.timestamp += PRIZE_CLAIM_WINDOW_SECS + 1;
@@ -414,14 +415,14 @@ fn claim_window_refreshes_on_a_later_batch() {
     let id = create_single(&ctx, dist_60_40(&ctx.env));
 
     let a = Address::generate(&ctx.env);
-    select_one(&ctx, id, &a, 1, 0);
+    select_one(&ctx, id, &a, 1, TOTAL_BUDGET * 60 / 100, 0);
 
     // Move to just before the first window expires, then select batch 2.
     ctx.env.ledger().with_mut(|li| {
         li.timestamp += PRIZE_CLAIM_WINDOW_SECS - 100;
     });
     let b = Address::generate(&ctx.env);
-    select_one(&ctx, id, &b, 2, 0);
+    select_one(&ctx, id, &b, 2, TOTAL_BUDGET * 40 / 100, 0);
 
     // Past the FIRST batch's expiry, but inside the refreshed window:
     // cancel stays blocked, protecting the late-selected winner.

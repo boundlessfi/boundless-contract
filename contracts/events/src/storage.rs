@@ -557,6 +557,21 @@ pub fn set_unclaimed_prize_count(env: &Env, id: u64, count: u32) {
     touch_event_persistent(env, &key);
 }
 
+pub fn owed_total(env: &Env, id: u64) -> i128 {
+    let key = DataKey::EventOwedTotal(id);
+    let t: Option<i128> = env.storage().persistent().get(&key);
+    if t.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    t.unwrap_or(0)
+}
+
+pub fn set_owed_total(env: &Env, id: u64, owed: i128) {
+    let key = DataKey::EventOwedTotal(id);
+    env.storage().persistent().set(&key, &owed);
+    touch_event_persistent(env, &key);
+}
+
 pub fn get_prize_base_escrow(env: &Env, id: u64) -> Option<i128> {
     let key = DataKey::EventPrizeBaseEscrow(id);
     let b: Option<i128> = env.storage().persistent().get(&key);
