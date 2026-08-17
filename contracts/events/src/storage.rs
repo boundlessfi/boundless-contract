@@ -547,9 +547,16 @@ pub fn append_submission(env: &Env, id: u64, addr: &Address, slot: u32) -> Resul
 /// Reads a pre-1.7.0 submission row, which lived under a key with no slot.
 /// Only `migrate` calls this.
 pub fn get_legacy_submission(env: &Env, id: u64, applicant: &Address) -> Option<Submission> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventSubmission(id, applicant.clone()))
+    let key = DataKey::EventSubmission(id, applicant.clone());
+    let s: Option<Submission> = env.storage().persistent().get(&key);
+    // This key is a permanent read path, not just a migration source: hackathon
+    // submitters never enter the applicant index, so their rows are only ever
+    // reachable here. Without the touch they archive and the submission
+    // silently disappears.
+    if s.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    s
 }
 
 /// Drops a pre-1.7.0 submission row once it has been copied to a slot.
@@ -557,12 +564,6 @@ pub fn remove_legacy_submission(env: &Env, id: u64, applicant: &Address) {
     env.storage()
         .persistent()
         .remove(&DataKey::EventSubmission(id, applicant.clone()));
-}
-
-/// Sets the per-applicant slot count directly. Only `migrate` calls this, to
-/// seed the counter for rows that predate it.
-pub fn seed_applicant_submission_count(env: &Env, id: u64, applicant: &Address, count: u32) {
-    set_applicant_submission_count(env, id, applicant, count);
 }
 
 // ============================================================

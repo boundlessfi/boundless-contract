@@ -224,10 +224,15 @@ fn migrate_rewrites_legacy_percentages_as_prize_floors() {
 }
 
 #[test]
-fn migrate_moves_legacy_submissions_into_slot_zero() {
+fn migrate_leaves_legacy_submissions_addressable_without_scanning_applicants() {
+    // migrate deliberately does not walk the applicant index: that loop is
+    // unbounded (per-event caps were removed) and would blow the invocation's
+    // 100-entry footprint on a popular event. Legacy rows stay reachable
+    // through the slot-0 fallback instead, and fold in on their next write.
     let ctx = setup(250);
     let applicant = Address::generate(&ctx.env);
     let event_id = ctx.client.id_base() + 1;
+    let budget = 1_000_0000000_i128;
 
     let mut dist = Map::new(&ctx.env);
     dist.set(1, 100_u32);
@@ -236,7 +241,7 @@ fn migrate_moves_legacy_submissions_into_slot_zero() {
         pillar: Pillar::Bounty,
         owner: Address::generate(&ctx.env),
         token: Address::generate(&ctx.env),
-        total_budget: 1_000_0000000_i128,
+        total_budget: budget,
         remaining_escrow: 0,
         release_kind: ReleaseKind::Single,
         status: EventStatus::Completed,
@@ -246,11 +251,6 @@ fn migrate_moves_legacy_submissions_into_slot_zero() {
         deadline: None,
         winner_distribution: dist,
         fee_bps_override: None,
-    };
-    let legacy_submission = Submission {
-        applicant: applicant.clone(),
-        content_uri: String::from_str(&ctx.env, "ipfs://historical"),
-        submitted_at: 42,
     };
 
     ctx.env.as_contract(&ctx.client.address, || {
@@ -262,34 +262,34 @@ fn migrate_moves_legacy_submissions_into_slot_zero() {
             .storage()
             .instance()
             .set(&DataKey::NextEventId, &(event_id + 1));
-        // The applicant index is what bounds the migration scan.
         storage::append_applicant(&ctx.env, event_id, &applicant).unwrap();
         ctx.env.storage().persistent().set(
             &DataKey::EventSubmission(event_id, applicant.clone()),
-            &legacy_submission,
+            &Submission {
+                applicant: applicant.clone(),
+                content_uri: String::from_str(&ctx.env, "ipfs://historical"),
+                submitted_at: 42,
+            },
         );
     });
 
     ctx.client.migrate();
 
-    let moved = ctx.client.get_submission(&event_id, &applicant, &0_u32);
+    // The record rewrite is the load-bearing part and must have happened.
     assert_eq!(
-        moved.content_uri,
-        String::from_str(&ctx.env, "ipfs://historical")
-    );
-    assert_eq!(moved.submitted_at, 42, "the original timestamp survives");
-    assert_eq!(
-        ctx.client
-            .get_applicant_submission_count(&event_id, &applicant),
-        1
+        ctx.client.get_event(&event_id).prize_floors.get(1),
+        Some(budget)
     );
 
-    // The old row is gone rather than left as an unreachable duplicate.
+    // The submission is still addressable, with its timestamp intact.
+    let found = ctx.client.get_submission(&event_id, &applicant, &0_u32);
+    assert_eq!(
+        found.content_uri,
+        String::from_str(&ctx.env, "ipfs://historical")
+    );
+    assert_eq!(found.submitted_at, 42);
     ctx.env.as_contract(&ctx.client.address, || {
-        assert!(
-            storage::get_legacy_submission(&ctx.env, event_id, &applicant).is_none(),
-            "legacy row should be removed once copied"
-        );
+        assert!(storage::has_any_submission(&ctx.env, event_id, &applicant));
     });
 }
 
