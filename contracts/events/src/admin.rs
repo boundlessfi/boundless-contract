@@ -1,9 +1,34 @@
-use soroban_sdk::{panic_with_error, Address, BytesN, Env, String};
+use soroban_sdk::{contracttype, panic_with_error, Address, BytesN, Env, Map, String};
 
 use crate::errors::Error;
 use crate::events as evt;
+use crate::idempotency;
 use crate::storage;
-use crate::types::{PendingAdmin, PendingUpgrade};
+use crate::types::{
+    DataKey, EventRecord, EventStatus, PendingAdmin, PendingUpgrade, Pillar, ReleaseKind,
+};
+
+/// The pre-1.7.0 `EventRecord`, kept only so `migrate` can decode rows written
+/// before prize floors replaced the percentage distribution. Nothing else may
+/// read or write this shape.
+#[contracttype]
+#[derive(Clone)]
+struct LegacyEventRecord {
+    pub id: u64,
+    pub pillar: Pillar,
+    pub owner: Address,
+    pub token: Address,
+    pub total_budget: i128,
+    pub remaining_escrow: i128,
+    pub release_kind: ReleaseKind,
+    pub status: EventStatus,
+    pub content_uri: String,
+    pub title: String,
+    pub created_at: u64,
+    pub deadline: Option<u64>,
+    pub winner_distribution: Map<u32, u32>,
+    pub fee_bps_override: Option<u32>,
+}
 
 const PENDING_ADMIN_TTL_LEDGERS: u32 = 120_960;
 
@@ -15,7 +40,7 @@ const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
-pub const INITIAL_VERSION: &str = "1.6.0";
+pub const INITIAL_VERSION: &str = "1.7.0";
 
 // ============================================================
 // INITIALIZATION
@@ -250,6 +275,9 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     // ============================================================
     // PER-(from -> to) MIGRATION DISPATCH
     // ============================================================
+    if current == String::from_str(env, INITIAL_VERSION) {
+        migrate_prize_floors(env);
+    }
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);
@@ -259,6 +287,62 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     }
     .publish(env);
     Ok(())
+}
+
+/// Rewrites every stored event from the pre-1.7.0 percentage layout to prize
+/// floors. `winner_distribution` and `prize_floors` differ in both name and
+/// value type, so an old row cannot be decoded by the current struct at all
+/// and has to be read through the legacy shape first.
+///
+/// Percentages were always taken against the escrow balance, so `total_budget *
+/// percent / 100` reproduces exactly what each position would have been paid.
+///
+/// Bounded by the id counter: ids run from `id_base + 1` up to the next id to
+/// be issued, and the cap is a backstop against a corrupt counter rather than
+/// an expected limit.
+fn migrate_prize_floors(env: &Env) {
+    const MAX_ROWS: u64 = 256;
+
+    let base = idempotency::id_base(env);
+    let next = storage::get_next_event_id(env, base.saturating_add(1));
+    let mut id = base.saturating_add(1);
+    let mut scanned: u64 = 0;
+
+    while id < next && scanned < MAX_ROWS {
+        let key = DataKey::Event(id);
+        let legacy: Option<LegacyEventRecord> = env.storage().persistent().get(&key);
+        if let Some(old) = legacy {
+            let mut floors: Map<u32, i128> = Map::new(env);
+            for (position, percent) in old.winner_distribution.iter() {
+                let floor = old
+                    .total_budget
+                    .saturating_mul(percent as i128)
+                    .saturating_div(100);
+                if floor > 0 {
+                    floors.set(position, floor);
+                }
+            }
+            let migrated = EventRecord {
+                id: old.id,
+                pillar: old.pillar,
+                owner: old.owner,
+                token: old.token,
+                total_budget: old.total_budget,
+                remaining_escrow: old.remaining_escrow,
+                release_kind: old.release_kind,
+                status: old.status,
+                content_uri: old.content_uri,
+                title: old.title,
+                created_at: old.created_at,
+                deadline: old.deadline,
+                prize_floors: floors,
+                fee_bps_override: old.fee_bps_override,
+            };
+            env.storage().persistent().set(&key, &migrated);
+        }
+        id = id.saturating_add(1);
+        scanned = scanned.saturating_add(1);
+    }
 }
 
 // ============================================================

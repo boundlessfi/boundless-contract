@@ -2,11 +2,12 @@
 
 use soroban_sdk::{
     testutils::{Address as _, BytesN as _, Ledger},
-    Address, BytesN, String,
+    Address, BytesN, Map, String,
 };
 
 use super::common::setup;
 use crate::errors::Error;
+use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind};
 
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
@@ -19,7 +20,7 @@ fn initializes_with_expected_config() {
     assert_eq!(ctx.client.get_fee_bps(), 250);
     assert_eq!(ctx.client.get_profile_contract(), ctx.profile_contract);
     assert_eq!(ctx.client.is_paused(), false);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.6.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.7.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
@@ -96,7 +97,7 @@ fn apply_upgrade_before_timelock_reverts() {
         .expect("timelock blocks")
         .unwrap();
     assert_eq!(err, Error::UpgradeTimelockNotElapsed);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.6.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.7.0"));
 }
 
 #[test]
@@ -130,7 +131,7 @@ fn cancel_pending_upgrade_clears_proposal() {
 
     ctx.client.cancel_pending_upgrade();
     assert_eq!(ctx.client.get_pending_upgrade(), None);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.6.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.7.0"));
 }
 
 #[test]
@@ -145,6 +146,92 @@ fn cancel_with_no_pending_reverts() {
     assert_eq!(err, Error::UpgradeNotProposed);
 }
 
+/// The pre-1.7.0 record layout, written directly into storage so migrate has a
+/// legacy row to convert. Mirrors what the two mainnet events look like.
+#[soroban_sdk::contracttype]
+#[derive(Clone)]
+struct LegacyEventRecord {
+    pub id: u64,
+    pub pillar: Pillar,
+    pub owner: Address,
+    pub token: Address,
+    pub total_budget: i128,
+    pub remaining_escrow: i128,
+    pub release_kind: ReleaseKind,
+    pub status: EventStatus,
+    pub content_uri: String,
+    pub title: String,
+    pub created_at: u64,
+    pub deadline: Option<u64>,
+    pub winner_distribution: Map<u32, u32>,
+    pub fee_bps_override: Option<u32>,
+}
+
+#[test]
+fn migrate_rewrites_legacy_percentages_as_prize_floors() {
+    let ctx = setup(250);
+    let budget = 1_000_0000000_i128;
+
+    // Stand in for mainnet event ...610: a 60/40 split, already settled.
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 60_u32);
+    dist.set(2, 40_u32);
+
+    let id_base = ctx.client.id_base();
+    let event_id = id_base + 1;
+    let legacy = LegacyEventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: budget,
+        remaining_escrow: 0,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Completed,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/legacy"),
+        title: String::from_str(&ctx.env, "Muwa Creator Bounty"),
+        created_at: 1,
+        deadline: None,
+        winner_distribution: dist,
+        fee_bps_override: None,
+    };
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &legacy);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+    });
+
+    ctx.client.migrate();
+
+    // Readable again through the current struct, which could not decode it
+    // before, and the percentages have become the amounts they always meant.
+    let migrated = ctx.client.get_event(&event_id);
+    assert_eq!(migrated.prize_floors.get(1), Some(budget * 60 / 100));
+    assert_eq!(migrated.prize_floors.get(2), Some(budget * 40 / 100));
+    assert_eq!(migrated.total_budget, budget);
+    assert_eq!(migrated.status, EventStatus::Completed);
+    assert_eq!(
+        migrated.title,
+        String::from_str(&ctx.env, "Muwa Creator Bounty")
+    );
+}
+
+#[test]
+fn migrate_is_a_no_op_on_a_fresh_deployment() {
+    let ctx = setup(250);
+    ctx.client.migrate();
+    assert_eq!(
+        ctx.client.get_migrated_to_version(),
+        Some(String::from_str(&ctx.env, "1.7.0"))
+    );
+}
+
 #[test]
 fn migrate_marks_current_version_and_blocks_replay() {
     let ctx = setup(250);
@@ -152,7 +239,7 @@ fn migrate_marks_current_version_and_blocks_replay() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "1.6.0"))
+        Some(String::from_str(&ctx.env, "1.7.0"))
     );
 
     let err = ctx
