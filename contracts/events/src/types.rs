@@ -230,6 +230,11 @@ pub enum DataKey {
     // meaning to the slot; callers use it for whatever separates their entries.
     EventSubmissionEntry(u64, Address, u32),
     EventApplicantSubmissionCount(u64, Address),
+
+    // Next event id `migrate_events` has yet to convert. The pass is paged
+    // because one invocation may touch only 100 ledger entries, so a
+    // deployment with real history cannot be migrated in a single call.
+    MigrationCursor,
 }
 
 // ============================================================

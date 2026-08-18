@@ -146,6 +146,14 @@ pub fn clear_pending_upgrade(env: &Env) {
     env.storage().instance().remove(&DataKey::PendingUpgrade);
 }
 
+pub fn get_migration_cursor(env: &Env) -> Option<u64> {
+    env.storage().instance().get(&DataKey::MigrationCursor)
+}
+
+pub fn set_migration_cursor(env: &Env, id: u64) {
+    env.storage().instance().set(&DataKey::MigrationCursor, &id);
+}
+
 pub fn get_migrated_to_version(env: &Env) -> Option<String> {
     env.storage().instance().get(&DataKey::MigratedToVersion)
 }

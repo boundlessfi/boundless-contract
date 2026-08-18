@@ -208,6 +208,7 @@ fn migrate_rewrites_legacy_percentages_as_prize_floors() {
             .set(&DataKey::NextEventId, &(event_id + 1));
     });
 
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
 
     // Readable again through the current struct, which could not decode it
@@ -273,6 +274,7 @@ fn migrate_leaves_legacy_submissions_addressable_without_scanning_applicants() {
         );
     });
 
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
 
     // The record rewrite is the load-bearing part and must have happened.
@@ -377,6 +379,7 @@ fn migrate_rewrites_zero_amount_grant_winners() {
         );
     });
 
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
 
     let rows = ctx.client.get_winners(&event_id);
@@ -388,25 +391,57 @@ fn migrate_rewrites_zero_amount_grant_winners() {
 }
 
 #[test]
-fn migrate_refuses_to_stamp_when_the_id_range_exceeds_the_cap() {
+fn migrate_refuses_to_stamp_while_events_remain_unconverted() {
+    // One invocation may touch only 100 ledger entries, so a deployment with
+    // history is converted in slices. Stamping before the cursor reaches the
+    // end would strand the remainder in a layout nothing can decode, and
+    // migrate is one-shot.
     let ctx = setup(250);
     let base = ctx.client.id_base();
     ctx.env.as_contract(&ctx.client.address, || {
         ctx.env
             .storage()
             .instance()
-            .set(&DataKey::NextEventId, &(base + 1_000));
+            .set(&DataKey::NextEventId, &(base + 20));
     });
 
     assert!(
         ctx.client.try_migrate().is_err(),
-        "a range beyond the cap must abort rather than half-migrate"
+        "must not stamp while events are unconverted"
     );
+    assert_eq!(ctx.client.get_migrated_to_version(), None);
+
+    // Page through: 8 per call, so 19 events need three calls.
+    assert_eq!(ctx.client.migrate_events(&8_u32), 11);
+    assert_eq!(ctx.client.migrate_events(&8_u32), 3);
+    assert!(
+        ctx.client.try_migrate().is_err(),
+        "still incomplete after two of three pages"
+    );
+    assert_eq!(ctx.client.migrate_events(&8_u32), 0);
+
+    ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        None,
-        "nothing may be stamped when work would be left undone"
+        Some(String::from_str(&ctx.env, "1.7.0"))
     );
+}
+
+#[test]
+fn migrate_events_caps_each_call_regardless_of_the_argument() {
+    let ctx = setup(250);
+    let base = ctx.client.id_base();
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(base + 30));
+    });
+
+    // Asking for more than the per-call ceiling must not blow the footprint.
+    assert_eq!(ctx.client.migrate_events(&1_000_u32), 21);
+    // 0 means "use the ceiling" rather than "do nothing".
+    assert_eq!(ctx.client.migrate_events(&0_u32), 13);
 }
 
 #[test]
@@ -445,6 +480,7 @@ fn migrate_skips_rows_already_in_the_current_layout() {
             .set(&DataKey::NextEventId, &(event_id + 1));
     });
 
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
 
     let after = ctx.client.get_event(&event_id);
@@ -490,6 +526,7 @@ fn migrate_runs_regardless_of_how_the_version_was_spelled() {
         storage::set_version(&ctx.env, &String::from_str(&ctx.env, "v1.7.0"));
     });
 
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
 
     let migrated = ctx.client.get_event(&event_id);
@@ -543,6 +580,7 @@ fn folding_a_legacy_row_adds_to_the_applicants_existing_slots() {
 #[test]
 fn migrate_is_a_no_op_on_a_fresh_deployment() {
     let ctx = setup(250);
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
@@ -554,6 +592,7 @@ fn migrate_is_a_no_op_on_a_fresh_deployment() {
 fn migrate_marks_current_version_and_blocks_replay() {
     let ctx = setup(250);
 
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),

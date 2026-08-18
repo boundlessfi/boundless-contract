@@ -96,6 +96,13 @@ impl EventsContract {
         admin::cancel_pending_upgrade(&env)
     }
 
+    /// Converts up to `max_events` pre-1.7.0 event records, returning how many
+    /// remain. Loop until it reports zero, then call `migrate`. Paged because
+    /// one invocation cannot touch every event of a deployment with history.
+    pub fn migrate_events(env: Env, max_events: u32) -> Result<u64, Error> {
+        admin::migrate_events(&env, max_events)
+    }
+
     pub fn migrate(env: Env) -> Result<(), Error> {
         admin::migrate(&env)
     }

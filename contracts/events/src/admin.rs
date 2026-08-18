@@ -275,12 +275,16 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     // ============================================================
     // PER-(from -> to) MIGRATION DISPATCH
     // ============================================================
-    // Run unconditionally rather than gating on an exact version string:
-    // propose_upgrade accepts any non-empty version, so a differently-spelled
-    // one would silently skip the rewrite and still stamp the marker, leaving
-    // every legacy event undecodable with no way to re-run. The pass skips
-    // rows already in the current layout, so running it always is safe.
-    migrate_prize_floors(env)?;
+    // Refuse to stamp while any event is still unconverted. The rewrite is
+    // paged through `migrate_events` because one invocation may touch only 100
+    // ledger entries, and stamping early would leave the remainder undecodable
+    // with no way to resume: this is one-shot.
+    //
+    // Reuses EventIdOverflow rather than adding a variant — contracterror is at
+    // the 50-case cap. It means "events remain", not a counter fault.
+    if migration_remaining(env) > 0 {
+        return Err(Error::EventIdOverflow);
+    }
 
     storage::set_migrated_to_version(env, &current);
     storage::touch_instance(env);
@@ -292,53 +296,77 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     Ok(())
 }
 
-/// Rewrites every stored event from the pre-1.7.0 percentage layout to prize
-/// floors. `winner_distribution` and `prize_floors` differ in both name and
-/// value type, so an old row cannot be decoded by the current struct at all
-/// and has to be read through the legacy shape first.
+/// How many events `migrate_events` has yet to convert.
+fn migration_remaining(env: &Env) -> u64 {
+    let base = idempotency::id_base(env);
+    let first = base.saturating_add(1);
+    let next = storage::get_next_event_id(env, first);
+    let cursor = storage::get_migration_cursor(env).unwrap_or(first);
+    next.saturating_sub(cursor.max(first))
+}
+
+/// Converts up to `max_events` events from the pre-1.7.0 percentage layout,
+/// advancing a stored cursor. Returns how many remain, so an operator can loop
+/// until it reports zero and only then call `migrate`.
+///
+/// Paged rather than one-shot because an invocation may touch at most 100
+/// ledger entries and write 50. A deployment with real history — testnet holds
+/// over a hundred events — cannot be converted in a single transaction, and a
+/// one-shot pass that aborts leaves every event undecodable.
+pub fn migrate_events(env: &Env, max_events: u32) -> Result<u64, Error> {
+    require_admin(env)?;
+
+    // Each event costs a record read plus a record write, and a Multi event
+    // adds a read and a write per winner. Eight leaves headroom for the winner
+    // rewrites inside the write limit.
+    const MAX_PER_CALL: u32 = 8;
+    let budget = if max_events == 0 || max_events > MAX_PER_CALL {
+        MAX_PER_CALL
+    } else {
+        max_events
+    };
+
+    let base = idempotency::id_base(env);
+    let first = base.saturating_add(1);
+    let next = storage::get_next_event_id(env, first);
+    let mut cursor = storage::get_migration_cursor(env)
+        .unwrap_or(first)
+        .max(first);
+
+    let mut done: u32 = 0;
+    while cursor < next && done < budget {
+        migrate_one_event(env, cursor);
+        cursor = cursor.saturating_add(1);
+        done = done.saturating_add(1);
+    }
+
+    storage::set_migration_cursor(env, cursor);
+    storage::touch_instance(env);
+    Ok(next.saturating_sub(cursor))
+}
+
+/// Rewrites one event from the pre-1.7.0 percentage layout to prize floors.
+/// `winner_distribution` and `prize_floors` differ in both name and value type,
+/// so an old row cannot be decoded by the current struct at all.
 ///
 /// Percentages were always taken against the escrow balance, so `total_budget *
 /// percent / 100` reproduces exactly what each position would have been paid.
-///
-/// Bounded by the id counter: ids run from `id_base + 1` up to the next id to
-/// be issued. The cap is a backstop against a corrupt counter, and it fails
-/// closed: exceeding it aborts before anything is stamped, because `migrate`
-/// is one-shot and a half-finished pass would leave the remaining events in a
-/// layout the current struct cannot decode, with no way to resume.
-fn migrate_prize_floors(env: &Env) -> Result<(), Error> {
-    // An invocation may touch at most 100 ledger entries and write 50, so the
-    // whole pass has to fit in one transaction's footprint. Each event costs a
-    // record read plus a record write, and a Multi event adds a read and a
-    // write per winner. Sixteen leaves headroom for the winner rewrites; above
-    // that this aborts rather than half-migrating, and a deployment that ever
-    // trips it needs a paged entrypoint instead of a one-shot pass.
-    const MAX_ROWS: u64 = 16;
-
-    let base = idempotency::id_base(env);
-    let next = storage::get_next_event_id(env, base.saturating_add(1));
-    let mut id = base.saturating_add(1);
-
-    if next.saturating_sub(id) > MAX_ROWS {
-        return Err(Error::EventIdOverflow);
-    }
-
-    while id < next {
-        let key = DataKey::Event(id);
-        // Decode defensively. `get::<LegacyEventRecord>` unwraps the
-        // conversion, and a missing field escalates to a host error rather
-        // than a catchable one, so a row already in the 1.7.0 layout would
-        // abort the whole invocation instead of being skipped. A contracttype
-        // struct is stored as a map keyed by field name, so the old layout is
-        // identified by the field that only it carries.
-        let fields: Option<Map<Symbol, Val>> = env.storage().persistent().get(&key);
-        let is_legacy =
-            fields.is_some_and(|f| f.contains_key(Symbol::new(env, "winner_distribution")));
-        let legacy: Option<LegacyEventRecord> = if is_legacy {
-            env.storage().persistent().get(&key)
-        } else {
-            None
-        };
-        if let Some(old) = legacy {
+fn migrate_one_event(env: &Env, id: u64) {
+    let key = DataKey::Event(id);
+    // Decode defensively. `get::<LegacyEventRecord>` unwraps the conversion,
+    // and a missing field escalates to a host error rather than a catchable
+    // one, so a row already in the 1.7.0 layout would abort the whole
+    // invocation instead of being skipped. A contracttype struct is stored as
+    // a map keyed by field name, so the old layout is identified by the field
+    // that only it carries.
+    let fields: Option<Map<Symbol, Val>> = env.storage().persistent().get(&key);
+    let is_legacy = fields.is_some_and(|f| f.contains_key(Symbol::new(env, "winner_distribution")));
+    if is_legacy {
+        if let Some(old) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, LegacyEventRecord>(&key)
+        {
             let mut floors: Map<u32, i128> = Map::new(env);
             for (position, percent) in old.winner_distribution.iter() {
                 let floor = old
@@ -367,10 +395,8 @@ fn migrate_prize_floors(env: &Env) -> Result<(), Error> {
             };
             env.storage().persistent().set(&key, &migrated);
         }
-        migrate_winner_amounts(env, id);
-        id = id.saturating_add(1);
     }
-    Ok(())
+    migrate_winner_amounts(env, id);
 }
 
 /// Pre-1.7.0 `Multi` selections stored `amount: 0` on the anchor winner row,
