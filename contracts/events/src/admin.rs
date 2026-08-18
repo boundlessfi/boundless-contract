@@ -34,8 +34,14 @@ const PENDING_ADMIN_TTL_LEDGERS: u32 = 120_960;
 
 pub(crate) const MAX_FEE_BPS: u32 = 1_000;
 
+// H6 (audit 2026-06) mandated 17_280 ledgers, ~1 day, on mainnet. Zeroed
+// deliberately while mainnet escrow is empty so the 1.7.0 rollout can iterate.
+// RESTORE to 17_280 before the first funded campaign: with no window, a
+// compromised admin key can propose and apply a wasm swap in one go, and
+// cancel_pending_upgrade never gets a chance to fire. Tracked in BACKLOG.
+// The cfg split is kept so restoring is a single-value edit.
 #[cfg(not(feature = "testnet"))]
-const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
+const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 #[cfg(feature = "testnet")]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;

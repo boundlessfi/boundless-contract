@@ -10,7 +10,8 @@ use crate::errors::Error;
 use crate::storage;
 use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind, Submission, Winner};
 
-const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
+// Zeroed with the contract constant; restore both together.
+const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
 #[test]
@@ -85,20 +86,22 @@ fn propose_upgrade_rejects_empty_version() {
 }
 
 #[test]
-fn apply_upgrade_before_timelock_reverts() {
+fn apply_upgrade_is_immediate_while_the_timelock_is_zero() {
+    // H6 mandated a ~1-day window here; it is deliberately zero while mainnet
+    // escrow is empty. This test is the counterpart to restoring it: when
+    // UPGRADE_TIMELOCK_LEDGERS goes back to 17_280, this should revert with
+    // UpgradeTimelockNotElapsed instead.
     let ctx = setup(250);
     let new_hash: BytesN<32> = BytesN::random(&ctx.env);
     let new_version = String::from_str(&ctx.env, "0.3.0");
     ctx.client.propose_upgrade(&new_hash, &new_version);
 
-    let err = ctx
-        .client
-        .try_apply_upgrade()
-        .err()
-        .expect("timelock blocks")
-        .unwrap();
-    assert_eq!(err, Error::UpgradeTimelockNotElapsed);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.7.0"));
+    let pending = ctx.client.get_pending_upgrade().expect("proposal");
+    assert_eq!(
+        pending.available_at_ledger, pending.proposed_at_ledger,
+        "no window between proposing and applying"
+    );
+    assert_eq!(UPGRADE_TIMELOCK_LEDGERS, 0, "restore me with the constant");
 }
 
 #[test]
