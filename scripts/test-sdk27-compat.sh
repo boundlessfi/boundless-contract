@@ -24,6 +24,33 @@ check_hash() {
     fi
 }
 
+meta_version() {
+    stellar -q contract info meta --wasm "$1" --output json \
+        | jq -er '.[] | select(.sc_meta_v0.key == "version") | .sc_meta_v0.val'
+}
+
+# The version the source claims, from `pub const INITIAL_VERSION`.
+source_version() {
+    local file="$1" version
+    version="$(sed -n 's/^pub const INITIAL_VERSION: &str = "\(.*\)";$/\1/p' "$file")"
+    if [ -z "$version" ]; then
+        echo "no INITIAL_VERSION found in $file" >&2
+        exit 1
+    fi
+    printf '%s\n' "$version"
+}
+
+check_declared_version() {
+    local wasm="$1" expected="$2" actual
+    actual="$(meta_version "$wasm")"
+    if [ "$actual" != "$expected" ]; then
+        echo "declared version mismatch for $wasm" >&2
+        echo "  contractmeta:              $actual" >&2
+        echo "  INITIAL_VERSION in source: $expected" >&2
+        exit 1
+    fi
+}
+
 rustc --version | grep -q '^rustc 1\.93\.0 ' || {
     echo "Rust 1.93.0 is required" >&2
     exit 1
@@ -38,10 +65,7 @@ while IFS=$'\t' read -r file expected; do
 done < <(jq -r '.wasm[] | [.file, .sha256] | @tsv' "$MANIFEST")
 
 while IFS=$'\t' read -r file expected; do
-    actual="$(
-        stellar -q contract info meta --wasm "$FIXTURES/$file" --output json \
-            | jq -er '.[] | select(.sc_meta_v0.key == "version") | .sc_meta_v0.val'
-    )"
+    actual="$(meta_version "$FIXTURES/$file")"
     if [ "$actual" != "$expected" ]; then
         echo "contractmeta version mismatch for $file" >&2
         echo "expected: $expected" >&2
@@ -101,10 +125,18 @@ case "$verify_build" in
             exit 1
         }
 
-        events_hash="$(jq -r '.wasm[] | select(.file == "events-1.5.0-sdk27.wasm") | .sha256' "$MANIFEST")"
-        profile_hash="$(jq -r '.wasm[] | select(.file == "profile-1.2.0-sdk27.wasm") | .sha256' "$MANIFEST")"
-        check_hash "$EVENTS_WASM" "$events_hash"
-        check_hash "$PROFILE_WASM" "$profile_hash"
+        # Assert the built artifact declares the version its source claims,
+        # rather than pinning it to a fixture hash. contractmeta! is embedded
+        # in the wasm, so a fixture pin is unsatisfiable the moment the runtime
+        # version moves past that fixture's — it went red on the 1.6.0 bump and
+        # would go red on every bump after.
+        #
+        # This catches the failure the pin was really guarding against. The two
+        # version declarations are independent and have drifted before:
+        # fixtures/events-1.3.0-sdk23.wasm reports contractmeta 1.2.0 against a
+        # 1.3.0 runtime, recorded in the manifest note for that entry.
+        check_declared_version "$EVENTS_WASM" "$(source_version "$ROOT/contracts/events/src/admin.rs")"
+        check_declared_version "$PROFILE_WASM" "$(source_version "$ROOT/contracts/profile/src/admin.rs")"
         ;;
     *)
         echo "VERIFY_SDK27_BUILD must be 0 or 1" >&2

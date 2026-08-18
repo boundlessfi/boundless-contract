@@ -47,7 +47,8 @@
       "soroban_sdk": "27.0.0",
       "protocol": 27,
       "runtime_version": "1.5.0",
-      "contractmeta_version": "1.5.0"
+      "contractmeta_version": "1.5.0",
+      "note": "Historical SDK 27 fixture, kept byte-for-byte as the 'new' side of the storage-compatibility tests. It is not expected to match a current build: contractmeta is embedded in the wasm, so every runtime version bump changes the hash. The build gate asserts contractmeta matches INITIAL_VERSION instead."
     },
     {
       "file": "profile-1.2.0-sdk27.wasm",
