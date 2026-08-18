@@ -146,6 +146,14 @@ pub fn clear_pending_upgrade(env: &Env) {
     env.storage().instance().remove(&DataKey::PendingUpgrade);
 }
 
+pub fn get_migration_cursor(env: &Env) -> Option<u64> {
+    env.storage().instance().get(&DataKey::MigrationCursor)
+}
+
+pub fn set_migration_cursor(env: &Env, id: u64) {
+    env.storage().instance().set(&DataKey::MigrationCursor, &id);
+}
+
 pub fn get_migrated_to_version(env: &Env) -> Option<String> {
     env.storage().instance().get(&DataKey::MigratedToVersion)
 }
@@ -419,32 +427,73 @@ pub fn applicants_snapshot(env: &Env, id: u64, start: u32, limit: u32) -> Vec<Ad
 // ============================================================
 // SUBMISSIONS (per-entry, persistent)
 // ============================================================
-pub fn get_submission(env: &Env, id: u64, applicant: &Address) -> Option<Submission> {
-    let key = DataKey::EventSubmission(id, applicant.clone());
+pub fn get_submission(env: &Env, id: u64, applicant: &Address, slot: u32) -> Option<Submission> {
+    let key = DataKey::EventSubmissionEntry(id, applicant.clone(), slot);
     let s: Option<Submission> = env.storage().persistent().get(&key);
     if s.is_some() {
         touch_event_persistent(env, &key);
+        return s;
     }
-    s
+    // Pre-1.7.0 rows have no slot and `migrate` can only reach the ones whose
+    // applicant is in the applicant index, which hackathons never populate.
+    // Reading them as slot 0 keeps every historical submission addressable
+    // regardless of pillar; the first write folds them into the slotted layout.
+    if slot == 0 {
+        return get_legacy_submission(env, id, applicant);
+    }
+    None
 }
 
-pub fn set_submission(env: &Env, id: u64, applicant: &Address, submission: &Submission) {
-    let key = DataKey::EventSubmission(id, applicant.clone());
+pub fn set_submission(env: &Env, id: u64, applicant: &Address, slot: u32, submission: &Submission) {
+    let key = DataKey::EventSubmissionEntry(id, applicant.clone(), slot);
     env.storage().persistent().set(&key, submission);
     touch_event_persistent(env, &key);
 }
 
-pub fn remove_submission(env: &Env, id: u64, applicant: &Address) {
-    // Idempotent: a no-op when there is nothing to remove, symmetrically
-    // with append_submission, so a caller that skips its own existence
-    // check can't silently corrupt the counter by decrementing for an
-    // applicant that never had a submission.
-    if get_submission(env, id, applicant).is_none() {
+/// How many slots this applicant currently occupies in this event. Drives the
+/// O(1) "has this applicant submitted at all" check that gates application
+/// withdrawal, which would otherwise have to scan slots.
+pub fn applicant_submission_count(env: &Env, id: u64, applicant: &Address) -> u32 {
+    let key = DataKey::EventApplicantSubmissionCount(id, applicant.clone());
+    let n: Option<u32> = env.storage().persistent().get(&key);
+    if n.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    n.unwrap_or(0)
+}
+
+pub fn has_any_submission(env: &Env, id: u64, applicant: &Address) -> bool {
+    applicant_submission_count(env, id, applicant) > 0
+        || get_legacy_submission(env, id, applicant).is_some()
+}
+
+fn set_applicant_submission_count(env: &Env, id: u64, applicant: &Address, count: u32) {
+    let key = DataKey::EventApplicantSubmissionCount(id, applicant.clone());
+    if count == 0 {
+        env.storage().persistent().remove(&key);
+        return;
+    }
+    env.storage().persistent().set(&key, &count);
+    touch_event_persistent(env, &key);
+}
+
+pub fn remove_submission(env: &Env, id: u64, applicant: &Address, slot: u32) {
+    // Idempotent: a no-op when the slot is empty, so a caller that skips its
+    // own existence check cannot corrupt either counter.
+    if get_submission(env, id, applicant, slot).is_none() {
         return;
     }
 
-    let key = DataKey::EventSubmission(id, applicant.clone());
+    let key = DataKey::EventSubmissionEntry(id, applicant.clone(), slot);
     env.storage().persistent().remove(&key);
+    // An unmigrated row is addressed as slot 0; drop it too or it would keep
+    // answering reads after the withdrawal.
+    if slot == 0 {
+        remove_legacy_submission(env, id, applicant);
+    }
+
+    let per_applicant = applicant_submission_count(env, id, applicant).saturating_sub(1);
+    set_applicant_submission_count(env, id, applicant, per_applicant);
 
     let count_key = DataKey::EventSubmissionCount(id);
     let next = submission_count(env, id).saturating_sub(1);
@@ -465,16 +514,29 @@ pub fn submission_count(env: &Env, id: u64) -> u32 {
     n.unwrap_or(0)
 }
 
-/// Count a new submission before writing the entry (mirrors
-/// `append_contributor`/`append_applicant`). A no-op when the applicant
-/// already has a submission — re-submission updates the existing entry in
-/// place and must not recount.
+/// Count a newly occupied slot before writing it (mirrors
+/// `append_contributor`/`append_applicant`). A no-op when the slot already
+/// holds an entry — re-submitting to the same slot updates it in place and
+/// must not recount.
 ///
-/// Returns `Error::TooManyContributors` only on u32 counter overflow —
-/// reused rather than a new variant since the errors enum is at the
-/// 50-case XDR cap.
-pub fn append_submission(env: &Env, id: u64, addr: &Address) -> Result<(), Error> {
-    if get_submission(env, id, addr).is_some() {
+/// Returns `Error::TooManyContributors` only on u32 counter overflow — reused
+/// rather than a new variant since the errors enum is at the 50-case XDR cap.
+pub fn append_submission(env: &Env, id: u64, addr: &Address, slot: u32) -> Result<(), Error> {
+    // Fold an unmigrated pre-1.7.0 row into the slotted layout on first write,
+    // so the legacy key cannot linger and disagree with the counters. It was
+    // already counted in the per-event total before the upgrade.
+    if slot == 0 && get_legacy_submission(env, id, addr).is_some() {
+        remove_legacy_submission(env, id, addr);
+        // Increment rather than set: the applicant may already hold slotted
+        // entries, and folding adds one more. Setting it to 1 would undercount
+        // and let has_any_submission go false while a slot is still occupied.
+        let per_applicant = applicant_submission_count(env, id, addr)
+            .checked_add(1)
+            .ok_or(Error::TooManyContributors)?;
+        set_applicant_submission_count(env, id, addr, per_applicant);
+        return Ok(());
+    }
+    if get_submission(env, id, addr, slot).is_some() {
         return Ok(());
     }
     let cur = submission_count(env, id);
@@ -482,7 +544,34 @@ pub fn append_submission(env: &Env, id: u64, addr: &Address) -> Result<(), Error
     let count_key = DataKey::EventSubmissionCount(id);
     env.storage().persistent().set(&count_key, &next);
     touch_event_persistent(env, &count_key);
+
+    let per_applicant = applicant_submission_count(env, id, addr)
+        .checked_add(1)
+        .ok_or(Error::TooManyContributors)?;
+    set_applicant_submission_count(env, id, addr, per_applicant);
     Ok(())
+}
+
+/// Reads a pre-1.7.0 submission row, which lived under a key with no slot.
+/// Only `migrate` calls this.
+pub fn get_legacy_submission(env: &Env, id: u64, applicant: &Address) -> Option<Submission> {
+    let key = DataKey::EventSubmission(id, applicant.clone());
+    let s: Option<Submission> = env.storage().persistent().get(&key);
+    // This key is a permanent read path, not just a migration source: hackathon
+    // submitters never enter the applicant index, so their rows are only ever
+    // reachable here. Without the touch they archive and the submission
+    // silently disappears.
+    if s.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    s
+}
+
+/// Drops a pre-1.7.0 submission row once it has been copied to a slot.
+pub fn remove_legacy_submission(env: &Env, id: u64, applicant: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventSubmission(id, applicant.clone()));
 }
 
 // ============================================================
@@ -554,6 +643,21 @@ pub fn unclaimed_prize_count(env: &Env, id: u64) -> u32 {
 pub fn set_unclaimed_prize_count(env: &Env, id: u64, count: u32) {
     let key = DataKey::EventUnclaimedPrizes(id);
     env.storage().persistent().set(&key, &count);
+    touch_event_persistent(env, &key);
+}
+
+pub fn owed_total(env: &Env, id: u64) -> i128 {
+    let key = DataKey::EventOwedTotal(id);
+    let t: Option<i128> = env.storage().persistent().get(&key);
+    if t.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    t.unwrap_or(0)
+}
+
+pub fn set_owed_total(env: &Env, id: u64, owed: i128) {
+    let key = DataKey::EventOwedTotal(id);
+    env.storage().persistent().set(&key, &owed);
     touch_event_persistent(env, &key);
 }
 

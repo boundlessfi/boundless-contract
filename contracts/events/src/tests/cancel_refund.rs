@@ -75,9 +75,9 @@ fn setup_with_env<'a>(env: Env) -> Ctx<'a> {
     }
 }
 
-fn single_dist(env: &Env) -> Map<u32, u32> {
+fn single_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 10000000000_i128);
     m
 }
 
@@ -91,7 +91,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/cancel-test"),
         title: String::from_str(&ctx.env, "Cancel Test"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -403,8 +403,8 @@ fn missing_running_total_with_contributors_fails_closed() {
 fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 60);
-    dist.set(2, 40);
+    dist.set(1, 600_0000000_i128);
+    dist.set(2, 400_0000000_i128);
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -414,7 +414,7 @@ fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/boundary"),
         title: String::from_str(&ctx.env, "ProRata Cancel"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -433,14 +433,17 @@ fn cancel_prorata_splits_remaining_across_partners_no_owner_residual() {
         WinnerSpec {
             recipient: w.clone(),
             position: 1,
+            // The pool is 2000 after both contributions; the manager awards
+            // 1200 of it, leaving 800 to split pro-rata on cancel.
+            amount: 1_200_0000000_i128,
             reputation_bump: 0
         },
     ];
     ctx.events
         .select_winners(&id, &winners, &BytesN::random(&ctx.env));
 
-    // Pull model: the winner claims (60% of 2000 = 1200) before the
-    // manager can cancel; the remainder splits pro-rata below.
+    // Pull model: the winner claims before the manager can cancel; the
+    // remainder splits pro-rata below.
     ctx.events
         .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
 

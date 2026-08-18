@@ -24,7 +24,7 @@ mod tests;
 use crate::errors::Error;
 use crate::types::*;
 
-contractmeta!(key = "version", val = "1.6.0");
+contractmeta!(key = "version", val = "1.7.0");
 contractmeta!(
     key = "description",
     val = "Boundless events contract: hackathon, bounty, grant + escrow"
@@ -94,6 +94,13 @@ impl EventsContract {
 
     pub fn cancel_pending_upgrade(env: Env) -> Result<(), Error> {
         admin::cancel_pending_upgrade(&env)
+    }
+
+    /// Converts up to `max_events` pre-1.7.0 event records, returning how many
+    /// remain. Loop until it reports zero, then call `migrate`. Paged because
+    /// one invocation cannot touch every event of a deployment with history.
+    pub fn migrate_events(env: Env, max_events: u32) -> Result<u64, Error> {
+        admin::migrate_events(&env, max_events)
     }
 
     pub fn migrate(env: Env) -> Result<(), Error> {
@@ -185,23 +192,28 @@ impl EventsContract {
     // ============================================================
     // SUBMISSION
     // ============================================================
+    /// `slot` separates several entries by the same wallet in one event. The
+    /// contract assigns it no meaning; re-submitting to an occupied slot
+    /// updates it in place. Callers with a single entry use slot 0.
     pub fn submit(
         env: Env,
         event_id: u64,
         applicant: Address,
+        slot: u32,
         content_uri: String,
         op_id: BytesN<32>,
     ) -> Result<(), Error> {
-        event_ops::submit(&env, event_id, applicant, content_uri, op_id)
+        event_ops::submit(&env, event_id, applicant, slot, content_uri, op_id)
     }
 
     pub fn withdraw_submission(
         env: Env,
         event_id: u64,
         applicant: Address,
+        slot: u32,
         op_id: BytesN<32>,
     ) -> Result<(), Error> {
-        event_ops::withdraw_submission(&env, event_id, applicant, op_id)
+        event_ops::withdraw_submission(&env, event_id, applicant, slot, op_id)
     }
 
     // ============================================================
@@ -270,8 +282,14 @@ impl EventsContract {
         env: Env,
         event_id: u64,
         applicant: Address,
+        slot: u32,
     ) -> Result<Submission, Error> {
-        event_ops::get_submission(&env, event_id, applicant)
+        event_ops::get_submission(&env, event_id, applicant, slot)
+    }
+
+    /// How many slots this applicant occupies in this event.
+    pub fn get_applicant_submission_count(env: Env, event_id: u64, applicant: Address) -> u32 {
+        storage::applicant_submission_count(&env, event_id, &applicant)
     }
 
     // Full-list getters return the first page (VIEW_PAGE_LIMIT entries);

@@ -66,9 +66,9 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn single_dist(env: &Env) -> Map<u32, u32> {
+fn single_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 100000000000_i128);
     m
 }
 
@@ -82,7 +82,7 @@ fn create_grant(ctx: &Ctx, n: u32) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant/1"),
         title: String::from_str(&ctx.env, "Test Grant"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -95,6 +95,7 @@ fn select_winner(ctx: &Ctx, id: u64, recipient: &Address) {
         WinnerSpec {
             recipient: recipient.clone(),
             position: 1,
+            amount: 10_000_0000000_i128,
             reputation_bump: 0
         },
     ];
@@ -128,7 +129,7 @@ fn grant_create_with_single_release_reverts() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant"),
         title: String::from_str(&ctx.env, "Bad Grant"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -150,7 +151,7 @@ fn grant_create_with_zero_milestones_reverts() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant"),
         title: String::from_str(&ctx.env, "Zero Milestones"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -310,7 +311,7 @@ fn claim_milestone_on_single_release_reverts() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hack"),
         title: String::from_str(&ctx.env, "Single Release"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -345,8 +346,8 @@ fn claim_milestone_op_replay_reverts() {
 fn two_winner_grant_each_claims_their_share() {
     let ctx = setup();
     let mut dist = Map::new(&ctx.env);
-    dist.set(1, 60);
-    dist.set(2, 40);
+    dist.set(1, TOTAL_BUDGET * 60 / 100);
+    dist.set(2, TOTAL_BUDGET * 40 / 100);
     let params = CreateEventParams {
         pillar: Pillar::Grant,
         owner: ctx.owner.clone(),
@@ -356,7 +357,7 @@ fn two_winner_grant_each_claims_their_share() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/multi-grant"),
         title: String::from_str(&ctx.env, "Multi Winner Grant"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -369,11 +370,13 @@ fn two_winner_grant_each_claims_their_share() {
         WinnerSpec {
             recipient: w1.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 60 / 100,
             reputation_bump: 0
         },
         WinnerSpec {
             recipient: w2.clone(),
             position: 2,
+            amount: TOTAL_BUDGET * 40 / 100,
             reputation_bump: 0
         },
     ];

@@ -57,6 +57,7 @@ pub fn claim_milestone(
 
     let count = storage::winner_count(env, event_id);
     let mut winner_position: Option<u32> = None;
+    let mut awarded_amount: i128 = 0;
     let mut already_claimed_for_recipient: u32 = 0;
     let mut already_paid_to_recipient: i128 = 0;
     for idx in 0..count {
@@ -68,7 +69,10 @@ pub fn claim_milestone(
             continue;
         }
         match w.milestone {
-            None => winner_position = Some(w.position),
+            None => {
+                winner_position = Some(w.position);
+                awarded_amount = w.amount;
+            }
             Some(_) => {
                 already_claimed_for_recipient = already_claimed_for_recipient.saturating_add(1);
                 already_paid_to_recipient = already_paid_to_recipient.saturating_add(w.amount);
@@ -93,11 +97,9 @@ pub fn claim_milestone(
             event.remaining_escrow / (remaining_milestones as i128)
         }
     } else {
-        let percent = event
-            .winner_distribution
-            .get(position)
-            .ok_or(Error::InvalidWinnerPosition)? as i128;
-        let total_share = event.total_budget.saturating_mul(percent) / 100_i128;
+        // The award carries its own amount, set at selection. Milestones split
+        // that, not a share of the budget.
+        let total_share = awarded_amount;
         let per_milestone_floored = total_share / (total_milestones as i128);
 
         if already_claimed_for_recipient.saturating_add(1) == total_milestones {
@@ -120,6 +122,15 @@ pub fn claim_milestone(
         escrow::release(env, &event.token, &recipient, amount);
     }
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
+    if !is_crowdfunding {
+        // Crowdfunding never reserves, since it has no winner selection.
+        let owed = storage::owed_total(env, event_id);
+        let owed_after = owed.checked_sub(amount).ok_or(Error::InsufficientEscrow)?;
+        if owed_after < 0 {
+            return Err(Error::InsufficientEscrow);
+        }
+        storage::set_owed_total(env, event_id, owed_after);
+    }
     storage::mark_milestone_claimed(env, event_id, &recipient, milestone);
     if is_crowdfunding {
         let claimed = storage::get_crowdfunding_milestones_claimed(env, event_id);

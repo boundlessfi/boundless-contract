@@ -72,9 +72,9 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn single_dist(env: &Env) -> Map<u32, u32> {
+fn single_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 10000000000_i128);
     m
 }
 
@@ -88,7 +88,7 @@ fn create_hackathon(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/contrib-hack"),
         title: String::from_str(&ctx.env, "Contrib Hack"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -336,7 +336,7 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/boundary"),
         title: String::from_str(&ctx.env, "Boundary Cancel"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -362,6 +362,7 @@ fn cancel_at_boundary_pays_partners_full_no_owner_residual() {
         WinnerSpec {
             recipient: winner_a.clone(),
             position: 1,
+            amount: 1_000_0000000_i128,
             reputation_bump: 50,
         },
     ];

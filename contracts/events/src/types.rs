@@ -73,7 +73,11 @@ pub struct EventRecord {
     pub title: String,
     pub created_at: u64,
     pub deadline: Option<u64>,
-    pub winner_distribution: Map<u32, u32>,
+    /// Advertised minimum per position, in token-native units. `select_winners`
+    /// may pay above a floor but never below it, so a published prize table is
+    /// a guarantee rather than an estimate. Positions absent from the map carry
+    /// no floor and are payable at any positive amount.
+    pub prize_floors: Map<u32, i128>,
     pub fee_bps_override: Option<u32>,
 }
 
@@ -91,7 +95,7 @@ pub struct CreateEventParams {
     pub content_uri: String,
     pub title: String,
     pub deadline: Option<u64>,
-    pub winner_distribution: Map<u32, u32>,
+    pub prize_floors: Map<u32, i128>,
     pub fee_bps_override: Option<u32>,
     pub manager: Option<Address>,
 }
@@ -139,6 +143,10 @@ pub struct Winner {
 pub struct WinnerSpec {
     pub recipient: Address,
     pub position: u32,
+    /// Award amount in token-native units. Allocation happens here, at payout,
+    /// not at create: the event holds a pool and each selection names what it
+    /// spends from it.
+    pub amount: i128,
     pub reputation_bump: u32,
 }
 
@@ -167,6 +175,8 @@ pub enum DataKey {
     EventApplicantAt(u64, u32),
     EventApplicantSlot(u64, Address),
 
+    /// Pre-1.7.0 single-submission key. Read only by `migrate`, which moves
+    /// each row to slot 0 of `EventSubmissionEntry`. Never write this.
     EventSubmission(u64, Address),
 
     EventWinnerCount(u64),
@@ -209,6 +219,22 @@ pub enum DataKey {
 
     // Appended to cap per-event submission storage growth (security fix).
     EventSubmissionCount(u64),
+
+    // Appended in 1.7.0. Sum of awarded-but-unclaimed prizes. `remaining_escrow`
+    // only drops at claim time, so without this a second selection would see
+    // funds an earlier winner is still entitled to and could promise them twice.
+    EventOwedTotal(u64),
+
+    // Appended in 1.7.0. Submissions gain a caller-chosen slot, so one wallet
+    // may hold several distinct entries in one event. The contract assigns no
+    // meaning to the slot; callers use it for whatever separates their entries.
+    EventSubmissionEntry(u64, Address, u32),
+    EventApplicantSubmissionCount(u64, Address),
+
+    // Next event id `migrate_events` has yet to convert. The pass is paged
+    // because one invocation may touch only 100 ledger entries, so a
+    // deployment with real history cannot be migrated in a single call.
+    MigrationCursor,
 }
 
 // ============================================================

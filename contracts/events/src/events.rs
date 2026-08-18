@@ -76,6 +76,7 @@ pub struct ApplicationWithdrawn {
 pub struct Submitted {
     pub event_id: u64,
     pub applicant: Address,
+    pub slot: u32,
     pub content_uri: String,
 }
 
@@ -83,6 +84,7 @@ pub struct Submitted {
 pub struct SubmissionWithdrawn {
     pub event_id: u64,
     pub applicant: Address,
+    pub slot: u32,
 }
 
 #[contractevent]

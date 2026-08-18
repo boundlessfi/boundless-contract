@@ -65,7 +65,7 @@ pub fn withdraw_application(
     applicant.require_auth();
     idempotency::require_unseen(env, &applicant, &op_id)?;
 
-    if storage::get_submission(env, bounty_id, &applicant).is_some() {
+    if storage::has_any_submission(env, bounty_id, &applicant) {
         return Err(Error::SubmissionAlreadyExists);
     }
 
