@@ -71,7 +71,22 @@ be rewritten safely while it can still be selected against.
 
 ---
 
-## 3. Two things that will bite you
+## 3. Three things that will bite you
+
+**Every admin envelope must be simulated before signing.** `--build-only`
+alone produces a transaction with `fee: 100` and no `SorobanTransactionData`:
+no footprint, no resource fee. It will be rejected. Pipe every build through
+`stellar tx simulate`, which fills both in (the profile propose goes from fee
+100 to 318,317 stroops). The pattern throughout is:
+
+```
+stellar contract invoke --id <contract> --source-account boundless-mainnet-msig \
+  --network mainnet --build-only -- <fn> <args> \
+  | stellar tx simulate --source-account boundless-mainnet-msig --network mainnet
+```
+
+Simulate against current ledger state, so build each envelope close to when it
+will be signed rather than batching them up front.
 
 **The sequence number.** Both prepared envelopes were built against the admin
 account's current sequence, so they carry the *same* `seq_num`
@@ -128,17 +143,28 @@ stellar contract upload --wasm target/wasm32v1-none/release/boundless_events.was
 1. **propose_upgrade** — prepared envelope:
 
 ```
-AAAAAgAAAACqr+kenVNRznjlFU8yE+QTqegANttFtJQbOeXujoYHJwAAAGQDxLFqAAAAEAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAH2o/HE+cZznpgt904v7VoQtlwY8dnSkPqh/UC5V+HG0gAAAA9wcm9wb3NlX3VwZ3JhZGUAAAAAAgAAAA0AAAAga0gEkgpAaN/cqqcR+sY5CFDgqS9LXtTkYllpS2HLrhIAAAAOAAAABTEuMi4wAAAAAAAAAAAAAAAAAAAA
+AAAAAgAAAACqr+kenVNRznjlFU8yE+QTqegANttFtJQbOeXujoYHJwAE220DxLFqAAAAEAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAH2o/HE+cZznpgt904v7VoQtlwY8dnSkPqh/UC5V+HG0gAAAA9wcm9wb3NlX3VwZ3JhZGUAAAAAAgAAAA0AAAAga0gEkgpAaN/cqqcR+sY5CFDgqS9LXtTkYllpS2HLrhIAAAAOAAAABTEuMi4wAAAAAAAAAQAAAAAAAAAAAAAAAfaj8cT5xnOemC33Ti/tWhC2XBjx2dKQ+qH9QLlX4cbSAAAAD3Byb3Bvc2VfdXBncmFkZQAAAAACAAAADQAAACBrSASSCkBo39yqpxH6xjkIUOCpL0te1ORiWWlLYcuuEgAAAA4AAAAFMS4yLjAAAAAAAAAAAAAAAQAAAAAAAAABAAAAB7njUAz7VZeB5oNZZV83d1x4r//FqENtrKnR0fjjVpsCAAAAAQAAAAYAAAAB9qPxxPnGc56YLfdOL+1aELZcGPHZ0pD6of1AuVfhxtIAAAAUAAAAAQAT6jAAAAAAAAACrAAAAAAABNsJAAAAAA==
 ```
 
-Decodes to: source `GCVK72I6…`, contract `CD3KH4OE…`, `propose_upgrade`,
-args `6b480492…` and `"1.2.0"`.
+Simulated: fee 318,317 stroops, resource fee 318,217, 684 write bytes. Decodes
+to source `GCVK72I6…`, contract `CD3KH4OE…`, `propose_upgrade`, args
+`6b480492…` and `"1.2.0"`.
+
+Regenerate with:
+
+```
+stellar contract invoke --id CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC \
+  --source-account boundless-mainnet-msig --network mainnet --build-only \
+  -- propose_upgrade --new_wasm_hash 6b4804920a4068dfdcaaa711fac6390850e0a92f4b5ed4e46259694b61cbae12 --new_version "1.2.0" \
+  | stellar tx simulate --source-account boundless-mainnet-msig --network mainnet
+```
 
 2. **apply_upgrade** — build fresh (sequence has moved):
 
 ```
 stellar contract invoke --id CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC \
-  --source boundless-mainnet-msig --network mainnet --build-only -- apply_upgrade
+  --source-account boundless-mainnet-msig --network mainnet --build-only -- apply_upgrade \
+  | stellar tx simulate --source-account boundless-mainnet-msig --network mainnet
 ```
 
 3. **migrate** — version stamp only; the dispatch is empty, so nothing is
@@ -150,23 +176,18 @@ stellar contract invoke --id CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HD
 
 ### 5.3 Events: 1.6.0 → 1.7.0
 
-1. **propose_upgrade** — prepared envelope (rebuild if profile's steps consumed
-   this sequence, which they will):
-
-```
-AAAAAgAAAACqr+kenVNRznjlFU8yE+QTqegANttFtJQbOeXujoYHJwAAAGQDxLFqAAAAEAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAGLUhnQSRnPriBNNLORXFTX2uG/A42dHPozTgZeaFtYxAAAAA9wcm9wb3NlX3VwZ3JhZGUAAAAAAgAAAA0AAAAguHNlwWEC9yQqj8PncPYVmRhBdBxAZzuyQcslQTC+TCYAAAAOAAAABTEuNy4wAAAAAAAAAAAAAAAAAAAA
-```
-
-Decodes to: source `GCVK72I6…`, contract `CCFVEGOQ…`, `propose_upgrade`,
-args `b87365c1…` and `"1.7.0"`.
-
-Rebuild with:
+1. **propose_upgrade** — build it after the profile steps have confirmed; the
+   sequence will have moved several times by then:
 
 ```
 stellar contract invoke --id CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ \
-  --source boundless-mainnet-msig --network mainnet --build-only \
-  -- propose_upgrade --new_wasm_hash b87365c16102f7242a8fc3e770f615991841741c40673bb241cb254130be4c26 --new_version "1.7.0"
+  --source-account boundless-mainnet-msig --network mainnet --build-only \
+  -- propose_upgrade --new_wasm_hash b87365c16102f7242a8fc3e770f615991841741c40673bb241cb254130be4c26 --new_version "1.7.0" \
+  | stellar tx simulate --source-account boundless-mainnet-msig --network mainnet
 ```
+
+Verify it decodes to source `GCVK72I6…`, contract `CCFVEGOQ…`,
+`propose_upgrade`, args `b87365c1…` and `"1.7.0"`.
 
 2. **apply_upgrade** — build fresh.
 
