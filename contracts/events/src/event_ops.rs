@@ -539,7 +539,7 @@ pub fn submit(
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
     }
-    if matches!(event.pillar, Pillar::Crowdfunding) {
+    if matches!(event.pillar, Pillar::Crowdfunding | Pillar::Grant) {
         return Err(Error::InvalidPillar);
     }
 
@@ -555,7 +555,7 @@ pub fn submit(
     let existing = storage::get_submission(env, event_id, &applicant);
 
     if existing.is_none() {
-        let needs_application = matches!(event.pillar, Pillar::Bounty | Pillar::Grant);
+        let needs_application = matches!(event.pillar, Pillar::Bounty);
         if needs_application && storage::applicant_slot(env, event_id, &applicant) == 0 {
             return Err(Error::ApplicantNotApplied);
         }

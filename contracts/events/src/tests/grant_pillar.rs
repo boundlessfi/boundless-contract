@@ -5,6 +5,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
+use crate::errors::Error;
 use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 use boundless_profile::{ProfileContract, ProfileContractClient};
@@ -399,4 +400,16 @@ fn two_winner_grant_each_claims_their_share() {
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
+}
+
+#[test]
+fn submit_on_grant_pillar_reverts_invalid_pillar() {
+    let ctx = setup();
+    let id = create_grant(&ctx, 3);
+    let applicant = Address::generate(&ctx.env);
+    let uri = String::from_str(&ctx.env, "ipfs://Qm.../submission.json");
+    let op = BytesN::random(&ctx.env);
+
+    let res = ctx.events.try_submit(&id, &applicant, &uri, &op);
+    assert_eq!(res, Err(Ok(Error::InvalidPillar)));
 }
