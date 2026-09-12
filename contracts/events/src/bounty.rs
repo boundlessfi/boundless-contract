@@ -35,7 +35,7 @@ pub fn apply(
     storage::append_applicant(env, bounty_id, &applicant)?;
 
     let profile = profile_client::client(env);
-    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    let bootstrap_op = idempotency::derive_child(env, &applicant, &op_id, tag::BOOTSTRAP);
     profile.bootstrap(&applicant, &bootstrap_op);
 
     evt::Applied {

@@ -118,19 +118,30 @@ fn sha256_child_ids_differ_for_xor_colliding_parents() {
     let parent_b = BytesN::from_array(env, &b);
     assert_ne!(parent_a, parent_b);
 
+    let domain = Address::generate(env);
+    let domain2 = Address::generate(env);
     // derive_child reads profile contract storage — must run as the events contract.
-    let (child_a, child_b, child_rep, child_i0, child_i1) = env.as_contract(&ctx.events_id, || {
-        let child_a = idempotency::derive_child(env, &parent_a, tag::BOOTSTRAP);
-        let child_b = idempotency::derive_child(env, &parent_b, tag::BOOTSTRAP);
-        let child_rep = idempotency::derive_child(env, &parent_a, tag::BUMP_REP);
-        let child_i0 = idempotency::derive_child_indexed(env, &parent_a, tag::BOOTSTRAP, 0);
-        let child_i1 = idempotency::derive_child_indexed(env, &parent_a, tag::BOOTSTRAP, 1);
-        (child_a, child_b, child_rep, child_i0, child_i1)
-    });
+    let (child_a, child_b, child_rep, child_i0, child_i1, child_domain2) =
+        env.as_contract(&ctx.events_id, || {
+            let child_a = idempotency::derive_child(env, &domain, &parent_a, tag::BOOTSTRAP);
+            let child_b = idempotency::derive_child(env, &domain, &parent_b, tag::BOOTSTRAP);
+            let child_rep = idempotency::derive_child(env, &domain, &parent_a, tag::BUMP_REP);
+            let child_i0 =
+                idempotency::derive_child_indexed(env, &domain, &parent_a, tag::BOOTSTRAP, 0);
+            let child_i1 =
+                idempotency::derive_child_indexed(env, &domain, &parent_a, tag::BOOTSTRAP, 1);
+            let child_domain2 =
+                idempotency::derive_child(env, &domain2, &parent_a, tag::BOOTSTRAP);
+            (child_a, child_b, child_rep, child_i0, child_i1, child_domain2)
+        });
 
     assert_ne!(
         child_a, child_b,
         "distinct parents must produce distinct sha256 children"
+    );
+    assert_ne!(
+        child_a, child_domain2,
+        "distinct domains must produce distinct sha256 children"
     );
     assert_ne!(child_a, child_rep);
     assert_eq!(child_a, child_i0);
@@ -164,9 +175,9 @@ fn bootstrap_self_cannot_front_run_events_child_op_ids() {
     let claim_op = BytesN::random(&ctx.env);
     let (bootstrap_child, rep_child, earnings_child) = ctx.env.as_contract(&ctx.events_id, || {
         (
-            idempotency::derive_child(&ctx.env, &claim_op, tag::BOOTSTRAP),
-            idempotency::derive_child(&ctx.env, &claim_op, tag::BUMP_REP),
-            idempotency::derive_child(&ctx.env, &claim_op, tag::REGISTER_EARNINGS),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::BOOTSTRAP),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::BUMP_REP),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::REGISTER_EARNINGS),
         )
     });
 
@@ -199,10 +210,10 @@ fn events_domain_child_op_id_replay_still_rejected() {
 
     // Bootstrap via events path twice with the same child id.
     let parent = BytesN::random(env);
-    let child = env.as_contract(&ctx.events_id, || {
-        idempotency::derive_child(env, &parent, tag::BOOTSTRAP)
-    });
     let user = Address::generate(env);
+    let child = env.as_contract(&ctx.events_id, || {
+        idempotency::derive_child(env, &user, &parent, tag::BOOTSTRAP)
+    });
 
     ctx.profile.bootstrap(&user, &child);
     let replay = ctx.profile.try_bootstrap(&user, &child);
@@ -305,3 +316,22 @@ fn permissionless_apply_cannot_squat_select_winners_op_id() {
     let token = token::Client::new(&ctx.env, &ctx.token_addr);
     assert_eq!(token.balance(&ctx.applicant), TOTAL_BUDGET);
 }
+
+/// Two different callers with the same parent op_id both succeed because
+/// child op_ids are bound to each authorizing address.
+#[test]
+fn two_different_callers_with_same_parent_op_id_both_succeed() {
+    let ctx = setup();
+    let id = create_bounty(&ctx);
+
+    let caller1 = Address::generate(&ctx.env);
+    let caller2 = Address::generate(&ctx.env);
+    let shared_op = BytesN::random(&ctx.env);
+
+    ctx.events.apply_to_bounty(&id, &caller1, &shared_op);
+    ctx.events.apply_to_bounty(&id, &caller2, &shared_op);
+
+    assert!(ctx.profile.get_profile(&caller1).is_some());
+    assert!(ctx.profile.get_profile(&caller2).is_some());
+}
+

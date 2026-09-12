@@ -43,19 +43,26 @@ pub mod tag {
 
 /// Collision-resistant child op_id.
 ///
-/// Invariant: `sha256(parent ‖ op_tag ‖ sub_idx ‖ callee_contract_id)`.
+/// Invariant: `sha256(parent ‖ op_tag ‖ sub_idx ‖ domain ‖ callee_contract_id)`.
 /// XOR into parent bytes is malleable (reversible, squat-friendly); hashing with
-/// the profile contract id as domain separator is not.
-pub fn derive_child(env: &Env, parent: &BytesN<32>, op_tag: u8) -> BytesN<32> {
-    derive_child_indexed(env, parent, op_tag, 0)
+/// the authorizing domain address and profile contract id as domain separators is not.
+pub fn derive_child(env: &Env, domain: &Address, parent: &BytesN<32>, op_tag: u8) -> BytesN<32> {
+    derive_child_indexed(env, domain, parent, op_tag, 0)
 }
 
-pub fn derive_child_indexed(env: &Env, parent: &BytesN<32>, op_tag: u8, sub_idx: u8) -> BytesN<32> {
+pub fn derive_child_indexed(
+    env: &Env,
+    domain: &Address,
+    parent: &BytesN<32>,
+    op_tag: u8,
+    sub_idx: u8,
+) -> BytesN<32> {
     let callee = storage::get_profile_contract(env);
     let mut payload = Bytes::new(env);
     payload.append(&Bytes::from_array(env, &parent.to_array()));
     payload.push_back(op_tag);
     payload.push_back(sub_idx);
+    payload.append(&domain.to_xdr(env));
     payload.append(&callee.to_xdr(env));
     let digest = env.crypto().sha256(&payload);
     BytesN::from_array(env, &digest.to_array())

@@ -882,10 +882,10 @@ pub fn claim_prize(
     let profile = profile_client::client(env);
     let reason_win = Symbol::new(env, "win");
 
-    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    let bootstrap_op = idempotency::derive_child(env, &award.recipient, &op_id, tag::BOOTSTRAP);
     let _ = profile.try_bootstrap(&award.recipient, &bootstrap_op);
 
-    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
+    let rep_op = idempotency::derive_child(env, &award.recipient, &op_id, tag::BUMP_REP);
     let _ = profile.try_bump_reputation(
         &award.recipient,
         &award.reputation_bump,
@@ -893,7 +893,7 @@ pub fn claim_prize(
         &rep_op,
     );
 
-    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
+    let earnings_op = idempotency::derive_child(env, &award.recipient, &op_id, tag::REGISTER_EARNINGS);
     let _ = profile.try_register_earnings(&award.recipient, &event.token, &amount, &earnings_op);
 
     Ok(())
