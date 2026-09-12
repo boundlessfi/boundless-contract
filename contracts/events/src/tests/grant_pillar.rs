@@ -400,3 +400,26 @@ fn two_winner_grant_each_claims_their_share() {
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 }
+
+#[test]
+fn claim_milestone_succeeds_even_if_profile_is_paused() {
+    let ctx = setup();
+    let recipient = Address::generate(&ctx.env);
+    let id = create_grant(&ctx, 2);
+    select_winner(&ctx, id, &recipient);
+
+    ctx.profile.pause();
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let before = token.balance(&recipient);
+
+    ctx.events
+        .claim_milestone(&id, &recipient, &0_u32, &10_u32, &BytesN::random(&ctx.env));
+
+    let per_milestone = TOTAL_BUDGET / 2;
+    assert_eq!(token.balance(&recipient) - before, per_milestone);
+    assert_eq!(
+        ctx.events.get_event(&id).remaining_escrow,
+        TOTAL_BUDGET - per_milestone
+    );
+}
