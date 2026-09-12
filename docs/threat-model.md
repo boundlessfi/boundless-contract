@@ -298,7 +298,7 @@ This threat model will be revisited before mainnet launch (Tranche 3) and any ti
 | `create_event` | events | `params.owner.require_auth()` |
 | `apply` | events | `applicant.require_auth()` |
 | `withdraw_application` | events | `applicant.require_auth()` |
-| `submit` | events | `event.owner.require_auth()` (manager) |
+| `submit` | events | `applicant.require_auth()` (Hackathon & Bounty only; Crowdfunding & Grant rejected with `InvalidPillar`) |
 | `add_funds` | events | `from.require_auth()` |
 | `select_winners` | events | `event.owner.require_auth()` (manager) |
 | `claim_milestone` | events | `event.owner.require_auth()` + `admin.require_auth()` |
