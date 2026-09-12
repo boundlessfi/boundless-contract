@@ -1115,3 +1115,25 @@ fn expired_proposal_cannot_be_accepted() {
     ctx.events.cancel_pending_manager(&id);
     assert!(ctx.events.get_pending_manager(&id).is_none());
 }
+
+#[test]
+fn propose_manager_replaces_pending_proposal_and_emits_cancellation() {
+    let ctx = setup();
+    let manager1 = Address::generate(&ctx.env);
+    let id = create_bounty_with_manager(&ctx, &manager1);
+    assert_eq!(
+        ctx.events.get_pending_manager(&id).unwrap().target,
+        manager1
+    );
+
+    let manager2 = Address::generate(&ctx.env);
+    ctx.events.propose_manager(&id, &manager2);
+    assert_eq!(
+        ctx.events.get_pending_manager(&id).unwrap().target,
+        manager2
+    );
+
+    ctx.events.accept_manager(&id);
+    assert_eq!(ctx.events.get_manager(&id), manager2);
+}
+
