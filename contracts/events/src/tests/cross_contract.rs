@@ -1115,3 +1115,19 @@ fn expired_proposal_cannot_be_accepted() {
     ctx.events.cancel_pending_manager(&id);
     assert!(ctx.events.get_pending_manager(&id).is_none());
 }
+
+#[test]
+fn bounty_apply_succeeds_even_if_profile_is_paused() {
+    let ctx = setup();
+    let id = create_bounty(&ctx);
+    let applicant = Address::generate(&ctx.env);
+
+    ctx.profile.pause();
+
+    ctx.events
+        .apply(&id, &applicant, &BytesN::random(&ctx.env));
+
+    let applicants = ctx.events.get_applicants(&id).expect("applicants");
+    assert_eq!(applicants.len(), 1);
+    assert_eq!(applicants.get(0).unwrap(), applicant);
+}

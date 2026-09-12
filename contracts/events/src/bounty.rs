@@ -36,7 +36,7 @@ pub fn apply(
 
     let profile = profile_client::client(env);
     let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
-    profile.bootstrap(&applicant, &bootstrap_op);
+    let _ = profile.try_bootstrap(&applicant, &bootstrap_op);
 
     evt::Applied {
         event_id: bounty_id,
