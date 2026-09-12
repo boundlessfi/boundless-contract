@@ -192,6 +192,10 @@ pub fn propose_manager(env: &Env, event_id: u64, new_manager: Address) -> Result
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     resolve_manager(env, event_id, &event.owner).require_auth();
 
+    if storage::get_pending_manager(env, event_id).is_some() {
+        evt::PendingManagerCancelled { event_id }.publish(env);
+    }
+
     let expires_at = env
         .ledger()
         .sequence()
