@@ -250,3 +250,28 @@ Everything in Section 4–5 is identical on mainnet except:
 - The cold recovery key actually lives in a safe; the daily signers are you + co-founder.
 - After rotation, **destroy the initial deploy key** (`shred -u`); it has no power post-rotation but leave nothing lying around.
 - The enumerable token index is complete **from genesis** — register USDC at deploy time and state enumeration is authoritative forever (no import-by-address needed, unlike the in-place-upgraded testnet contract).
+
+
+---
+
+## 5. Fee account trustline verification & event alerting (DoS.15)
+
+**Context:**
+As identified in threat model finding **DoS.15**, `set_fee_account` performs no pre-flight verification, and `deposit_with_fee_at` / `release_with_fee_at` transfer protocol fees directly to `fee_account`. If the fee account lacks an active, authorized trustline for a supported token, user transactions (`create_event`, `add_funds`, and crowdfunding `claim_milestone`) will revert.
+
+### Pre-flight Verification Runbook
+Before executing `register_supported_token` or `set_fee_account`:
+
+1. Run the trustline verification script against the fee account:
+   ```bash
+   ./scripts/admin/verify-fee-trustline.sh <FEE_ACCOUNT_G_ADDRESS> <network> <ASSET_CODE:ISSUER ...>
+   ```
+2. Verify all checks pass:
+   - Account exists on target network.
+   - Trustline exists in `.balances[]` for each registered/target token.
+   - `is_authorized` is `true`.
+
+### Event Alerting & Monitoring
+- Configure monitoring alerts on the indexer / event listener for:
+  - `FeeAccountUpdated`: Triggers automated check to verify the new fee account holds trustlines for all active supported tokens.
+  - `TokenRegistered`: Triggers verification that the current fee account holds a trustline for the newly registered token.

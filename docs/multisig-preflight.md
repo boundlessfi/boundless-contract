@@ -89,6 +89,20 @@ Before touching mainnet:
 
 The same procedure is required quarterly per policy §5.3; this just exercises it under realistic conditions before mainnet.
 
+
+---
+
+## 4.B Fee account & token trustline pre-flight (DoS.15 mitigation)
+
+Before calling `register_supported_token` or rotating the fee account with `set_fee_account`:
+
+- [ ] Confirm the candidate `fee_account` G-address is funded and active on the target network.
+- [ ] For every token already supported or proposed for registration, verify that `fee_account` holds an active, authorized trustline:
+  ```bash
+  ./scripts/admin/verify-fee-trustline.sh <FEE_ACCOUNT_G_ADDRESS> <testnet|mainnet> <ASSET_CODE:ISSUER>
+  ```
+- [ ] Verify that no un-trustlined or unauthorized token is registered, preventing contract fee collection reverts in `deposit_with_fee_at` / `release_with_fee_at`.
+
 ## 5. Rotate admin authority
 
 Only after every box above is checked:
