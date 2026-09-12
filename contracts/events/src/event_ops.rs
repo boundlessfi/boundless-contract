@@ -773,6 +773,21 @@ pub fn select_winners(
             }
         }
         ReleaseKind::Multi(_) => {
+            let mut seen_recipients: Vec<Address> = Vec::new(env);
+            for spec in winners.iter() {
+                let mut already = false;
+                for r in seen_recipients.iter() {
+                    if r == spec.recipient {
+                        already = true;
+                        break;
+                    }
+                }
+                if already {
+                    return Err(Error::DuplicateWinnerPosition);
+                }
+                seen_recipients.push_back(spec.recipient.clone());
+            }
+
             for spec in winners.iter() {
                 storage::append_winner(
                     env,

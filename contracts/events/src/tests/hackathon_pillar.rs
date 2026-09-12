@@ -559,6 +559,37 @@ fn select_winners_duplicate_position_reverts() {
 }
 
 #[test]
+fn select_winners_single_allows_same_recipient_at_different_positions() {
+    let ctx = setup();
+    let dl = Some(ctx.env.ledger().timestamp() + 86_400);
+    let id = create_hackathon_with(&ctx, three_way_dist(&ctx.env), dl);
+
+    let same_winner = Address::generate(&ctx.env);
+    let other = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: same_winner.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+        WinnerSpec {
+            recipient: same_winner.clone(),
+            position: 2,
+            reputation_bump: 0,
+        },
+        WinnerSpec {
+            recipient: other,
+            position: 3,
+            reputation_bump: 0,
+        },
+    ];
+    let op = BytesN::random(&ctx.env);
+    let res = ctx.events.try_select_winners(&id, &winners, &op);
+    assert!(res.is_ok(), "single release permits same recipient at distinct positions");
+}
+
+#[test]
 fn select_winners_batches_append_and_position_replay_reverts() {
     let ctx = setup();
     let dl = Some(ctx.env.ledger().timestamp() + 86_400);

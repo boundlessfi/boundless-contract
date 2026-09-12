@@ -5,6 +5,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
+use crate::errors::Error;
 use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 use boundless_profile::{ProfileContract, ProfileContractClient};
@@ -399,4 +400,46 @@ fn two_winner_grant_each_claims_their_share() {
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
+}
+
+#[test]
+fn select_winners_multi_rejects_duplicate_recipient() {
+    let ctx = setup();
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 60);
+    dist.set(2, 40);
+
+    let params = CreateEventParams {
+        pillar: Pillar::Grant,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget: TOTAL_BUDGET,
+        release_kind: ReleaseKind::Multi(2),
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/multi-grant"),
+        title: String::from_str(&ctx.env, "Multi Winner Grant"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: dist,
+        fee_bps_override: None,
+        manager: None,
+    };
+    let id = ctx.events.create_event(&params, &BytesN::random(&ctx.env));
+
+    let w1 = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: w1.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+        WinnerSpec {
+            recipient: w1.clone(),
+            position: 2,
+            reputation_bump: 0,
+        },
+    ];
+    let res = ctx
+        .events
+        .try_select_winners(&id, &winners, &BytesN::random(&ctx.env));
+    assert_eq!(res, Err(Ok(Error::DuplicateWinnerPosition)));
 }
