@@ -734,7 +734,7 @@ pub fn select_winners(
                     .ok_or(Error::InvalidDistribution)? as i128;
                 let amount = base_escrow.saturating_mul(percent) / 100_i128;
 
-                let anchor_idx = existing_count + (idx as u32);
+                let anchor_idx = existing_count.saturating_add(idx as u32);
                 storage::append_winner(
                     env,
                     event_id,
