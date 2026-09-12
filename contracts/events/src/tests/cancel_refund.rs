@@ -255,6 +255,19 @@ fn paged_cancel_processes_in_batches() {
 }
 
 #[test]
+fn process_cancel_batch_rejects_zero_max_refunds() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+    let partner = Address::generate(&ctx.env);
+    contribute(&ctx, id, &partner, MIN_CONTRIB);
+    ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
+
+    let op_id = BytesN::random(&ctx.env);
+    let res = ctx.events.try_process_cancel_batch(&id, &0_u32, &op_id);
+    assert_eq!(res, Err(Ok(Error::InvalidDistribution)));
+}
+
+#[test]
 fn running_non_owner_total_tracks_repeated_contributions_but_not_owner_topups() {
     let ctx = setup();
     let id = create_hackathon(&ctx);

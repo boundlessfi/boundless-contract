@@ -430,6 +430,10 @@ pub fn process_cancel_batch(
         return Err(Error::CancellationNotStarted);
     }
 
+    if max_refunds == 0 {
+        return Err(Error::InvalidDistribution);
+    }
+
     let cap = if max_refunds > MAX_REFUNDS_PER_BATCH {
         MAX_REFUNDS_PER_BATCH
     } else {
@@ -477,7 +481,9 @@ pub fn process_cancel_batch(
     storage::set_cancellation_state(env, event_id, &state);
     let remaining_to_process = state.count_at_start.saturating_sub(state.next_idx);
 
-    idempotency::mark_seen(env, &domain, &op_id);
+    if processed > 0 {
+        idempotency::mark_seen(env, &domain, &op_id);
+    }
     Ok(remaining_to_process)
 }
 
