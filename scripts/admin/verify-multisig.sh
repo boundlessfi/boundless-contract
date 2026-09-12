@@ -105,4 +105,5 @@ echo
 echo "Next steps:"
 echo "  1. Compare the printed signer addresses against the founder's roster."
 echo "  2. Confirm each signer can sign a test transaction (drill)."
-echo "  3. Only then run set_admin per docs/mainnet-deploy-runbook.md §2.7."
+echo "  3. Verify fee account trustlines via ./scripts/admin/verify-fee-trustline.sh (DoS.15)."
+echo "  4. Only then run set_admin per docs/mainnet-deploy-runbook.md §2.7."
