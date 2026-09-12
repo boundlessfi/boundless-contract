@@ -84,10 +84,10 @@ else
 
         # Match either exact code+issuer or asset code
         MATCH=$(echo "$BALANCES" | jq -r --arg code "$CODE" --arg issuer "$ISSUER" \
-            '[.[] | select(.asset_code == $code and (.asset_issuer == $issuer or $code == $issuer))] | .[0]')
+            '[.[] | select(.asset_code == $code and .asset_issuer == $issuer)] | .[0]')
 
         if [[ -n "$MATCH" && "$MATCH" != "null" ]]; then
-            IS_AUTH=$(echo "$MATCH" | jq -r '.is_authorized // true')
+            IS_AUTH=$(echo "$MATCH" | jq -r '.is_authorized // false')
             if [[ "$IS_AUTH" == "true" ]]; then
                 echo -e "  ${GREEN}✓${NC} Trustline active & authorized: ${ASSET}"
                 PASS=$((PASS + 1))
