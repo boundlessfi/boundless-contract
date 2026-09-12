@@ -677,6 +677,9 @@ pub fn select_winners(
 
     let mut seen_positions: Vec<u32> = Vec::new(env);
     for spec in winners.iter() {
+        if spec.reputation_bump > MAX_REPUTATION_BUMP {
+            return Err(Error::InvalidReputationBump);
+        }
         let mut already = false;
         for p in seen_positions.iter() {
             if p == spec.position {

@@ -7,7 +7,7 @@ use crate::events as evt;
 use crate::idempotency::{self, tag};
 use crate::profile_client;
 use crate::storage;
-use crate::types::{EventRecord, EventStatus, Pillar, ReleaseKind, Winner};
+use crate::types::{EventRecord, EventStatus, Pillar, ReleaseKind, Winner, MAX_REPUTATION_BUMP};
 
 pub fn validate_create(_env: &Env, record: &EventRecord, _owner: &Address) -> Result<(), Error> {
     match record.release_kind {
@@ -28,6 +28,10 @@ pub fn claim_milestone(
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
+
+    if reputation_bump > MAX_REPUTATION_BUMP {
+        return Err(Error::InvalidReputationBump);
+    }
 
     let mut event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
