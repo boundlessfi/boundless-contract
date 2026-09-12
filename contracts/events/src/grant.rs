@@ -129,13 +129,13 @@ pub fn claim_milestone(
     let profile = profile_client::client(env);
     let reason = Symbol::new(env, "milestone");
 
-    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    let bootstrap_op = idempotency::derive_child(env, &event.owner, &op_id, tag::BOOTSTRAP);
     profile.bootstrap(&recipient, &bootstrap_op);
 
-    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
+    let rep_op = idempotency::derive_child(env, &event.owner, &op_id, tag::BUMP_REP);
     profile.bump_reputation(&recipient, &reputation_bump, &reason, &rep_op);
 
-    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
+    let earnings_op = idempotency::derive_child(env, &event.owner, &op_id, tag::REGISTER_EARNINGS);
     profile.register_earnings(&recipient, &event.token, &amount, &earnings_op);
 
     storage::append_winner(
