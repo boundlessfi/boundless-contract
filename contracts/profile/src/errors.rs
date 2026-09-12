@@ -20,6 +20,7 @@ pub enum Error {
     ProfileNotFound = 10,
     InvalidAmount = 12,
     ReasonRequired = 13,
+    InvalidDelta = 18,
 
     OpAlreadySeen = 20,
     EarningsOverflow = 21,

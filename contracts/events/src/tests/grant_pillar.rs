@@ -5,7 +5,8 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
-use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
+use crate::errors::Error;
+use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec, MAX_REPUTATION_BUMP};
 use crate::{EventsContract, EventsContractClient};
 use boundless_profile::{ProfileContract, ProfileContractClient};
 
@@ -399,4 +400,34 @@ fn two_winner_grant_each_claims_their_share() {
     assert_eq!(token.balance(&ctx.fee_account) - fee_before, 0);
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
+}
+
+#[test]
+fn claim_milestone_reputation_bump_exceeding_cap_reverts() {
+    let ctx = setup();
+    let id = create_grant(&ctx, 2);
+
+    let grantee = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: grantee.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+    ];
+    ctx.events
+        .select_winners(&id, &winners, &BytesN::random(&ctx.env));
+
+    let res = ctx.events.try_claim_milestone(
+        &id,
+        &grantee,
+        &0_u32,
+        &(MAX_REPUTATION_BUMP + 1),
+        &BytesN::random(&ctx.env),
+    );
+    assert_eq!(
+        res.err().expect("over-cap milestone reputation bump must revert"),
+        Ok(Error::InvalidReputationBump)
+    );
 }

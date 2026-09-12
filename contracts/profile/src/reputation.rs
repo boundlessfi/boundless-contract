@@ -6,6 +6,8 @@ use crate::events as evt;
 use crate::idempotency;
 use crate::storage;
 
+pub const MAX_DELTA_PER_CALL: u32 = 1_000;
+
 pub fn bump(
     env: &Env,
     user: Address,
@@ -15,6 +17,9 @@ pub fn bump(
 ) -> Result<(), Error> {
     admin::require_events_contract(env)?;
     admin::require_not_paused(env)?;
+    if delta > MAX_DELTA_PER_CALL {
+        return Err(Error::InvalidDelta);
+    }
     let domain = idempotency::events_domain(env)?;
     idempotency::require_unseen(env, &domain, &op_id)?;
 
@@ -41,6 +46,9 @@ pub fn slash(
 ) -> Result<(), Error> {
     admin::require_events_contract(env)?;
     admin::require_not_paused(env)?;
+    if delta > MAX_DELTA_PER_CALL {
+        return Err(Error::InvalidDelta);
+    }
     let domain = idempotency::events_domain(env)?;
     idempotency::require_unseen(env, &domain, &op_id)?;
 

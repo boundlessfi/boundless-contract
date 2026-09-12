@@ -134,6 +134,8 @@ pub struct Winner {
 // ============================================================
 // WINNER SELECTION SPEC
 // ============================================================
+pub const MAX_REPUTATION_BUMP: u32 = 1_000;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WinnerSpec {

@@ -76,7 +76,8 @@ pub enum Error {
 
     ProfileCallFailed = 80,
 
-    // contracterror caps at 50 cases (48 used). Discriminants are not dense —
+    // contracterror caps at 50 cases (49 used). Discriminants are not dense —
     // 91 is a numeric label, not the case count.
     PrizeAlreadyClaimed = 91,
+    InvalidReputationBump = 92,
 }

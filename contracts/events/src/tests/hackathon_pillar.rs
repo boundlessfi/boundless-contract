@@ -8,7 +8,9 @@ use soroban_sdk::{
 use crate::errors::Error;
 use crate::event_ops::MAX_CONTENT_URI_LEN;
 use crate::storage;
-use crate::types::{CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec};
+use crate::types::{
+    CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec, MAX_REPUTATION_BUMP,
+};
 use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
@@ -513,6 +515,27 @@ fn select_winners_empty_set_reverts() {
     let op = BytesN::random(&ctx.env);
     let res = ctx.events.try_select_winners(&id, &winners, &op);
     assert!(res.is_err(), "empty winner set must revert");
+}
+
+#[test]
+fn select_winners_reputation_bump_exceeding_cap_reverts() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: ctx.applicant.clone(),
+            position: 1,
+            reputation_bump: MAX_REPUTATION_BUMP + 1,
+        },
+    ];
+    let op = BytesN::random(&ctx.env);
+    let res = ctx.events.try_select_winners(&id, &winners, &op);
+    assert_eq!(
+        res.err().expect("over-cap reputation bump must revert"),
+        Ok(Error::InvalidReputationBump)
+    );
 }
 
 #[test]

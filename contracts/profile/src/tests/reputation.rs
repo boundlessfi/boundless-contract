@@ -65,13 +65,39 @@ fn bump_accumulates_across_calls() {
 }
 
 #[test]
-fn bump_accepts_u32_max_delta_without_overflow() {
+fn bump_rejects_delta_exceeding_max_delta_per_call() {
+    let (ctx, user) = setup_with_user();
+
+    let err = ctx
+        .client
+        .try_bump_reputation(
+            &user,
+            &(crate::reputation::MAX_DELTA_PER_CALL + 1),
+            &reason(&ctx),
+            &op_id(&ctx),
+        )
+        .err()
+        .expect("expected over-cap bump to reject")
+        .unwrap();
+    assert_eq!(err, Error::InvalidDelta);
+}
+
+#[test]
+fn bump_at_max_delta_per_call_succeeds() {
     let (ctx, user) = setup_with_user();
 
     ctx.client
-        .bump_reputation(&user, &u32::MAX, &reason(&ctx), &op_id(&ctx));
+        .bump_reputation(
+            &user,
+            &crate::reputation::MAX_DELTA_PER_CALL,
+            &reason(&ctx),
+            &op_id(&ctx),
+        );
 
-    assert_eq!(reputation_of(&ctx, &user), u32::MAX as u64);
+    assert_eq!(
+        reputation_of(&ctx, &user),
+        crate::reputation::MAX_DELTA_PER_CALL as u64
+    );
 }
 
 #[test]
@@ -202,6 +228,46 @@ fn slash_zero_delta_is_noop() {
         .slash_reputation(&user, &0, &reason(&ctx), &op_id(&ctx));
 
     assert_eq!(reputation_of(&ctx, &user), 3);
+}
+
+#[test]
+fn slash_rejects_delta_exceeding_max_delta_per_call() {
+    let (ctx, user) = setup_with_user();
+
+    let err = ctx
+        .client
+        .try_slash_reputation(
+            &user,
+            &(crate::reputation::MAX_DELTA_PER_CALL + 1),
+            &reason(&ctx),
+            &op_id(&ctx),
+        )
+        .err()
+        .expect("expected over-cap slash to reject")
+        .unwrap();
+    assert_eq!(err, Error::InvalidDelta);
+}
+
+#[test]
+fn slash_at_max_delta_per_call_succeeds() {
+    let (ctx, user) = setup_with_user();
+    ctx.client
+        .bump_reputation(
+            &user,
+            &crate::reputation::MAX_DELTA_PER_CALL,
+            &reason(&ctx),
+            &op_id(&ctx),
+        );
+
+    ctx.client
+        .slash_reputation(
+            &user,
+            &crate::reputation::MAX_DELTA_PER_CALL,
+            &reason(&ctx),
+            &op_id(&ctx),
+        );
+
+    assert_eq!(reputation_of(&ctx, &user), 0);
 }
 
 #[test]
