@@ -539,6 +539,11 @@ pub fn submit(
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
     }
+    if storage::winner_count(env, event_id) > 0
+        || storage::get_prize_claim_expiry(env, event_id).is_some()
+    {
+        return Err(Error::WinnersAlreadySelected);
+    }
     if matches!(event.pillar, Pillar::Crowdfunding) {
         return Err(Error::InvalidPillar);
     }
@@ -567,15 +572,16 @@ pub fn submit(
     // cannot lock real participants out of a full event.
     storage::append_submission(env, event_id, &applicant)?;
 
-    let submitted_at = existing
-        .as_ref()
-        .map(|s| s.submitted_at)
-        .unwrap_or_else(|| env.ledger().timestamp());
+    let (submitted_at, updated_at) = match existing {
+        Some(s) => (s.submitted_at, Some(env.ledger().timestamp())),
+        None => (env.ledger().timestamp(), None),
+    };
 
     let submission = Submission {
         applicant: applicant.clone(),
         content_uri: content_uri.clone(),
         submitted_at,
+        updated_at,
     };
     storage::set_submission(env, event_id, &applicant, &submission);
 
@@ -604,6 +610,11 @@ pub fn withdraw_submission(
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     if !matches!(event.status, EventStatus::Active) {
         return Err(Error::EventNotActive);
+    }
+    if storage::winner_count(env, event_id) > 0
+        || storage::get_prize_claim_expiry(env, event_id).is_some()
+    {
+        return Err(Error::WinnersAlreadySelected);
     }
 
     applicant.require_auth();

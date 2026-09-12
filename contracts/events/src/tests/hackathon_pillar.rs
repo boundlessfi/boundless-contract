@@ -199,7 +199,9 @@ fn resubmit_keeps_original_timestamp_and_updates_uri() {
     let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
     let op_a = BytesN::random(&ctx.env);
     ctx.events.submit(&id, &ctx.applicant, &uri_a, &op_a);
-    let first_time = ctx.events.get_submission(&id, &ctx.applicant).submitted_at;
+    let first = ctx.events.get_submission(&id, &ctx.applicant);
+    let first_time = first.submitted_at;
+    assert_eq!(first.updated_at, None);
 
     let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
     let op_b = BytesN::random(&ctx.env);
@@ -208,6 +210,7 @@ fn resubmit_keeps_original_timestamp_and_updates_uri() {
     let second = ctx.events.get_submission(&id, &ctx.applicant);
     assert_eq!(second.content_uri, uri_b);
     assert_eq!(second.submitted_at, first_time);
+    assert_eq!(second.updated_at, Some(ctx.env.ledger().timestamp()));
 }
 
 #[test]
@@ -237,6 +240,42 @@ fn withdraw_submission_removes_anchor() {
 
     let res = ctx.events.try_get_submission(&id, &ctx.applicant);
     assert!(res.is_err(), "withdrawn submission is no longer readable");
+}
+
+#[test]
+fn submit_and_withdraw_after_winners_selected_reverts() {
+    let ctx = setup();
+    let dl = Some(ctx.env.ledger().timestamp() + 86_400);
+    let id = create_hackathon_with(&ctx, three_way_dist(&ctx.env), dl);
+
+    let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
+    let op_a = BytesN::random(&ctx.env);
+    ctx.events.submit(&id, &ctx.applicant, &uri_a, &op_a);
+
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: ctx.applicant.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+    ];
+    let op_w = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&id, &winners, &op_w);
+
+    // Event is still Active because positions 2 and 3 remain unselected, but winner_count > 0.
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
+
+    // Submitting a new or updated entry must revert with WinnersAlreadySelected
+    let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
+    let op_b = BytesN::random(&ctx.env);
+    let res_sub = ctx.events.try_submit(&id, &ctx.applicant, &uri_b, &op_b);
+    assert_eq!(expect_op_err(res_sub), Error::WinnersAlreadySelected);
+
+    // Withdrawing existing submission must revert with WinnersAlreadySelected
+    let op_wd = BytesN::random(&ctx.env);
+    let res_wd = ctx.events.try_withdraw_submission(&id, &ctx.applicant, &op_wd);
+    assert_eq!(expect_op_err(res_wd), Error::WinnersAlreadySelected);
 }
 
 #[test]
