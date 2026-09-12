@@ -105,6 +105,7 @@ pub struct Submission {
     pub applicant: Address,
     pub content_uri: String,
     pub submitted_at: u64,
+    pub updated_at: Option<u64>,
 }
 
 // ============================================================
