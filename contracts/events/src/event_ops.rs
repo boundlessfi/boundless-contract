@@ -354,11 +354,19 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
 
     // Block cancel while prizes are unclaimed and the window is open;
     // after it expires, unclaimed amounts sweep out via the refund path.
+    // Under DoS.10 hardening, any pause duration extends both the effective expiry
+    // and a post-unpause grace window to prevent premature prize sweeps.
+    let now = env.ledger().timestamp();
+    let pause_extension = storage::get_last_pause_duration(env);
+    let unpaused_at = storage::get_unpaused_at(env);
+    let post_unpause_grace = unpaused_at.saturating_add(pause_extension);
+
     if matches!(event.release_kind, ReleaseKind::Single)
         && storage::unclaimed_prize_count(env, event_id) > 0
     {
         let expiry = storage::get_prize_claim_expiry(env, event_id).unwrap_or(0);
-        if env.ledger().timestamp() <= expiry {
+        let effective_expiry = expiry.saturating_add(pause_extension);
+        if now <= effective_expiry || now <= post_unpause_grace {
             return Err(Error::WinnersAlreadySelected);
         }
     }
