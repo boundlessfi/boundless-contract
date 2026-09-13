@@ -29,12 +29,22 @@ The admin authority on `boundless-events` (and equivalently on `boundless-profil
 - `set_admin(new_admin)` — rotate the admin authority (two-step with `accept_admin`).
 - `pause()` — emergency stop on all write ops.
 - `unpause()` — resume write ops.
+- `set_validator(new_validator)` / `accept_validator()` — propose and rotate the dedicated crowdfunding milestone validator role.
 - `upgrade(new_wasm_hash)` — replace contract logic.
 - `register_supported_token(token)` / `deregister_supported_token(token)` — token whitelist.
 
 There is no other authority. The admin cannot move funds out of escrow directly; the contract enforces that. The admin can only change the rules of future operations and pause current ones.
 
 ---
+
+
+### 1.1 Dedicated Validator Role vs Admin Quorum (Spoof.2 / EoP.3 hardening)
+
+The backend orchestrator key is **strictly decoupled** from the admin multi-sig quorum. To eliminate the risk of a server key compromise impacting platform governance and to eliminate manual multi-sig quorum ceremonies on routine crowdfunding milestone claims:
+1. The contract maintains a dedicated `Validator` role in instance storage.
+2. The backend holds only this validator key, which is used solely for `claim_milestone` co-authorization.
+3. The validator key has no administrative powers: it cannot pause the contract, change fees, alter the supported token whitelist, or propose upgrades.
+4. The admin 2-of-3 quorum retains exclusive authority to rotate the validator key on-chain via a two-step rotation pattern (`set_validator` followed by `accept_validator`).
 
 ## 2. Multi-sig composition
 
