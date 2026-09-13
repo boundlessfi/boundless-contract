@@ -48,6 +48,10 @@ pub fn claim_milestone(
 
     if matches!(event.pillar, Pillar::Crowdfunding) {
         let validator = storage::get_validator(env)?;
+        // Prevent organizer from self-authorizing or routing through current contract address
+        if validator == event.owner || validator == env.current_contract_address() {
+            return Err(Error::InvalidValidator);
+        }
         validator.require_auth();
     }
 
