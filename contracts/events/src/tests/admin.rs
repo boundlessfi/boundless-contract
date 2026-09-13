@@ -369,3 +369,11 @@ fn cancel_pending_validator_clears_proposal() {
     ctx.client.cancel_pending_validator();
     assert!(ctx.client.get_pending_validator().is_none());
 }
+
+#[test]
+fn set_validator_rejects_self_contract_address() {
+    let ctx = setup(0);
+    let contract_addr = ctx.client.address.clone();
+    let res = ctx.client.try_set_validator(&contract_addr);
+    assert_eq!(res.err(), Some(Ok(Error::InvalidValidator)));
+}
