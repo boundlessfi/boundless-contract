@@ -316,3 +316,56 @@ fn accept_admin_demands_pending_targets_auth_specifically() {
         "accept_admin must demand the pending target's own auth"
     );
 }
+
+#[test]
+fn validator_two_step_rotation_round_trip() {
+    let ctx = setup(0);
+    assert_eq!(ctx.client.get_validator(), ctx.admin);
+
+    let new_validator = Address::generate(&ctx.env);
+    ctx.client.set_validator(&new_validator);
+
+    let pending = ctx
+        .client
+        .get_pending_validator()
+        .expect("pending validator should be set");
+    assert_eq!(pending.target, new_validator);
+
+    ctx.client.accept_validator();
+    assert_eq!(ctx.client.get_validator(), new_validator);
+    assert!(ctx.client.get_pending_validator().is_none());
+}
+
+#[test]
+fn set_validator_reverts_without_admin_auth() {
+    let ctx = setup(0);
+    let new_validator = Address::generate(&ctx.env);
+    ctx.client.set_validator(&new_validator);
+
+    let auths = ctx.env.auths();
+    let admin_required = auths.iter().any(|(addr, _)| *addr == ctx.admin);
+    assert!(admin_required, "set_validator must demand admin auth");
+}
+
+#[test]
+fn accept_validator_demands_pending_target_auth() {
+    let ctx = setup(0);
+    let new_validator = Address::generate(&ctx.env);
+    ctx.client.set_validator(&new_validator);
+
+    ctx.client.accept_validator();
+    let auths = ctx.env.auths();
+    let target_required = auths.iter().any(|(addr, _)| *addr == new_validator);
+    assert!(target_required, "accept_validator must demand pending target auth");
+}
+
+#[test]
+fn cancel_pending_validator_clears_proposal() {
+    let ctx = setup(0);
+    let new_validator = Address::generate(&ctx.env);
+    ctx.client.set_validator(&new_validator);
+    assert!(ctx.client.get_pending_validator().is_some());
+
+    ctx.client.cancel_pending_validator();
+    assert!(ctx.client.get_pending_validator().is_none());
+}
