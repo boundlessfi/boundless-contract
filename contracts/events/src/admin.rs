@@ -325,10 +325,18 @@ pub fn require_not_paused(env: &Env) -> Result<(), Error> {
 pub fn set_validator(env: &Env, new_validator: Address) -> Result<(), Error> {
     require_admin(env)?;
 
+    // Reject contract self-address to prevent nested authorize_as_current_contract bypass
+    if new_validator == env.current_contract_address() {
+        return Err(Error::InvalidValidator);
+    }
+
+    // Checked addition prevents saturating at u32::MAX
     let expires_at = env
         .ledger()
         .sequence()
-        .saturating_add(PENDING_VALIDATOR_TTL_LEDGERS);
+        .checked_add(PENDING_VALIDATOR_TTL_LEDGERS)
+        .ok_or(Error::PendingRotationExpired)?;
+
     let pending = PendingValidator {
         target: new_validator.clone(),
         expires_at_ledger: expires_at,
@@ -350,6 +358,10 @@ pub fn accept_validator(env: &Env) -> Result<(), Error> {
         storage::clear_pending_validator(env);
         storage::touch_instance(env);
         return Err(Error::PendingRotationExpired);
+    }
+
+    if pending.target == env.current_contract_address() {
+        return Err(Error::InvalidValidator);
     }
 
     pending.target.require_auth();
