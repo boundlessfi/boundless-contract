@@ -155,6 +155,7 @@ pub enum DataKey {
     Paused,
     PausedAt,
     LastPauseDuration,
+    TotalPauseDuration,
     UnpausedAt,
     DeploymentSeq,
     ProfileContract,
