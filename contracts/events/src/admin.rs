@@ -143,8 +143,11 @@ pub fn set_profile_contract(env: &Env, new_addr: Address) -> Result<(), Error> {
 // ============================================================
 pub fn pause(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
+    // Only set PausedAt on transition from unpaused->paused (idempotent pause guard)
+    if !storage::is_paused(env) || storage::get_paused_at(env).is_none() {
+        storage::set_paused_at(env, env.ledger().timestamp());
+    }
     storage::set_paused(env, true);
-    storage::set_paused_at(env, env.ledger().timestamp());
     storage::touch_instance(env);
     evt::Paused {}.publish(env);
     Ok(())
@@ -156,6 +159,8 @@ pub fn unpause(env: &Env) -> Result<(), Error> {
     if let Some(paused_at) = storage::get_paused_at(env) {
         let duration = now.saturating_sub(paused_at);
         storage::set_last_pause_duration(env, duration);
+        let total = storage::get_total_pause_duration(env).saturating_add(duration);
+        storage::set_total_pause_duration(env, total);
         storage::set_unpaused_at(env, now);
         storage::clear_paused_at(env);
     }
