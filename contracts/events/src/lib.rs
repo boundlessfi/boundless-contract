@@ -60,6 +60,26 @@ impl EventsContract {
         admin::accept_admin(&env)
     }
 
+    pub fn set_validator(env: Env, new_validator: Address) -> Result<(), Error> {
+        admin::set_validator(&env, new_validator)
+    }
+
+    pub fn accept_validator(env: Env) -> Result<(), Error> {
+        admin::accept_validator(&env)
+    }
+
+    pub fn cancel_pending_validator(env: Env) -> Result<(), Error> {
+        admin::cancel_pending_validator(&env)
+    }
+
+    pub fn get_validator(env: Env) -> Address {
+        admin::get_validator(&env)
+    }
+
+    pub fn get_pending_validator(env: Env) -> Option<PendingValidator> {
+        admin::get_pending_validator(&env)
+    }
+
     pub fn set_fee_bps(env: Env, new_bps: u32) -> Result<(), Error> {
         admin::set_fee_bps(&env, new_bps)
     }

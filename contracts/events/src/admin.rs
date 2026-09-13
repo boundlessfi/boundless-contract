@@ -3,9 +3,10 @@ use soroban_sdk::{panic_with_error, Address, BytesN, Env, String};
 use crate::errors::Error;
 use crate::events as evt;
 use crate::storage;
-use crate::types::{PendingAdmin, PendingUpgrade};
+use crate::types::{PendingAdmin, PendingUpgrade, PendingValidator};
 
 const PENDING_ADMIN_TTL_LEDGERS: u32 = 120_960;
+const PENDING_VALIDATOR_TTL_LEDGERS: u32 = 120_960;
 
 pub(crate) const MAX_FEE_BPS: u32 = 1_000;
 
@@ -35,6 +36,7 @@ pub fn initialize(
     }
 
     storage::set_admin(env, &admin);
+    storage::set_validator(env, &admin);
     storage::set_fee_account(env, &fee_account);
     storage::set_fee_bps(env, fee_bps);
     storage::set_profile_contract(env, &profile_contract);
@@ -45,6 +47,10 @@ pub fn initialize(
 
     evt::AdminUpdated {
         new_admin: admin.clone(),
+    }
+    .publish(env);
+    evt::ValidatorUpdated {
+        new_validator: admin.clone(),
     }
     .publish(env);
     evt::FeeAccountUpdated {
@@ -311,4 +317,83 @@ pub fn require_not_paused(env: &Env) -> Result<(), Error> {
         return Err(Error::Paused);
     }
     Ok(())
+}
+
+// ============================================================
+// VALIDATOR ROTATION (two-step; Spoof.2)
+// ============================================================
+pub fn set_validator(env: &Env, new_validator: Address) -> Result<(), Error> {
+    require_admin(env)?;
+
+    // Reject contract self-address to prevent nested authorize_as_current_contract bypass
+    if new_validator == env.current_contract_address() {
+        return Err(Error::InvalidValidator);
+    }
+
+    // Checked addition prevents saturating at u32::MAX
+    let expires_at = env
+        .ledger()
+        .sequence()
+        .checked_add(PENDING_VALIDATOR_TTL_LEDGERS)
+        .ok_or(Error::PendingRotationExpired)?;
+
+    let pending = PendingValidator {
+        target: new_validator.clone(),
+        expires_at_ledger: expires_at,
+    };
+    storage::set_pending_validator(env, &pending);
+    storage::touch_instance(env);
+    evt::PendingValidatorSet {
+        target: new_validator,
+    }
+    .publish(env);
+    Ok(())
+}
+
+pub fn accept_validator(env: &Env) -> Result<(), Error> {
+    let pending =
+        storage::get_pending_validator(env).ok_or(Error::PendingRotationMismatch)?;
+
+    if env.ledger().sequence() > pending.expires_at_ledger {
+        storage::clear_pending_validator(env);
+        storage::touch_instance(env);
+        return Err(Error::PendingRotationExpired);
+    }
+
+    if pending.target == env.current_contract_address() {
+        return Err(Error::InvalidValidator);
+    }
+
+    pending.target.require_auth();
+
+    storage::set_validator(env, &pending.target);
+    storage::clear_pending_validator(env);
+    storage::touch_instance(env);
+    evt::ValidatorUpdated {
+        new_validator: pending.target,
+    }
+    .publish(env);
+    Ok(())
+}
+
+pub fn cancel_pending_validator(env: &Env) -> Result<(), Error> {
+    require_admin(env)?;
+    if storage::get_pending_validator(env).is_none() {
+        return Err(Error::PendingRotationMismatch);
+    }
+    storage::clear_pending_validator(env);
+    storage::touch_instance(env);
+    evt::PendingValidatorCancelled {
+        cancelled_at_ledger: env.ledger().sequence(),
+    }
+    .publish(env);
+    Ok(())
+}
+
+pub fn get_validator(env: &Env) -> Address {
+    storage::get_validator(env).unwrap_or_else(|_| panic_with_error!(env, Error::NotInitialized))
+}
+
+pub fn get_pending_validator(env: &Env) -> Option<PendingValidator> {
+    storage::get_pending_validator(env)
 }

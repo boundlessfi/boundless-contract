@@ -511,3 +511,35 @@ fn crowdfunding_claim_milestone_requires_admin_auth() {
     );
     assert!(builder_required, "builder auth still required");
 }
+
+#[test]
+fn crowdfunding_claim_milestone_uses_dedicated_validator_when_rotated() {
+    let ctx = setup();
+    let id = create_campaign(&ctx, 2);
+    let p = Address::generate(&ctx.env);
+    back(&ctx, id, &p, 200_0000000_i128);
+
+    let validator = Address::generate(&ctx.env);
+    ctx.events.set_validator(&validator);
+    ctx.events.accept_validator();
+    assert_eq!(ctx.events.get_validator(), validator);
+
+    let op = BytesN::random(&ctx.env);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+
+    let auths = ctx.env.auths();
+    let validator_required = auths.iter().any(|(addr, _)| *addr == validator);
+    let admin_required = auths.iter().any(|(addr, _)| *addr == ctx.events_admin);
+    let builder_required = auths.iter().any(|(addr, _)| *addr == ctx.builder);
+
+    assert!(
+        validator_required,
+        "crowdfunding claim must demand dedicated validator co-sign"
+    );
+    assert!(
+        !admin_required,
+        "admin quorum must NOT be demanded once dedicated validator is active"
+    );
+    assert!(builder_required, "builder auth still required");
+}
