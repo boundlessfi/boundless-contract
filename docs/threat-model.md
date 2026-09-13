@@ -137,7 +137,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | ID | Threat | Affected Component |
 |---|---|---|
 | Spoof.1 | A caller passes another user's address in `create_event`, `apply`, or `add_funds` to act on their behalf. | `boundless-events` contract |
-| Spoof.2 | The backend orchestrator co-signing key is leaked; an attacker uses it to forge admin co-authorization entries on crowdfunding `claim_milestone` calls. | Backend orchestrator, `boundless-events` |
+| Spoof.2 | The backend validator co-signing key is leaked; an attacker uses it to forge validator co-authorization entries on crowdfunding `claim_milestone` calls. | Backend validator, `boundless-events` |
 | Spoof.3 | A malicious third party sends a forged Didit webhook to the backend to fraudulently approve a user's KYC status. | Backend `/api/didit/webhook` endpoint |
 | Spoof.4 | An attacker reuses a stolen staff JWT to access the admin portal without valid step-up credentials. | Admin portal, backend admin API |
 | Spoof.5 | A malicious actor attempts to claim they are the admin multi-sig by submitting a transaction signed by a single key, bypassing the 2-of-3 threshold. | Admin multi-sig account, contract admin functions |
@@ -171,7 +171,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 |---|---|---|
 | Info.1 | All Soroban contract storage is publicly readable; event participants' wallet addresses, prize amounts, and winner assignments are visible on-chain. | `boundless-events` contract, Stellar ledger |
 | Info.2 | A data breach of the Boundless PostgreSQL database exposes user PII including identity documents. | Backend database |
-| Info.3 | The backend orchestrator co-signing key is exposed via misconfigured environment variables, logging, or a code path that serializes config. | Backend environment, orchestrator service |
+| Info.3 | The backend validator co-signing key is exposed via misconfigured environment variables, logging, or a code path that serializes config. | Backend environment, validator service |
 | Info.4 | Staff admin JWT tokens or TOTP secrets are exposed via a compromised admin workstation or session fixation attack. | Admin portal, staff auth flow |
 | Info.5 | A Didit webhook payload containing partial identity data (e.g., name, status) is logged in plaintext by the backend. | Backend webhook handler, logging |
 | Info.6 | The fee account private key (used to receive platform fees) is exposed, allowing fee diversion. | Fee account management, backend config |
@@ -193,11 +193,11 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 |---|---|---|
 | EoP.1 | A builder calls `select_winners` directly (bypassing the backend), attempting to pick themselves as winner on an event they did not create. | `boundless-events` contract |
 | EoP.2 | A staff member with `kyc:read` (Tier 0) permission calls the `kyc:override` endpoint (Tier 2) to approve their own or a collaborator's KYC. | Backend admin KYC controller, `PolicyGuard` |
-| EoP.3 | An organizer calls `claim_milestone` on a crowdfunding event without the required admin co-authorization, attempting to claim funds early. | `boundless-events` contract, admin.require_auth() |
+| EoP.3 | An organizer calls `claim_milestone` on a crowdfunding event without the required validator co-authorization, attempting to claim funds early. | `boundless-events` contract, validator.require_auth() |
 | EoP.4 | A regular backend API user (builder/organizer) sends requests to the `/admin/v2/*` routes by crafting bearer tokens with elevated claims. | Backend admin API, `StaffAuthGuard` |
 | EoP.5 | An attacker calls `bootstrap_self` on `boundless-profile` with another user's address to create or squat a profile record on their behalf. | `boundless-profile` contract |
 | EoP.6 | A malicious event owner calls `set_admin` or `propose_upgrade` directly, attempting to rotate the contract admin to an address they control. | `boundless-events` contract, `admin.rs` |
-| EoP.7 | The backend orchestrator key is used to approve a `claim_milestone` on behalf of an event where the organizer did not initiate the call, redirecting funds. | Backend orchestrator, `boundless-events` |
+| EoP.7 | The backend validator key is used to approve a `claim_milestone` on behalf of an event where the organizer did not initiate the call, redirecting funds. | Backend validator, `boundless-events` |
 
 ---
 
@@ -208,7 +208,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | Threat ID | Mitigation |
 |---|---|
 | **Spoof.1** | All state-changing contract functions enforce `addr.require_auth()` via the Soroban auth framework. The Soroban runtime validates the caller's cryptographic signature against the address before executing. No caller can submit a valid auth entry for an address they do not control without its private key. |
-| **Spoof.2** | The orchestrator co-signing key is scoped exclusively to `admin.require_auth()` within `claim_milestone`. It does NOT control the admin multi-sig account and cannot call `select_winners`, `set_admin`, or any other admin function. A compromise of the orchestrator key does not grant escrow control — the attacker would also need the event organizer's key (separate party). This is accepted residual risk with limited blast radius. Mitigation: rotate the orchestrator key immediately on suspected compromise; the admin multi-sig is not affected. |
+| **Spoof.2** | Under the dedicated `Validator` role hardening, the backend co-signing key is scoped exclusively to `validator.require_auth()` within `claim_milestone`. It is completely decoupled from the admin multi-sig account and cannot call `set_admin`, `pause`, `set_fee_bps`, `propose_upgrade`, or any administrative function. A compromise of the validator key does not grant escrow control — the attacker would also need the event organizer's key (separate party). Admin quorum rotates the validator role via a two-step rotation without service interruption. |
 | **Spoof.3** | All incoming Didit webhook requests are verified with HMAC-SHA256 using the `DIDIT_WEBHOOK_SECRET` before any payload is processed. Requests with missing or invalid signatures are rejected with HTTP 401 before deserialization. |
 | **Spoof.4** | Staff JWTs are short-lived. Tier 2 actions (KYC override) require a valid TOTP code via `StepUpGuard` — a stolen JWT alone is insufficient. Session invalidation is supported via the `BetterAuth` session table. |
 | **Spoof.5** | The admin multi-sig account is a Stellar G-address configured with 2-of-3 signers and threshold weights enforced at the Stellar protocol level. A single-signer transaction is rejected by the network before it reaches the contract. The `verify-multisig.sh` script verifies on-chain signer configuration before any governance operation. |
@@ -227,7 +227,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **Repud.5** | The admin co-sign is a `SorobanAuthorizationEntry` embedded in the signed XDR of the transaction. It is visible in the transaction envelope on Stellar Expert — both the organizer's auth and the admin's auth are present and attributable to their respective addresses. |
 | **Info.1** | Wallet addresses are pseudonymous. Rich personal data (submission content, project descriptions) is stored off-chain via `content_uri` (IPFS or backend storage), not in contract storage. This transparency is by design for a trustless settlement platform. Users are informed that their address and prize amounts are publicly visible. |
 | **Info.2** | The Boundless PostgreSQL database stores only the Didit `session_id` (opaque token) and a normalized status string (`Approved / Declined / In Review`). Identity documents, biometrics, and personal details are never received or stored by Boundless. A full database breach does not expose KYC documents. |
-| **Info.3** | The orchestrator signing key is stored as an environment variable, never logged, and never serialized in API responses. The server-side signing path reads the key only at transaction build time. Key rotation procedure: update the env var and redeploy; the key does not appear in source code or git history. |
+| **Info.3** | The validator signing key is stored as an environment variable, never logged, and never serialized in API responses. The server-side signing path reads the key only at transaction build time. Key rotation procedure: admin initiates two-step rotation on-chain, updates the env var, and redeploys; the key does not appear in source code or git history. |
 | **Info.4** | Staff sessions use short-lived JWTs. Tier 2 actions require a fresh TOTP token. Admin workstations are on separate browser profiles from personal use. Future: hardware-backed staff keys. |
 | **Info.5** | The Didit webhook handler logs only the `session_id` and normalized status, never the full payload. Log levels are set to `error,warn,log` in production; raw request bodies are not logged. |
 | **Info.6** | The fee account is a Stellar G-address whose key is held by the admin multi-sig (same custody as the contract admin). Fee diversion requires compromising the multi-sig. |
@@ -239,11 +239,11 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **DoS.6** | The webhook endpoint is rate-limited separately. Didit sends webhooks from known IP ranges; IP allowlisting can be added as a hardening measure. Invalid HMAC requests are rejected before any DB write. |
 | **EoP.1** | `select_winners` enforces `resolve_manager(env, event_id, &event.owner).require_auth()`. The manager is always the event owner address (set at `create_event`). No other address can produce a valid auth entry for the event owner. |
 | **EoP.2** | `PolicyGuard` checks the staff member's permission set against the required permission declared on the route (`@RequirePermission`). `kyc:override` maps to Tier 2. `StepUpGuard` independently verifies a fresh TOTP token for all Tier 2 routes. These are orthogonal checks — bypassing one does not bypass the other. |
-| **EoP.3** | `claim_milestone` in `crowdfunding.rs` calls both `event.owner.require_auth()` AND `admin.require_auth()`. Both must be satisfied in the same transaction. Without the platform's server-side admin co-sign, the transaction is rejected by the contract at the auth validation step. |
+| **EoP.3** | `claim_milestone` in `grant.rs` calls both `event.owner.require_auth()` AND `validator.require_auth()`. Both must be satisfied in the same transaction. Without the platform's server-side validator co-sign, the transaction is rejected by the contract at the auth validation step. |
 | **EoP.4** | The `/admin/v2/*` routes are gated by `StaffAuthGuard`, which validates a separate staff JWT issued by the admin authentication system (BetterAuth with a separate secret). A user JWT from the main app is not valid on the admin surface. |
 | **EoP.5** | `bootstrap_self` calls `caller.require_auth()` where `caller` is `env.invoker()`. The invoker is the transaction source — it is cryptographically bound to the account that signed the transaction. A third party cannot produce a valid auth for another user's address. |
 | **EoP.6** | `set_admin` and `propose_upgrade` each enforce `admin.require_auth()` at the contract level. The admin is the 2-of-3 multi-sig account. No event owner address is the admin; the check is against the configured admin key stored in instance storage. |
-| **EoP.7** | The orchestrator only co-signs `claim_milestone` calls that originate from a backend-authenticated organizer session who is the verified owner of the event in the DB. The co-sign path checks the event ownership record before building the transaction. If the organizer's session is not the event owner, the build is refused before a signing key is accessed. |
+| **EoP.7** | The validator only co-signs `claim_milestone` calls that originate from a backend-authenticated organizer session who is the verified owner of the event in the DB. The co-sign path checks the event ownership record before building the transaction. If the organizer's session is not the event owner, the build is refused before a signing key is accessed. |
 
 ---
 
@@ -267,7 +267,7 @@ All six STRIDE categories produced actionable threats. The most significant find
 
 | Risk | Status | Acceptance Rationale |
 |---|---|---|
-| Orchestrator co-signing key compromise (Spoof.2, EoP.7) | Accepted, monitored | Blast radius is limited to crowdfunding claim timing; attacker also needs organizer's key. Key rotation procedure is documented. |
+| Validator co-signing key compromise (Spoof.2, EoP.7) | Accepted, monitored | Blast radius is limited to crowdfunding claim timing; attacker also needs organizer's key. Admin can rotate validator role via two-step rotation. |
 | Nodies RPC single point of failure (DoS.4) | Accepted, mitigated | Queue buffering handles transient outages; failover RPC endpoint planned for mainnet. |
 | Software multi-sig (vs. hardware) for admin keys | Accepted, time-bounded | Hardware upgrade is triggered at $250K TVL or first signer-machine incident per the admin custody policy. |
 | All contract storage public on-chain | Accepted by design | Pseudonymous addresses; PII off-chain via `content_uri`. Informed user consent. |
