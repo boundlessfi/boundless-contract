@@ -10,6 +10,7 @@ pub enum Error {
     ProfileContractCannotBeZero = 4,
     InvalidFeeBps = 5,
     NotInitialized = 6,
+    InvalidValidator = 7,
 
     Unauthorized = 10,
     NotAdmin = 11,
