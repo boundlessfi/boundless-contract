@@ -400,3 +400,163 @@ fn two_winner_grant_each_claims_their_share() {
     assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Completed);
 }
+
+#[test]
+fn start_cancel_on_grant_with_unpaid_milestones_reverts_in_window() {
+    let ctx = setup();
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 100);
+
+    let params = CreateEventParams {
+        pillar: Pillar::Grant,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget: TOTAL_BUDGET,
+        release_kind: ReleaseKind::Multi(2),
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant-cancel-guard"),
+        title: String::from_str(&ctx.env, "Grant Cancel Guard"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: dist,
+        fee_bps_override: None,
+        manager: None,
+    };
+    let id = ctx.events.create_event(&params, &BytesN::random(&ctx.env));
+
+    let w = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+    ];
+    ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
+
+    // Cancellation inside the window is refused while milestones are unpaid.
+    let res = ctx.events.try_start_cancel(&id, &BytesN::random(&ctx.env));
+    assert!(res.is_err(), "cancellation inside claim window must revert");
+
+    // Claim first milestone (milestone 0 of 2).
+    ctx.events.claim_milestone(&id, &w, &0_u32, &0, &BytesN::random(&ctx.env));
+
+    // Milestone 1 is still unpaid; cancellation must still revert.
+    let res2 = ctx.events.try_start_cancel(&id, &BytesN::random(&ctx.env));
+    assert!(res2.is_err(), "cancellation with partially unpaid milestones must revert");
+}
+
+#[test]
+fn start_cancel_on_grant_allowed_after_claim_window_expires_and_sweeps_refund() {
+    let ctx = setup();
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 100);
+
+    let params = CreateEventParams {
+        pillar: Pillar::Grant,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget: TOTAL_BUDGET,
+        release_kind: ReleaseKind::Multi(2),
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant-cancel-expiry"),
+        title: String::from_str(&ctx.env, "Grant Cancel Expiry"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: dist,
+        fee_bps_override: None,
+        manager: None,
+    };
+    let id = ctx.events.create_event(&params, &BytesN::random(&ctx.env));
+
+    let w = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+    ];
+    ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
+
+    // Claim milestone 0 (half of budget).
+    ctx.events.claim_milestone(&id, &w, &0_u32, &0, &BytesN::random(&ctx.env));
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let owner_before = token.balance(&ctx.owner);
+
+    // Advance past the 90-day claim window.
+    ctx.env.ledger().with_mut(|li| {
+        li.timestamp += crate::event_ops::PRIZE_CLAIM_WINDOW_SECS + 1;
+    });
+
+    // Cancellation now succeeds and sweeps remaining unpaid escrow back to owner.
+    ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
+
+    let expected_refund = TOTAL_BUDGET / 2; // remaining unpaid half
+    assert_eq!(
+        token.balance(&ctx.owner) - owner_before,
+        expected_refund,
+        "expired unpaid grant milestone sweeps back to owner"
+    );
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelled);
+
+    // Further milestone claims on cancelled grant revert.
+    let res = ctx
+        .events
+        .try_claim_milestone(&id, &w, &1_u32, &0, &BytesN::random(&ctx.env));
+    assert!(res.is_err(), "claim milestone after cancel must revert");
+}
+
+#[test]
+fn start_cancel_on_grant_allowed_when_all_milestones_paid_with_residual_escrow() {
+    let ctx = setup();
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 60); // 60% allocated, 40% residual unallocated in escrow
+
+    let params = CreateEventParams {
+        pillar: Pillar::Grant,
+        owner: ctx.owner.clone(),
+        token: ctx.token_addr.clone(),
+        total_budget: TOTAL_BUDGET,
+        release_kind: ReleaseKind::Multi(1),
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant-cancel-residual"),
+        title: String::from_str(&ctx.env, "Grant Cancel Residual"),
+        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
+        winner_distribution: dist,
+        fee_bps_override: None,
+        manager: None,
+    };
+    let id = ctx.events.create_event(&params, &BytesN::random(&ctx.env));
+
+    let w = Address::generate(&ctx.env);
+    let winners = soroban_sdk::vec![
+        &ctx.env,
+        WinnerSpec {
+            recipient: w.clone(),
+            position: 1,
+            reputation_bump: 0,
+        },
+    ];
+    ctx.events.select_winners(&id, &winners, &BytesN::random(&ctx.env));
+
+    // Claim the only milestone (all milestones paid).
+    ctx.events.claim_milestone(&id, &w, &0_u32, &0, &BytesN::random(&ctx.env));
+
+    // Event is still Active because 40% escrow remains unallocated.
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);
+
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    let owner_before = token.balance(&ctx.owner);
+
+    // Cancellation inside window is allowed since no unpaid milestones exist.
+    ctx.events.start_cancel(&id, &BytesN::random(&ctx.env));
+
+    let expected_refund = TOTAL_BUDGET * 40 / 100;
+    assert_eq!(
+        token.balance(&ctx.owner) - owner_before,
+        expected_refund,
+        "residual unallocated escrow refunds to owner when all milestones are paid"
+    );
+    assert_eq!(ctx.events.get_event(&id).remaining_escrow, 0);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelled);
+}

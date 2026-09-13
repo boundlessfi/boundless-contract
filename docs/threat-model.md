@@ -198,6 +198,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | EoP.5 | An attacker calls `bootstrap_self` on `boundless-profile` with another user's address to create or squat a profile record on their behalf. | `boundless-profile` contract |
 | EoP.6 | A malicious event owner calls `set_admin` or `propose_upgrade` directly, attempting to rotate the contract admin to an address they control. | `boundless-events` contract, `admin.rs` |
 | EoP.7 | The backend orchestrator key is used to approve a `claim_milestone` on behalf of an event where the organizer did not initiate the call, redirecting funds. | Backend orchestrator, `boundless-events` |
+| EoP.14 | An event manager cancels a multi-release grant event after selecting winners, draining escrow and leaving grantees with unpaid milestones without recourse. | Event manager, `boundless-events` contract |
 
 ---
 
@@ -244,6 +245,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **EoP.5** | `bootstrap_self` calls `caller.require_auth()` where `caller` is `env.invoker()`. The invoker is the transaction source — it is cryptographically bound to the account that signed the transaction. A third party cannot produce a valid auth for another user's address. |
 | **EoP.6** | `set_admin` and `propose_upgrade` each enforce `admin.require_auth()` at the contract level. The admin is the 2-of-3 multi-sig account. No event owner address is the admin; the check is against the configured admin key stored in instance storage. |
 | **EoP.7** | The orchestrator only co-signs `claim_milestone` calls that originate from a backend-authenticated organizer session who is the verified owner of the event in the DB. The co-sign path checks the event ownership record before building the transaction. If the organizer's session is not the event owner, the build is refused before a signing key is accessed. |
+| **EoP.14** | `start_cancel` extends the claimable-prize guard to `Multi` events with outstanding milestone awards. While any winner record exists with unpaid milestones, cancellation is refused with `Error::WinnersAlreadySelected` during the 90-day claim window (`PRIZE_CLAIM_WINDOW_SECS`), protecting grantees while preventing an absent grantee from indefinitely locking pool funds after the window expires. |
 
 ---
 

@@ -338,6 +338,24 @@ pub fn add_funds(
     Ok(())
 }
 
+fn has_unpaid_grant_milestones(env: &Env, event_id: u64, total_milestones: u32) -> bool {
+    let count = storage::winner_count(env, event_id);
+    for idx in 0..count {
+        let w = match storage::winner_at(env, event_id, idx) {
+            Some(w) => w,
+            None => continue,
+        };
+        if w.milestone.is_none() {
+            for m in 0..total_milestones {
+                if !storage::is_milestone_claimed(env, event_id, &w.recipient, m) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 // ============================================================
 // PAGED CANCEL
 // ============================================================
@@ -359,6 +377,16 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     {
         let expiry = storage::get_prize_claim_expiry(env, event_id).unwrap_or(0);
         if env.ledger().timestamp() <= expiry {
+            return Err(Error::WinnersAlreadySelected);
+        }
+    }
+
+    if let ReleaseKind::Multi(total_milestones) = event.release_kind {
+        let is_window_active = match storage::get_prize_claim_expiry(env, event_id) {
+            Some(expiry) => env.ledger().timestamp() <= expiry,
+            None => true,
+        };
+        if is_window_active && has_unpaid_grant_milestones(env, event_id, total_milestones) {
             return Err(Error::WinnersAlreadySelected);
         }
     }
@@ -785,6 +813,11 @@ pub fn select_winners(
                         paid_at: None,
                     },
                 );
+            }
+            let expiry = now.saturating_add(PRIZE_CLAIM_WINDOW_SECS);
+            let cur = storage::get_prize_claim_expiry(env, event_id).unwrap_or(0);
+            if expiry > cur {
+                storage::set_prize_claim_expiry(env, event_id, expiry);
             }
         }
     }
