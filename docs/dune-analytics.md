@@ -121,6 +121,17 @@ Emitted at the end of the cancel flow (`start_cancel` fast-path or
 |-------|-----------|-------|
 | `id` | `U64` | Matches `EventCreated.id` |
 
+#### `CancellationStarted`
+Emitted at the start of paged cancellation (`start_cancel`) when transitioning to `Cancelling`.
+Allows indexers to log the cancellation branch and starting escrow figures immediately.
+
+| Field | ScVal type | Notes |
+|-------|-----------|-------|
+| `event_id` | `U64` | Matches `EventCreated.id` |
+| `branch` | `CancellationBranch` | `OwnerOnly`, `FullPartnerThenResidual`, or `ProRataPartners` |
+| `remaining_at_start` | `I128` | Remaining escrow at start |
+| `non_owner_total` | `I128` | Total non-owner contributions at start |
+
 #### `FundsAdded`
 Emitted on every successful `add_funds` call (partner top-ups, crowdfunding
 contributions). `amount` is exactly what escrow was credited (for
@@ -201,6 +212,17 @@ Emitted once at the end of `select_winners`, regardless of pillar.
 |-------|-----------|-------|
 | `event_id` | `U64` | |
 | `count` | `U32` | Number of winners chosen |
+
+#### `WinnerAwarded`
+Emitted once per awarded winner during `select_winners` (Single and Multi), enabling
+direct attribution indexing without reading ledger storage in the same transaction.
+
+| Field | ScVal type | Notes |
+|-------|-----------|-------|
+| `event_id` | `U64` | Matches `EventCreated.id` |
+| `recipient` | `Address` | Winner wallet address |
+| `position` | `U32` | Award rank / position index |
+| `amount` | `I128` | Awarded prize amount (0 for multi-release pending milestone claim) |
 
 #### `WinnerPaid`
 **Single-release pillars only** (Hackathon, Bounty). One event per winner.

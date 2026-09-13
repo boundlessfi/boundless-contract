@@ -403,11 +403,19 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
         remaining_at_start: remaining,
         count_at_start: count,
         next_idx: 0,
-        branch,
+        branch: branch.clone(),
     };
     storage::set_cancellation_state(env, event_id, &state);
     event.status = EventStatus::Cancelling;
     storage::set_event(env, event_id, &event);
+
+    evt::CancellationStarted {
+        event_id,
+        branch,
+        remaining_at_start: remaining,
+        non_owner_total,
+    }
+    .publish(env);
 
     idempotency::mark_seen(env, &manager, &op_id);
     Ok(())
@@ -468,6 +476,13 @@ pub fn process_cancel_batch(
                 event_id,
                 contributor: c.clone(),
                 amount: payout,
+            }
+            .publish(env);
+        } else if matches!(state.branch, CancellationBranch::ProRataPartners) {
+            evt::ContributorRefunded {
+                event_id,
+                contributor: c.clone(),
+                amount: 0,
             }
             .publish(env);
         }
@@ -756,6 +771,14 @@ pub fn select_winners(
                         reputation_bump: spec.reputation_bump,
                     },
                 );
+
+                evt::WinnerAwarded {
+                    event_id,
+                    recipient: spec.recipient.clone(),
+                    position: spec.position,
+                    amount,
+                }
+                .publish(env);
             }
 
             let unclaimed = storage::unclaimed_prize_count(env, event_id);
@@ -785,6 +808,14 @@ pub fn select_winners(
                         paid_at: None,
                     },
                 );
+
+                evt::WinnerAwarded {
+                    event_id,
+                    recipient: spec.recipient.clone(),
+                    position: spec.position,
+                    amount: 0,
+                }
+                .publish(env);
             }
         }
     }

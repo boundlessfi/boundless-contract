@@ -746,3 +746,23 @@ fn claim_milestone_on_single_release_hackathon_reverts() {
         "claim_milestone must reject a Single-release hackathon"
     );
 }
+
+
+#[test]
+fn select_winners_emits_winner_awarded_event_schema() {
+    let ctx = setup();
+    let id = create_hackathon(&ctx);
+
+    let mut winners = soroban_sdk::vec![&ctx.env];
+    winners.push_back(WinnerSpec {
+        recipient: ctx.applicant.clone(),
+        position: 1,
+        reputation_bump: 10,
+    });
+
+    let op = BytesN::random(&ctx.env);
+    ctx.events.select_winners(&id, &winners, &op);
+
+    let award = ctx.events.get_prize_award(&id, &1);
+    assert_eq!(award.recipient, ctx.applicant);
+}
