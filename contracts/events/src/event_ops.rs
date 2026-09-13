@@ -382,11 +382,12 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     }
 
     if let ReleaseKind::Multi(total_milestones) = event.release_kind {
-        if has_unpaid_grant_milestones(env, event_id, total_milestones) {
-            let expiry = storage::get_prize_claim_expiry(env, event_id).unwrap_or(0);
-            if env.ledger().timestamp() <= expiry {
-                return Err(Error::WinnersAlreadySelected);
-            }
+        let is_window_active = match storage::get_prize_claim_expiry(env, event_id) {
+            Some(expiry) => env.ledger().timestamp() <= expiry,
+            None => true,
+        };
+        if is_window_active && has_unpaid_grant_milestones(env, event_id, total_milestones) {
+            return Err(Error::WinnersAlreadySelected);
         }
     }
 
