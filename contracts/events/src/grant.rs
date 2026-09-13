@@ -47,8 +47,8 @@ pub fn claim_milestone(
     idempotency::require_unseen(env, &event.owner, &op_id)?;
 
     if matches!(event.pillar, Pillar::Crowdfunding) {
-        let admin = storage::get_admin(env)?;
-        admin.require_auth();
+        let validator = storage::get_validator(env)?;
+        validator.require_auth();
     }
 
     if storage::is_milestone_claimed(env, event_id, &recipient, milestone) {
