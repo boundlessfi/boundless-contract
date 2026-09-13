@@ -153,6 +153,9 @@ pub enum DataKey {
     FeeAccount,
     FeeBps,
     Paused,
+    PausedAt,
+    LastPauseDuration,
+    UnpausedAt,
     DeploymentSeq,
     ProfileContract,
 
