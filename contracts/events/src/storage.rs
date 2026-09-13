@@ -805,3 +805,11 @@ pub fn get_unpaused_at(env: &Env) -> u64 {
 pub fn set_unpaused_at(env: &Env, timestamp: u64) {
     env.storage().instance().set(&DataKey::UnpausedAt, &timestamp);
 }
+
+pub fn get_total_pause_duration(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::TotalPauseDuration).unwrap_or(0)
+}
+
+pub fn set_total_pause_duration(env: &Env, duration: u64) {
+    env.storage().instance().set(&DataKey::TotalPauseDuration, &duration);
+}
