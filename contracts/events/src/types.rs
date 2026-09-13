@@ -209,6 +209,10 @@ pub enum DataKey {
 
     // Appended to cap per-event submission storage growth (security fix).
     EventSubmissionCount(u64),
+
+    // Appended for dedicated validator role (Spoof.2 hardening).
+    Validator,
+    PendingValidator,
 }
 
 // ============================================================
@@ -252,5 +256,16 @@ pub struct PendingUpgrade {
     pub new_version: String,
     pub proposed_at_ledger: u32,
     pub available_at_ledger: u32,
+    pub expires_at_ledger: u32,
+}
+
+
+// ============================================================
+// PENDING VALIDATOR payload (target + expiry ledger, Spoof.2)
+// ============================================================
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingValidator {
+    pub target: Address,
     pub expires_at_ledger: u32,
 }
