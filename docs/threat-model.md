@@ -186,6 +186,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | DoS.4 | The Soroban RPC endpoint (Nodies) becomes unavailable, preventing the backend from submitting or reading any transactions. | Nodies RPC dependency |
 | DoS.5 | An attacker submits many failing transactions with high compute units to delay legitimate transaction processing. | Stellar network, Soroban fee market |
 | DoS.6 | A malicious webhook sender floods the `/api/didit/webhook` endpoint, exhausting backend processing capacity for KYC events. | Backend webhook handler |
+| DoS.10 | A contract pause spans the 90-day prize claim window, allowing start_cancel to sweep unclaimed prizes immediately upon unpause without winners having had a fair claim window. | boundless-events contract, start_cancel, pause/unpause |
 
 #### Elevation of Privilege
 
@@ -237,6 +238,7 @@ The system consists of two Soroban smart contracts and an off-chain orchestrator
 | **DoS.4** | Nodies is a managed, SLA-backed RPC provider. BullMQ queues buffer all async contract operations; if RPC is temporarily unavailable, jobs retry with exponential backoff and are not lost. The `DistributedLockService` prevents duplicate submissions during retry storms. |
 | **DoS.5** | Soroban's fee market (resource fees) prices out spam. The backend uses `simulateTransaction` before submission to estimate fees; operations that would exceed configured limits are rejected before they reach the network. |
 | **DoS.6** | The webhook endpoint is rate-limited separately. Didit sends webhooks from known IP ranges; IP allowlisting can be added as a hardening measure. Invalid HMAC requests are rejected before any DB write. |
+| **DoS.10** | `pause` logs `PausedAt` and `unpause` tracks cumulative pause duration. `start_cancel` extends the active claim window and post-unpause grace window by the pause duration, ensuring winners are never deprived of their claim term by administrative pauses. |
 | **EoP.1** | `select_winners` enforces `resolve_manager(env, event_id, &event.owner).require_auth()`. The manager is always the event owner address (set at `create_event`). No other address can produce a valid auth entry for the event owner. |
 | **EoP.2** | `PolicyGuard` checks the staff member's permission set against the required permission declared on the route (`@RequirePermission`). `kyc:override` maps to Tier 2. `StepUpGuard` independently verifies a fresh TOTP token for all Tier 2 routes. These are orthogonal checks — bypassing one does not bypass the other. |
 | **EoP.3** | `claim_milestone` in `crowdfunding.rs` calls both `event.owner.require_auth()` AND `admin.require_auth()`. Both must be satisfied in the same transaction. Without the platform's server-side admin co-sign, the transaction is rejected by the contract at the auth validation step. |

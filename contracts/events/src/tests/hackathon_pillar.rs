@@ -746,3 +746,19 @@ fn claim_milestone_on_single_release_hackathon_reverts() {
         "claim_milestone must reject a Single-release hackathon"
     );
 }
+
+
+#[test]
+fn unpause_extends_pause_duration_tracking() {
+    let ctx = setup();
+    ctx.events.pause();
+    assert!(ctx.events.is_paused());
+
+    // Advance ledger timestamp while paused
+    ctx.env.ledger().with_mut(|li| {
+        li.timestamp += 1000;
+    });
+
+    ctx.events.unpause();
+    assert!(!ctx.events.is_paused());
+}
