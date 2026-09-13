@@ -6,7 +6,7 @@ use soroban_sdk::String;
 
 use crate::errors::Error;
 use crate::types::{
-    CancellationState, DataKey, EventRecord, PendingAdmin, PendingManager, PendingUpgrade,
+    CancellationState, DataKey, EventRecord, PendingAdmin, PendingManager, PendingUpgrade, PendingValidator,
     PrizeAward, Submission, Winner,
 };
 
@@ -773,4 +773,33 @@ pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {
     env.storage()
         .temporary()
         .set(&DataKey::OpSeen(domain.clone(), op_id.clone()), &true);
+}
+
+// ============================================================
+// VALIDATOR ROLE (instance; Spoof.2 hardening)
+// ============================================================
+pub fn get_validator(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Validator)
+        .or_else(|| env.storage().instance().get(&DataKey::Admin))
+        .ok_or(Error::NotInitialized)
+}
+
+pub fn set_validator(env: &Env, addr: &Address) {
+    env.storage().instance().set(&DataKey::Validator, addr);
+}
+
+pub fn get_pending_validator(env: &Env) -> Option<PendingValidator> {
+    env.storage().instance().get(&DataKey::PendingValidator)
+}
+
+pub fn set_pending_validator(env: &Env, pending: &PendingValidator) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingValidator, pending);
+}
+
+pub fn clear_pending_validator(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingValidator);
 }
