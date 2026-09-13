@@ -2,7 +2,7 @@
 
 use soroban_sdk::{contractevent, Address, BytesN, String};
 
-use crate::types::Pillar;
+use crate::types::{CancellationBranch, Pillar};
 
 #[contractevent]
 pub struct EventCreated {
@@ -18,6 +18,14 @@ pub struct EventCreated {
 #[contractevent]
 pub struct EventCancelled {
     pub id: u64,
+}
+
+#[contractevent]
+pub struct CancellationStarted {
+    pub event_id: u64,
+    pub branch: CancellationBranch,
+    pub remaining_at_start: i128,
+    pub non_owner_total: i128,
 }
 
 #[contractevent]
@@ -89,6 +97,14 @@ pub struct SubmissionWithdrawn {
 pub struct WinnersSelected {
     pub event_id: u64,
     pub count: u32,
+}
+
+#[contractevent]
+pub struct WinnerAwarded {
+    pub event_id: u64,
+    pub recipient: Address,
+    pub position: u32,
+    pub amount: i128,
 }
 
 #[contractevent]
