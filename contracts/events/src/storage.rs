@@ -774,3 +774,34 @@ pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {
         .temporary()
         .set(&DataKey::OpSeen(domain.clone(), op_id.clone()), &true);
 }
+
+// ============================================================
+// PAUSE WINDOW EXTENSION TRACKING (DoS.10)
+// ============================================================
+pub fn get_paused_at(env: &Env) -> Option<u64> {
+    env.storage().instance().get(&DataKey::PausedAt)
+}
+
+pub fn set_paused_at(env: &Env, timestamp: u64) {
+    env.storage().instance().set(&DataKey::PausedAt, &timestamp);
+}
+
+pub fn clear_paused_at(env: &Env) {
+    env.storage().instance().remove(&DataKey::PausedAt);
+}
+
+pub fn get_last_pause_duration(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::LastPauseDuration).unwrap_or(0)
+}
+
+pub fn set_last_pause_duration(env: &Env, duration: u64) {
+    env.storage().instance().set(&DataKey::LastPauseDuration, &duration);
+}
+
+pub fn get_unpaused_at(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::UnpausedAt).unwrap_or(0)
+}
+
+pub fn set_unpaused_at(env: &Env, timestamp: u64) {
+    env.storage().instance().set(&DataKey::UnpausedAt, &timestamp);
+}
