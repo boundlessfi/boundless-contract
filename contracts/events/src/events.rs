@@ -178,3 +178,18 @@ pub struct Migrated {
     pub from_version: String,
     pub to_version: String,
 }
+
+#[contractevent]
+pub struct ValidatorUpdated {
+    pub new_validator: Address,
+}
+
+#[contractevent]
+pub struct PendingValidatorSet {
+    pub target: Address,
+}
+
+#[contractevent]
+pub struct PendingValidatorCancelled {
+    pub cancelled_at_ledger: u32,
+}
