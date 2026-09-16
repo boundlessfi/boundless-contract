@@ -113,30 +113,12 @@ pub fn claim_milestone(
         return Err(Error::InsufficientEscrow);
     }
 
-    if is_crowdfunding {
-        let bps = escrow::effective_fee_bps(env, event.fee_bps_override);
-        escrow::release_with_fee_at(env, &event.token, &recipient, amount, bps);
-    } else {
-        escrow::release(env, &event.token, &recipient, amount);
-    }
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     storage::mark_milestone_claimed(env, event_id, &recipient, milestone);
     if is_crowdfunding {
         let claimed = storage::get_crowdfunding_milestones_claimed(env, event_id);
         storage::set_crowdfunding_milestones_claimed(env, event_id, claimed.saturating_add(1));
     }
-
-    let profile = profile_client::client(env);
-    let reason = Symbol::new(env, "milestone");
-
-    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
-    profile.bootstrap(&recipient, &bootstrap_op);
-
-    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
-    profile.bump_reputation(&recipient, &reputation_bump, &reason, &rep_op);
-
-    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
-    profile.register_earnings(&recipient, &event.token, &amount, &earnings_op);
 
     storage::append_winner(
         env,
@@ -154,15 +136,36 @@ pub fn claim_milestone(
         event.status = EventStatus::Completed;
     }
     storage::set_event(env, event_id, &event);
+    idempotency::mark_seen(env, &event.owner, &op_id);
+
+    // State written above; release last so a reentrant token can't double-claim.
+    if is_crowdfunding {
+        let bps = escrow::effective_fee_bps(env, event.fee_bps_override);
+        escrow::release_with_fee_at(env, &event.token, &recipient, amount, bps);
+    } else {
+        escrow::release(env, &event.token, &recipient, amount);
+    }
 
     evt::MilestoneClaimed {
         event_id,
-        recipient,
+        recipient: recipient.clone(),
         milestone,
         amount,
     }
     .publish(env);
 
-    idempotency::mark_seen(env, &event.owner, &op_id);
+    // Best-effort: the payout is final, so a profile failure must not revert it.
+    let profile = profile_client::client(env);
+    let reason = Symbol::new(env, "milestone");
+
+    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    let _ = profile.try_bootstrap(&recipient, &bootstrap_op);
+
+    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
+    let _ = profile.try_bump_reputation(&recipient, &reputation_bump, &reason, &rep_op);
+
+    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
+    let _ = profile.try_register_earnings(&recipient, &event.token, &amount, &earnings_op);
+
     Ok(())
 }
