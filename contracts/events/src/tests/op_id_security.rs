@@ -144,10 +144,6 @@ fn bootstrap_self_cannot_front_run_events_child_op_ids() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);
 
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
@@ -276,19 +272,20 @@ fn event_id_overflow_reverts() {
 /// (select_winners) that reuses it. Before namespacing, the shared global
 /// OpSeen made the manager's payout revert with OpAlreadySeen.
 #[test]
-fn permissionless_apply_cannot_squat_select_winners_op_id() {
+fn permissionless_add_funds_cannot_squat_select_winners_op_id() {
     let ctx = setup();
     let id = create_bounty(&ctx);
-
-    ctx.events
-        .apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
 
     // The op_id the owner will use to select winners.
     let victim_op = BytesN::random(&ctx.env);
 
-    // Attacker front-runs by burning that op_id in their own (apply) domain.
+    // Attacker front-runs by burning that op_id in their own (add_funds)
+    // domain. Contributing is the one entrypoint anyone may still call.
     let attacker = Address::generate(&ctx.env);
-    ctx.events.apply_to_bounty(&id, &attacker, &victim_op);
+    // add_funds debits the contribution plus the platform fee on top.
+    token::StellarAssetClient::new(&ctx.env, &ctx.token_addr).mint(&attacker, &1_000_0000000_i128);
+    ctx.events
+        .add_funds(&id, &attacker, &100_0000000_i128, &victim_op);
 
     // Owner's select_winners with the same op_id still succeeds (owner domain).
     let winners = soroban_sdk::vec![

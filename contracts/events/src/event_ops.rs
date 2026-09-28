@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{Address, BytesN, Env, Symbol, Vec};
 
 use crate::admin::{self, MAX_FEE_BPS};
 use crate::bounty;
@@ -14,7 +14,7 @@ use crate::storage;
 use crate::token_whitelist;
 use crate::types::{
     CancellationBranch, CancellationState, CreateEventParams, EventRecord, EventStatus,
-    PendingManager, Pillar, PrizeAward, ReleaseKind, Submission, Winner, WinnerSpec,
+    PendingManager, Pillar, PrizeAward, ReleaseKind, Winner, WinnerSpec,
 };
 
 const MAX_TITLE_LEN: u32 = 120;
@@ -27,14 +27,13 @@ const PENDING_MANAGER_TTL_LEDGERS: u32 = 17_280;
 // before winners are selected). A per-event override needs a migration.
 pub const PRIZE_CLAIM_WINDOW_SECS: u64 = 90 * 24 * 60 * 60;
 
-// Participant sets (applicants, contributors, submissions) are unbounded:
-// each entry is its own persistent ledger entry paid for by the participant's
-// own transaction, and no state-changing path iterates the full set in one
-// transaction (refunds are cranked in batches, winner selection takes an
-// explicit bounded list). Full-list reads page through VIEW_PAGE_LIMIT
-// entries per call so simulation stays inside per-tx read-entry limits.
+// Contributor sets are unbounded: each entry is its own persistent ledger
+// entry paid for by the contributor's own transaction, and no state-changing
+// path iterates the full set in one transaction (refunds are cranked in
+// batches, winner selection takes an explicit bounded list). Full-list reads
+// page through VIEW_PAGE_LIMIT entries per call so simulation stays inside
+// per-tx read-entry limits.
 pub const VIEW_PAGE_LIMIT: u32 = 100;
-pub const MAX_CONTENT_URI_LEN: u32 = 256;
 
 pub const MAX_REFUNDS_PER_BATCH: u32 = 25;
 
@@ -538,112 +537,6 @@ pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<()
 }
 
 // ============================================================
-// SUBMIT
-// ============================================================
-pub fn submit(
-    env: &Env,
-    event_id: u64,
-    applicant: Address,
-    slot: u32,
-    content_uri: String,
-    op_id: BytesN<32>,
-) -> Result<(), Error> {
-    admin::require_not_paused(env)?;
-
-    let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    if !matches!(event.status, EventStatus::Active) {
-        return Err(Error::EventNotActive);
-    }
-    if matches!(event.pillar, Pillar::Crowdfunding) {
-        return Err(Error::InvalidPillar);
-    }
-
-    applicant.require_auth();
-    idempotency::require_unseen(env, &applicant, &op_id)?;
-
-    // Reused rather than adding a new variant — stays inside the
-    // contracterror 50-variant cap (see BACKLOG.md L7 for precedent).
-    if content_uri.len() > MAX_CONTENT_URI_LEN {
-        return Err(Error::TitleTooLong);
-    }
-
-    let existing = storage::get_submission(env, event_id, &applicant, slot);
-
-    if !storage::has_any_submission(env, event_id, &applicant) {
-        let needs_application = matches!(event.pillar, Pillar::Bounty | Pillar::Grant);
-        if needs_application && storage::applicant_slot(env, event_id, &applicant) == 0 {
-            return Err(Error::ApplicantNotApplied);
-        }
-    }
-
-    // Count the slot before writing. There is no cap: each entry is its own
-    // ledger entry whose write and rent are paid by the submitter's
-    // transaction, so spam addresses fund their own storage and cannot lock
-    // real participants out of a full event.
-    storage::append_submission(env, event_id, &applicant, slot)?;
-
-    let submitted_at = existing
-        .as_ref()
-        .map(|s| s.submitted_at)
-        .unwrap_or_else(|| env.ledger().timestamp());
-
-    let submission = Submission {
-        applicant: applicant.clone(),
-        content_uri: content_uri.clone(),
-        submitted_at,
-    };
-    storage::set_submission(env, event_id, &applicant, slot, &submission);
-
-    evt::Submitted {
-        event_id,
-        applicant: applicant.clone(),
-        slot,
-        content_uri,
-    }
-    .publish(env);
-
-    idempotency::mark_seen(env, &applicant, &op_id);
-    Ok(())
-}
-
-// ============================================================
-// WITHDRAW SUBMISSION
-// ============================================================
-pub fn withdraw_submission(
-    env: &Env,
-    event_id: u64,
-    applicant: Address,
-    slot: u32,
-    op_id: BytesN<32>,
-) -> Result<(), Error> {
-    admin::require_not_paused(env)?;
-
-    let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    if !matches!(event.status, EventStatus::Active) {
-        return Err(Error::EventNotActive);
-    }
-
-    applicant.require_auth();
-    idempotency::require_unseen(env, &applicant, &op_id)?;
-
-    if storage::get_submission(env, event_id, &applicant, slot).is_none() {
-        return Err(Error::SubmissionNotFound);
-    }
-
-    storage::remove_submission(env, event_id, &applicant, slot);
-
-    evt::SubmissionWithdrawn {
-        event_id,
-        applicant: applicant.clone(),
-        slot,
-    }
-    .publish(env);
-
-    idempotency::mark_seen(env, &applicant, &op_id);
-    Ok(())
-}
-
-// ============================================================
 // SELECT WINNERS
 // ============================================================
 pub fn select_winners(
@@ -949,47 +842,6 @@ pub fn claim_prize(
 // ============================================================
 pub fn get_event(env: &Env, event_id: u64) -> Result<EventRecord, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)
-}
-
-pub fn get_submission(
-    env: &Env,
-    event_id: u64,
-    applicant: Address,
-    slot: u32,
-) -> Result<Submission, Error> {
-    storage::get_submission(env, event_id, &applicant, slot).ok_or(Error::SubmissionNotFound)
-}
-
-// Full-list getters return the first VIEW_PAGE_LIMIT entries; use the
-// _page variants (or the per-index getters / the off-chain indexer) to
-// read beyond that.
-pub fn get_applicants(env: &Env, event_id: u64) -> Result<Vec<Address>, Error> {
-    get_applicants_page(env, event_id, 0, VIEW_PAGE_LIMIT)
-}
-
-pub fn get_applicants_page(
-    env: &Env,
-    event_id: u64,
-    start: u32,
-    limit: u32,
-) -> Result<Vec<Address>, Error> {
-    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::applicants_snapshot(
-        env,
-        event_id,
-        start,
-        limit.min(VIEW_PAGE_LIMIT),
-    ))
-}
-
-pub fn get_applicant_count(env: &Env, event_id: u64) -> Result<u32, Error> {
-    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::applicant_count(env, event_id))
-}
-
-pub fn get_applicant_at(env: &Env, event_id: u64, idx: u32) -> Result<Option<Address>, Error> {
-    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::applicant_at(env, event_id, idx))
 }
 
 pub fn get_winners(env: &Env, event_id: u64) -> Result<Vec<Winner>, Error> {

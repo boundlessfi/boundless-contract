@@ -5,10 +5,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
-use crate::errors::Error;
-use crate::event_ops::MAX_CONTENT_URI_LEN;
-use crate::storage;
-use crate::types::{CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec};
+use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
@@ -21,7 +18,6 @@ const FEE_AMOUNT: i128 = (TOTAL_BUDGET * FEE_BPS as i128) / 10_000_i128;
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
-    events_id: Address,
     profile: ProfileContractClient<'a>,
     owner: Address,
     applicant: Address,
@@ -68,22 +64,12 @@ fn setup<'a>() -> Ctx<'a> {
     Ctx {
         env,
         events,
-        events_id,
         profile,
         owner,
         applicant,
         token_addr,
         fee_account,
         events_admin,
-    }
-}
-
-fn expect_op_err<T, E>(
-    result: Result<Result<T, E>, Result<Error, soroban_sdk::InvokeError>>,
-) -> Error {
-    match result {
-        Err(Ok(e)) => e,
-        _ => panic!("expected contract error"),
     }
 }
 
@@ -174,242 +160,6 @@ fn create_rejects_multi_release_kind() {
 
 // ============================================================
 // submit (open submission model)
-// ============================================================
-
-#[test]
-fn submit_open_without_prior_apply_creates_anchor() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../project.json");
-    let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
-
-    let sub = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
-    assert_eq!(sub.applicant, ctx.applicant);
-    assert_eq!(sub.content_uri, uri);
-    assert_eq!(sub.submitted_at, ctx.env.ledger().timestamp());
-}
-
-#[test]
-fn resubmit_keeps_original_timestamp_and_updates_uri() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op_a = BytesN::random(&ctx.env);
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri_a, &op_a);
-    let first_time = ctx
-        .events
-        .get_submission(&id, &ctx.applicant, &0_u32)
-        .submitted_at;
-
-    let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
-    let op_b = BytesN::random(&ctx.env);
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri_b, &op_b);
-
-    let second = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
-    assert_eq!(second.content_uri, uri_b);
-    assert_eq!(second.submitted_at, first_time);
-}
-
-#[test]
-fn submit_replayed_op_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
-
-    let res = ctx
-        .events
-        .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op);
-    assert!(res.is_err(), "replayed submit op_id must revert");
-}
-
-#[test]
-fn withdraw_submission_removes_anchor() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op_s = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op_s);
-
-    let op_w = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_submission(&id, &ctx.applicant, &0_u32, &op_w);
-
-    let res = ctx.events.try_get_submission(&id, &ctx.applicant, &0_u32);
-    assert!(res.is_err(), "withdrawn submission is no longer readable");
-}
-
-#[test]
-fn remove_submission_on_nonexistent_entry_does_not_corrupt_counter() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let submitter = Address::generate(&ctx.env);
-    ctx.events.submit(
-        &id,
-        &submitter,
-        &0_u32,
-        &String::from_str(&ctx.env, "ipfs://Qm.../v1.json"),
-        &BytesN::random(&ctx.env),
-    );
-
-    // ctx.applicant never submitted — calling the low-level storage helper
-    // directly for it must be a no-op, not decrement the counter that
-    // `submitter`'s real submission incremented.
-    ctx.env.as_contract(&ctx.events_id, || {
-        storage::remove_submission(&ctx.env, id, &ctx.applicant, 0);
-    });
-
-    let count = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count, 1,
-        "removing a nonexistent submission must not corrupt the counter"
-    );
-}
-
-#[test]
-fn withdraw_submission_frees_the_slot_for_future_submitters() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri, &BytesN::random(&ctx.env));
-    ctx.events
-        .withdraw_submission(&id, &ctx.applicant, &0_u32, &BytesN::random(&ctx.env));
-
-    let count = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count, 0,
-        "withdrawing a submission must decrement the submission count"
-    );
-}
-
-#[test]
-fn submit_beyond_former_cap_succeeds() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    // Fast-forward the per-event counter past the former 5,000 cap instead
-    // of performing that many real submissions from distinct addresses.
-    ctx.env.as_contract(&ctx.events_id, || {
-        ctx.env
-            .storage()
-            .persistent()
-            .set(&DataKey::EventSubmissionCount(id), &5_000_u32);
-    });
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v5001.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri, &BytesN::random(&ctx.env));
-
-    let count = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count, 5_001,
-        "submissions are unbounded; the counter must keep advancing past the former cap"
-    );
-}
-
-#[test]
-fn submit_at_counter_overflow_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    ctx.env.as_contract(&ctx.events_id, || {
-        ctx.env
-            .storage()
-            .persistent()
-            .set(&DataKey::EventSubmissionCount(id), &u32::MAX);
-    });
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../overflow.json");
-    let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op),
-    );
-    assert_eq!(
-        err,
-        Error::TooManyContributors,
-        "a submission that would overflow the u32 counter must revert"
-    );
-}
-
-#[test]
-fn submit_oversized_content_uri_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let too_long = "x".repeat((MAX_CONTENT_URI_LEN + 1) as usize);
-    let uri = String::from_str(&ctx.env, &too_long);
-    let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(
-        ctx.events
-            .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op),
-    );
-    // Reused rather than a new variant — stays inside the contracterror
-    // 50-variant cap (see BACKLOG.md L7 for precedent).
-    assert_eq!(
-        err,
-        Error::TitleTooLong,
-        "content_uri beyond MAX_CONTENT_URI_LEN must revert"
-    );
-}
-
-#[test]
-fn resubmit_by_existing_applicant_does_not_increment_submission_count() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    ctx.events.submit(
-        &id,
-        &ctx.applicant,
-        &0_u32,
-        &uri_a,
-        &BytesN::random(&ctx.env),
-    );
-
-    let count_after_first = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(count_after_first, 1);
-
-    let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
-    ctx.events.submit(
-        &id,
-        &ctx.applicant,
-        &0_u32,
-        &uri_b,
-        &BytesN::random(&ctx.env),
-    );
-
-    let count_after_second = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count_after_second, 1,
-        "re-submission by an existing applicant updates in place and must not \
-         recount against the cap"
-    );
-}
-
-// ============================================================
-// select_winners — distribution (happy paths)
 // ============================================================
 
 #[test]

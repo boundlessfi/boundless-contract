@@ -8,7 +8,7 @@ use soroban_sdk::{
 use super::common::setup;
 use crate::errors::Error;
 use crate::storage;
-use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind, Submission, Winner};
+use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind, Winner};
 
 // Zeroed with the contract constant; restore both together.
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
@@ -22,7 +22,7 @@ fn initializes_with_expected_config() {
     assert_eq!(ctx.client.get_fee_bps(), 250);
     assert_eq!(ctx.client.get_profile_contract(), ctx.profile_contract);
     assert_eq!(ctx.client.is_paused(), false);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.7.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "2.0.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
@@ -135,7 +135,7 @@ fn cancel_pending_upgrade_clears_proposal() {
 
     ctx.client.cancel_pending_upgrade();
     assert_eq!(ctx.client.get_pending_upgrade(), None);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.7.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "2.0.0"));
 }
 
 #[test]
@@ -225,111 +225,6 @@ fn migrate_rewrites_legacy_percentages_as_prize_floors() {
         migrated.title,
         String::from_str(&ctx.env, "Muwa Creator Bounty")
     );
-}
-
-#[test]
-fn migrate_leaves_legacy_submissions_addressable_without_scanning_applicants() {
-    // migrate deliberately does not walk the applicant index: that loop is
-    // unbounded (per-event caps were removed) and would blow the invocation's
-    // 100-entry footprint on a popular event. Legacy rows stay reachable
-    // through the slot-0 fallback instead, and fold in on their next write.
-    let ctx = setup(250);
-    let applicant = Address::generate(&ctx.env);
-    let event_id = ctx.client.id_base() + 1;
-    let budget = 1_000_0000000_i128;
-
-    let mut dist = Map::new(&ctx.env);
-    dist.set(1, 100_u32);
-    let legacy_event = LegacyEventRecord {
-        id: event_id,
-        pillar: Pillar::Bounty,
-        owner: Address::generate(&ctx.env),
-        token: Address::generate(&ctx.env),
-        total_budget: budget,
-        remaining_escrow: 0,
-        release_kind: ReleaseKind::Single,
-        status: EventStatus::Completed,
-        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/legacy"),
-        title: String::from_str(&ctx.env, "Legacy"),
-        created_at: 1,
-        deadline: None,
-        winner_distribution: dist,
-        fee_bps_override: None,
-    };
-
-    ctx.env.as_contract(&ctx.client.address, || {
-        ctx.env
-            .storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &legacy_event);
-        ctx.env
-            .storage()
-            .instance()
-            .set(&DataKey::NextEventId, &(event_id + 1));
-        storage::append_applicant(&ctx.env, event_id, &applicant).unwrap();
-        ctx.env.storage().persistent().set(
-            &DataKey::EventSubmission(event_id, applicant.clone()),
-            &Submission {
-                applicant: applicant.clone(),
-                content_uri: String::from_str(&ctx.env, "ipfs://historical"),
-                submitted_at: 42,
-            },
-        );
-    });
-
-    ctx.client.migrate_events(&8_u32);
-    ctx.client.migrate();
-
-    // The record rewrite is the load-bearing part and must have happened.
-    assert_eq!(
-        ctx.client.get_event(&event_id).prize_floors.get(1),
-        Some(budget)
-    );
-
-    // The submission is still addressable, with its timestamp intact.
-    let found = ctx.client.get_submission(&event_id, &applicant, &0_u32);
-    assert_eq!(
-        found.content_uri,
-        String::from_str(&ctx.env, "ipfs://historical")
-    );
-    assert_eq!(found.submitted_at, 42);
-    ctx.env.as_contract(&ctx.client.address, || {
-        assert!(storage::has_any_submission(&ctx.env, event_id, &applicant));
-    });
-}
-
-#[test]
-fn legacy_submission_is_readable_when_the_applicant_index_never_saw_it() {
-    // Hackathon submitters never enter the applicant index, so migrate cannot
-    // enumerate them. Their rows must still be reachable as slot 0.
-    let ctx = setup(250);
-    let submitter = Address::generate(&ctx.env);
-    let event_id = ctx.client.id_base() + 1;
-
-    let legacy_submission = Submission {
-        applicant: submitter.clone(),
-        content_uri: String::from_str(&ctx.env, "ipfs://hackathon-entry"),
-        submitted_at: 7,
-    };
-    ctx.env.as_contract(&ctx.client.address, || {
-        ctx.env.storage().persistent().set(
-            &DataKey::EventSubmission(event_id, submitter.clone()),
-            &legacy_submission,
-        );
-    });
-
-    let found = ctx.client.get_submission(&event_id, &submitter, &0_u32);
-    assert_eq!(
-        found.content_uri,
-        String::from_str(&ctx.env, "ipfs://hackathon-entry")
-    );
-
-    ctx.env.as_contract(&ctx.client.address, || {
-        assert!(
-            storage::has_any_submission(&ctx.env, event_id, &submitter),
-            "an unmigrated row must still block application withdrawal"
-        );
-    });
 }
 
 #[test]
@@ -426,7 +321,7 @@ fn migrate_refuses_to_stamp_while_events_remain_unconverted() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "1.7.0"))
+        Some(String::from_str(&ctx.env, "2.0.0"))
     );
 }
 
@@ -449,7 +344,7 @@ fn migrate_events_caps_each_call_regardless_of_the_argument() {
 
 #[test]
 fn migrate_skips_rows_already_in_the_current_layout() {
-    // A fresh 1.7.0 deployment writes new-layout events, and the runbook still
+    // A fresh 2.0.0 deployment writes new-layout events, and the runbook still
     // calls migrate() after apply. Decoding those as the legacy shape used to
     // abort the whole invocation.
     let ctx = setup(250);
@@ -525,8 +420,8 @@ fn migrate_runs_regardless_of_how_the_version_was_spelled() {
             .storage()
             .instance()
             .set(&DataKey::NextEventId, &(event_id + 1));
-        // The operator proposed the upgrade as "v1.7.0" rather than "1.7.0".
-        storage::set_version(&ctx.env, &String::from_str(&ctx.env, "v1.7.0"));
+        // The operator proposed the upgrade as "v2.0.0" rather than "2.0.0".
+        storage::set_version(&ctx.env, &String::from_str(&ctx.env, "v2.0.0"));
     });
 
     ctx.client.migrate_events(&8_u32);
@@ -537,57 +432,13 @@ fn migrate_runs_regardless_of_how_the_version_was_spelled() {
 }
 
 #[test]
-fn folding_a_legacy_row_adds_to_the_applicants_existing_slots() {
-    let ctx = setup(250);
-    let applicant = Address::generate(&ctx.env);
-    let event_id = ctx.client.id_base() + 1;
-
-    ctx.env.as_contract(&ctx.client.address, || {
-        // An unmigrated row, plus a slotted entry the applicant already holds.
-        ctx.env.storage().persistent().set(
-            &DataKey::EventSubmission(event_id, applicant.clone()),
-            &Submission {
-                applicant: applicant.clone(),
-                content_uri: String::from_str(&ctx.env, "ipfs://legacy"),
-                submitted_at: 1,
-            },
-        );
-        storage::append_submission(&ctx.env, event_id, &applicant, 1).unwrap();
-        storage::set_submission(
-            &ctx.env,
-            event_id,
-            &applicant,
-            1,
-            &Submission {
-                applicant: applicant.clone(),
-                content_uri: String::from_str(&ctx.env, "ipfs://slot-one"),
-                submitted_at: 2,
-            },
-        );
-
-        // Folding the legacy row into slot 0 must count it, not overwrite.
-        storage::append_submission(&ctx.env, event_id, &applicant, 0).unwrap();
-        assert_eq!(
-            storage::applicant_submission_count(&ctx.env, event_id, &applicant),
-            2
-        );
-
-        storage::remove_submission(&ctx.env, event_id, &applicant, 0);
-        assert!(
-            storage::has_any_submission(&ctx.env, event_id, &applicant),
-            "slot 1 is still occupied, so the application must stay locked"
-        );
-    });
-}
-
-#[test]
 fn migrate_is_a_no_op_on_a_fresh_deployment() {
     let ctx = setup(250);
     ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "1.7.0"))
+        Some(String::from_str(&ctx.env, "2.0.0"))
     );
 }
 
@@ -599,7 +450,7 @@ fn migrate_marks_current_version_and_blocks_replay() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "1.7.0"))
+        Some(String::from_str(&ctx.env, "2.0.0"))
     );
 
     let err = ctx

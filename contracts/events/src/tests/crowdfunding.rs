@@ -403,17 +403,6 @@ fn select_winners_on_crowdfunding_reverts() {
     assert!(res.is_err());
 }
 
-#[test]
-fn submit_on_crowdfunding_reverts() {
-    let ctx = setup();
-    let id = create_campaign(&ctx, 3);
-
-    let op = BytesN::random(&ctx.env);
-    let uri = String::from_str(&ctx.env, "ipfs://nope");
-    let res = ctx.events.try_submit(&id, &ctx.builder, &0_u32, &uri, &op);
-    assert!(res.is_err());
-}
-
 // ============================================================
 // cancel_event
 // ============================================================

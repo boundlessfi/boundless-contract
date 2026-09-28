@@ -33,11 +33,10 @@ pub enum Error {
     // off-chain/backend concern; the contract no longer gates on deadline).
     TitleTooLong = 39,
 
-    ApplicantAlreadyApplied = 40,
-    ApplicantNotApplied = 41,
-    SubmissionNotFound = 42,
-    SubmissionAlreadyExists = 43,
-
+    // 40-43 retired in 2.0.0 with the on-chain participation records
+    // (ApplicantAlreadyApplied, ApplicantNotApplied, SubmissionNotFound,
+    // SubmissionAlreadyExists). Left as a gap rather than reused so an old
+    // client decoding a stored error code never reads the wrong case.
     NoSubmissions = 50,
     InvalidWinnerPosition = 51,
     DuplicateWinnerPosition = 52,
@@ -50,15 +49,12 @@ pub enum Error {
     BelowMinimumContribution = 57,
     InvalidContributionAmount = 58,
 
-    // Per-event participant caps were removed (participant sets are
-    // unbounded; entries are per-participant and self-funded). 59 and 61 are
-    // kept for ABI stability and now only signal u32 counter overflow.
-    TooManyApplicants = 59,
-
+    // 59 retired in 2.0.0 with the applicant index (TooManyApplicants).
     OpAlreadySeen = 60,
 
-    // Also returned by append_submission's overflow guard — reused rather
-    // than adding a near-duplicate "TooManySubmissions".
+    // Signals a u32 counter overflow on the contributor index. Per-event
+    // participant caps were removed (contributor sets are unbounded; entries
+    // are per-contributor and self-funded).
     TooManyContributors = 61,
 
     CancellationNotStarted = 62,

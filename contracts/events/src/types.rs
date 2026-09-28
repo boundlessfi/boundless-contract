@@ -101,17 +101,6 @@ pub struct CreateEventParams {
 }
 
 // ============================================================
-// SUBMISSION
-// ============================================================
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Submission {
-    pub applicant: Address,
-    pub content_uri: String,
-    pub submitted_at: u64,
-}
-
-// ============================================================
 // CONTRIBUTION
 // ============================================================
 #[contracttype]
@@ -171,12 +160,14 @@ pub enum DataKey {
 
     EventManager(u64),
 
+    // Retired in 2.0.0 with the on-chain participation records: applying and
+    // submitting are product facts the contract never read, so nothing writes
+    // or reads these now. Kept in place rather than deleted so the remaining
+    // variants keep their positions and any rows left on live events stay
+    // identifiable until they archive.
     EventApplicantCount(u64),
     EventApplicantAt(u64, u32),
     EventApplicantSlot(u64, Address),
-
-    /// Pre-1.7.0 single-submission key. Read only by `migrate`, which moves
-    /// each row to slot 0 of `EventSubmissionEntry`. Never write this.
     EventSubmission(u64, Address),
 
     EventWinnerCount(u64),
@@ -217,7 +208,7 @@ pub enum DataKey {
     // Appended for two-step manager rotation to preserve key discriminants.
     PendingManager(u64),
 
-    // Appended to cap per-event submission storage growth (security fix).
+    // Retired in 2.0.0 (see the applicant keys above).
     EventSubmissionCount(u64),
 
     // Appended in 1.7.0. Sum of awarded-but-unclaimed prizes. `remaining_escrow`
@@ -225,9 +216,8 @@ pub enum DataKey {
     // funds an earlier winner is still entitled to and could promise them twice.
     EventOwedTotal(u64),
 
-    // Appended in 1.7.0. Submissions gain a caller-chosen slot, so one wallet
-    // may hold several distinct entries in one event. The contract assigns no
-    // meaning to the slot; callers use it for whatever separates their entries.
+    // Retired in 2.0.0 (see the applicant keys above). Added in 1.7.0 to give
+    // one wallet several distinct entries in one event.
     EventSubmissionEntry(u64, Address, u32),
     EventApplicantSubmissionCount(u64, Address),
 

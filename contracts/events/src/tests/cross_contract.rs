@@ -110,10 +110,6 @@ fn select_winners_pays_recipient_and_bumps_profile() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);
 
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
@@ -549,149 +545,6 @@ fn claim_milestone_final_milestone_marks_event_completed() {
 }
 
 // ============================================================
-// submit / withdraw_submission
-// ============================================================
-
-fn create_hackathon(ctx: &Ctx) -> u64 {
-    let mut dist = Map::new(&ctx.env);
-    dist.set(1, TOTAL_BUDGET * 100 / 100);
-    let params = CreateEventParams {
-        pillar: Pillar::Hackathon,
-        owner: ctx.owner.clone(),
-        token: ctx.token_addr.clone(),
-        total_budget: TOTAL_BUDGET,
-        release_kind: ReleaseKind::Single,
-        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
-        title: String::from_str(&ctx.env, "Test Hackathon"),
-        deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        prize_floors: dist,
-        fee_bps_override: None,
-        manager: None,
-    };
-    let op_create = BytesN::random(&ctx.env);
-    ctx.events.create_event(&params, &op_create)
-}
-
-#[test]
-fn hackathon_submit_creates_anchor_without_prior_apply() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../project.json");
-    let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
-
-    let sub = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
-    assert_eq!(sub.applicant, ctx.applicant);
-    assert_eq!(sub.content_uri, uri);
-    assert_eq!(sub.submitted_at, ctx.env.ledger().timestamp());
-}
-
-#[test]
-fn bounty_submit_requires_prior_application() {
-    let ctx = setup();
-    let id = create_bounty(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
-    let op = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op);
-    assert!(res.is_err(), "submit before apply on bounty should revert");
-}
-
-#[test]
-fn bounty_submit_succeeds_after_apply() {
-    let ctx = setup();
-    let id = create_bounty(&ctx);
-
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events.apply_to_bounty(&id, &ctx.applicant, &op_apply);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../bounty.json");
-    let op_submit = BytesN::random(&ctx.env);
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri, &op_submit);
-
-    let sub = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
-    assert_eq!(sub.content_uri, uri);
-}
-
-#[test]
-fn resubmit_preserves_original_submitted_at_and_updates_uri() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op_a = BytesN::random(&ctx.env);
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri_a, &op_a);
-
-    let first = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
-    let first_time = first.submitted_at;
-
-    let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
-    let op_b = BytesN::random(&ctx.env);
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri_b, &op_b);
-
-    let second = ctx.events.get_submission(&id, &ctx.applicant, &0_u32);
-    assert_eq!(second.content_uri, uri_b);
-    assert_eq!(
-        second.submitted_at, first_time,
-        "submitted_at must be preserved across re-submit"
-    );
-}
-
-#[test]
-fn submit_replayed_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &0_u32, &uri, &op);
-
-    let res = ctx
-        .events
-        .try_submit(&id, &ctx.applicant, &0_u32, &uri, &op);
-    assert!(res.is_err(), "replayed submit should revert");
-}
-
-#[test]
-fn withdraw_submission_removes_anchor() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op_submit = BytesN::random(&ctx.env);
-    ctx.events
-        .submit(&id, &ctx.applicant, &0_u32, &uri, &op_submit);
-
-    let op_wd = BytesN::random(&ctx.env);
-    ctx.events
-        .withdraw_submission(&id, &ctx.applicant, &0_u32, &op_wd);
-
-    let res = ctx.events.try_get_submission(&id, &ctx.applicant, &0_u32);
-    assert!(res.is_err(), "withdrawn submission should not be readable");
-}
-
-#[test]
-fn withdraw_submission_without_submission_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let op_wd = BytesN::random(&ctx.env);
-    let res = ctx
-        .events
-        .try_withdraw_submission(&id, &ctx.applicant, &0_u32, &op_wd);
-    assert!(
-        res.is_err(),
-        "withdraw without prior submission should revert"
-    );
-}
-
-// ============================================================
 // Per-event fee_bps_override
 // ============================================================
 #[test]
@@ -1058,8 +911,6 @@ fn unaccepted_proposal_leaves_owner_in_authority() {
     let id = create_bounty_with_manager(&ctx, &attacker);
 
     ctx.events
-        .apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
-    ctx.events
         .select_winners(&id, &win_one(&ctx), &BytesN::random(&ctx.env));
 
     // select_winners required the owner, not the never-accepted address
@@ -1075,8 +926,6 @@ fn accepted_manager_holds_select_winners_authority() {
     let id = create_bounty_with_manager(&ctx, &manager);
     ctx.events.accept_manager(&id);
 
-    ctx.events
-        .apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
     ctx.events
         .select_winners(&id, &win_one(&ctx), &BytesN::random(&ctx.env));
 

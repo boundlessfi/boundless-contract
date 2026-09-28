@@ -61,33 +61,6 @@ pub struct OwnerResidualRefunded {
 }
 
 #[contractevent]
-pub struct Applied {
-    pub event_id: u64,
-    pub applicant: Address,
-}
-
-#[contractevent]
-pub struct ApplicationWithdrawn {
-    pub event_id: u64,
-    pub applicant: Address,
-}
-
-#[contractevent]
-pub struct Submitted {
-    pub event_id: u64,
-    pub applicant: Address,
-    pub slot: u32,
-    pub content_uri: String,
-}
-
-#[contractevent]
-pub struct SubmissionWithdrawn {
-    pub event_id: u64,
-    pub applicant: Address,
-    pub slot: u32,
-}
-
-#[contractevent]
 pub struct WinnersSelected {
     pub event_id: u64,
     pub count: u32,
