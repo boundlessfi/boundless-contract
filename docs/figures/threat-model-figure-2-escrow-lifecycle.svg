@@ -1,0 +1,346 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1038" width="100%" role="img" aria-labelledby="title" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+<title id="title">Figure 2 — Escrow lifecycle and authorization: who signs each boundless-events transition, how the escrow pool moves, and which ledger accounts are credited</title>
+<style>
+.t13{font-size:13px;fill:#0F172A}
+.t13s{font-size:13px;fill:#475569}
+.t13b{font-size:13px;font-weight:700;fill:#0F172A}
+.t13bs{font-size:13px;font-weight:600;fill:#475569}
+.t13w{font-size:13px;font-weight:700;fill:#fff}
+.t13a{font-size:13px;font-weight:600;fill:#B45309}
+.t13r{font-size:13px;font-weight:600;fill:#BE123C}
+.t14b{font-size:14px;font-weight:700;fill:#0F172A}
+.t14r{font-size:14px;font-weight:700;fill:#BE123C}
+.t14sl{font-size:14px;font-weight:700;fill:#475569}
+.t16bt{font-size:16px;font-weight:700;fill:#0F766E}
+.flow{fill:none;stroke:#475569;stroke-width:1.5;marker-end:url(#arrow)}
+.flowd{fill:none;stroke:#475569;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#arrow)}
+.stub{fill:none;stroke:#475569;stroke-width:1.5}
+.tb{fill:none;stroke:#B45309;stroke-width:1.5;stroke-dasharray:7 4}
+</style>
+<defs>
+<marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0.5 L8,4.5 L0,8.5 z" fill="#475569"/></marker>
+<pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#fff"/><line x1="0" y1="0" x2="0" y2="5" stroke="#0F766E" stroke-width="1.6"/></pattern>
+</defs>
+<rect x="0" y="0" width="1280" height="1038" fill="#fff"/>
+<text x="1256.0" y="26.0" class="t13bs" text-anchor="end">Signers · off-chain wallets (external entities)</text>
+<rect x="24.0" y="36.0" width="156" height="68" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="27.0" y="39.0" width="150" height="62" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="102.0" y="59.0" class="t14b" text-anchor="middle">Owner</text>
+<text x="102.0" y="76.0" class="t13s" text-anchor="middle">organizer wallet;</text>
+<text x="102.0" y="92.0" class="t13s" text-anchor="middle">funds the event</text>
+<line x1="102.0" y1="104" x2="102.0" y2="116" class="stub"/>
+<rect x="203.3" y="36.0" width="156" height="68" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="206.3" y="39.0" width="150" height="62" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="281.3" y="59.0" class="t14b" text-anchor="middle">Manager</text>
+<text x="281.3" y="76.0" class="t13s" text-anchor="middle">delegate; the owner</text>
+<text x="281.3" y="92.0" class="t13s" text-anchor="middle">until one accepts</text>
+<line x1="281.3" y1="104" x2="281.3" y2="116" class="stub"/>
+<rect x="382.7" y="36.0" width="156" height="68" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="385.7" y="39.0" width="150" height="62" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="460.7" y="59.0" class="t14b" text-anchor="middle">Contributor</text>
+<text x="460.7" y="76.0" class="t13s" text-anchor="middle">partner or</text>
+<text x="460.7" y="92.0" class="t13s" text-anchor="middle">community wallet</text>
+<line x1="460.7" y1="104" x2="460.7" y2="116" class="stub"/>
+<rect x="562.0" y="36.0" width="156" height="68" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="565.0" y="39.0" width="150" height="62" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="640.0" y="59.0" class="t14b" text-anchor="middle">Builder</text>
+<text x="640.0" y="76.0" class="t13s" text-anchor="middle">applicant wallet;</text>
+<text x="640.0" y="92.0" class="t13s" text-anchor="middle">never holds escrow</text>
+<line x1="640.0" y1="104" x2="640.0" y2="116" class="stub"/>
+<rect x="741.3" y="36.0" width="156" height="68" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="744.3" y="39.0" width="150" height="62" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="819.3" y="59.0" class="t14b" text-anchor="middle">Winner</text>
+<text x="819.3" y="76.0" class="t13s" text-anchor="middle">stored award</text>
+<text x="819.3" y="92.0" class="t13s" text-anchor="middle">recipient</text>
+<line x1="819.3" y1="104" x2="819.3" y2="116" class="stub"/>
+<rect x="920.7" y="36.0" width="156" height="68" fill="#fff" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 3"/>
+<text x="998.7" y="59.0" class="t14sl" text-anchor="middle">Anyone</text>
+<text x="998.7" y="76.0" class="t13s" text-anchor="middle">permissionless crank;</text>
+<text x="998.7" y="92.0" class="t13s" text-anchor="middle">no signature</text>
+<line x1="998.7" y1="104" x2="998.7" y2="116" class="stub"/>
+<rect x="1100.0" y="36.0" width="156" height="68" fill="#fff" stroke="#BE123C" stroke-width="1.5"/>
+<rect x="1103.0" y="39.0" width="150" height="62" fill="none" stroke="#BE123C" stroke-width="1"/>
+<text x="1178.0" y="59.0" class="t14r" text-anchor="middle">Admin</text>
+<text x="1178.0" y="76.0" class="t13s" text-anchor="middle">2-of-3 multi-sig;</text>
+<text x="1178.0" y="92.0" class="t13s" text-anchor="middle">critical custody</text>
+<line x1="1178.0" y1="104" x2="1178.0" y2="116" class="stub"/>
+<line x1="191.7" y1="32" x2="191.7" y2="110" class="tb"/>
+<rect x="104.0" y="12" width="175.4" height="20" rx="4" fill="#fff" stroke="#B45309" stroke-width="1"/>
+<text x="191.7" y="26.0" class="t13a" text-anchor="middle">TB7 · Owner ↔ Manager</text>
+<line x1="102.0" y1="116" x2="1178.0" y2="116" class="stub"/>
+<line x1="640" y1="116" x2="640" y2="134" class="flow"/>
+<rect x="475.0" y="134" width="330" height="48" rx="10" fill="#1E3A8A" fill-opacity="0.06" stroke="#1E3A8A" stroke-width="1.5"/>
+<text x="640.0" y="154.0" class="t13b" text-anchor="middle">Backend relay · tx builder · indexer</text>
+<text x="640.0" y="170.0" class="t13s" text-anchor="middle">signs for managed wallets · bypassable (TB2)</text>
+<line x1="640" y1="182" x2="640" y2="228" class="flow"/>
+<rect x="648.0" y="186.0" width="376.6" height="18" fill="#fff"/>
+<text x="652.0" y="198.0" class="t13s" text-anchor="start">signed XDR via RPC · require_auth() verifies the chip signer</text>
+<line x1="400" y1="116" x2="400" y2="228" class="flowd"/>
+<rect x="210.0" y="148.0" width="186.0" height="18" fill="#fff"/>
+<text x="392.0" y="160.0" class="t13s" text-anchor="end">direct to RPC · relay optional</text>
+<rect x="24" y="206" width="1232" height="756" rx="12" class="tb"/>
+<rect x="36" y="196" width="184.5" height="20" rx="4" fill="#fff" stroke="#B45309" stroke-width="1"/>
+<text x="44.0" y="210.0" class="t13a" text-anchor="start">TB5 · Off-chain / On-chain</text>
+<rect x="32" y="228" width="1216" height="502" rx="12" fill="#fff" stroke="#0F766E" stroke-width="1.5"/>
+<text x="44.0" y="252.0" class="t16bt" text-anchor="start">boundless-events 1.7.0</text>
+<text x="246.1" y="252.0" class="t13s" text-anchor="start">Managed wallets are signed by the backend under envelope encryption; the admin quorum is never server-held. Crowdfunding releases also need the 2-of-3 admin (rose chip).</text>
+<text x="41.0" y="274.0" class="t13bs" text-anchor="start">Settlement path</text>
+<rect x="41" y="284" width="153" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="56" cy="301" r="9.5" fill="#0F766E"/>
+<text x="56.0" y="305.5" class="t13w" text-anchor="middle">1</text>
+<text x="68.0" y="306.0" class="t14b" text-anchor="start">create_event</text>
+<rect x="49.0" y="314" width="55.3" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="76.6" y="327.5" class="t13" text-anchor="middle">Owner</text>
+<text x="49.0" y="348.0" class="t13" text-anchor="start">pool += budget;</text>
+<text x="49.0" y="364.0" class="t13" text-anchor="start">fee → fee account</text>
+<text x="49.0" y="380.0" class="t13" text-anchor="start">(same tx; fee ≤ 10%);</text>
+<text x="49.0" y="396.0" class="t13" text-anchor="start">Σ floors ≤ budget;</text>
+<text x="49.0" y="412.0" class="t13" text-anchor="start">crowdfunding: pool</text>
+<text x="49.0" y="428.0" class="t13" text-anchor="start">starts at 0</text>
+<rect x="209.0" y="346.0" width="88" height="32" rx="16" fill="#F1F5F9" stroke="#475569" stroke-width="1.5"/>
+<text x="253.0" y="366.5" class="t13b" text-anchor="middle">Active</text>
+<rect x="312" y="284" width="153" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="327" cy="301" r="9.5" fill="#0F766E"/>
+<text x="327.0" y="305.5" class="t13w" text-anchor="middle">2</text>
+<text x="339.0" y="306.0" class="t14b" text-anchor="start">accept_manager</text>
+<rect x="320.0" y="314" width="69.2" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="354.6" y="327.5" class="t13" text-anchor="middle">Manager</text>
+<text x="320.0" y="348.0" class="t13" text-anchor="start">optional; no funds</text>
+<text x="320.0" y="364.0" class="t13" text-anchor="start">move; authority</text>
+<text x="320.0" y="380.0" class="t13" text-anchor="start">owner → manager;</text>
+<text x="320.0" y="396.0" class="t13" text-anchor="start">custody stays with</text>
+<text x="320.0" y="412.0" class="t13" text-anchor="start">the owner (TB7)</text>
+<rect x="480" y="284" width="153" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="495" cy="301" r="9.5" fill="#0F766E"/>
+<text x="495.0" y="305.5" class="t13w" text-anchor="middle">3</text>
+<text x="507.0" y="306.0" class="t14b" text-anchor="start">add_funds</text>
+<rect x="488.0" y="314" width="85.7" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="530.9" y="327.5" class="t13" text-anchor="middle">Contributor</text>
+<text x="488.0" y="348.0" class="t13" text-anchor="start">pool += amount</text>
+<text x="488.0" y="364.0" class="t13" text-anchor="start">(min 10 tokens);</text>
+<text x="488.0" y="380.0" class="t13" text-anchor="start">fee at deposit;</text>
+<text x="488.0" y="396.0" class="t13" text-anchor="start">crowdfunding: no fee</text>
+<text x="488.0" y="412.0" class="t13" text-anchor="start">now, fee at release</text>
+<rect x="648" y="284" width="153" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="663" cy="301" r="9.5" fill="#0F766E"/>
+<text x="663.0" y="305.5" class="t13w" text-anchor="middle">4</text>
+<text x="675.0" y="306.0" class="t14b" text-anchor="start">apply_to_bounty</text>
+<text x="675.0" y="323.0" class="t14b" text-anchor="start">submit</text>
+<rect x="656.0" y="331" width="57.5" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="684.8" y="344.5" class="t13" text-anchor="middle">Builder</text>
+<text x="656.0" y="365.0" class="t13" text-anchor="start">no funds move;</text>
+<text x="656.0" y="381.0" class="t13" text-anchor="start">bounty: apply before</text>
+<text x="656.0" y="397.0" class="t13" text-anchor="start">submit; resubmitting</text>
+<text x="656.0" y="413.0" class="t13" text-anchor="start">replaces the slot</text>
+<rect x="816" y="284" width="153" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="831" cy="301" r="9.5" fill="#0F766E"/>
+<text x="831.0" y="305.5" class="t13w" text-anchor="middle">5</text>
+<text x="843.0" y="306.0" class="t14b" text-anchor="start">select_winners</text>
+<rect x="824.0" y="314" width="69.2" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="858.6" y="327.5" class="t13" text-anchor="middle">Manager</text>
+<text x="824.0" y="348.0" class="t13" text-anchor="start">owed += Σ amounts;</text>
+<text x="824.0" y="364.0" class="t13" text-anchor="start">pool unchanged;</text>
+<text x="824.0" y="380.0" class="t13" text-anchor="start">owed ≤ pool; ≥ floors;</text>
+<text x="824.0" y="396.0" class="t13" text-anchor="start">each position once;</text>
+<text x="824.0" y="412.0" class="t13" text-anchor="start">90-day window: only</text>
+<text x="824.0" y="428.0" class="t13" text-anchor="start">blocks cancel (8)</text>
+<rect x="984" y="284" width="153" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="999" cy="301" r="9.5" fill="#0F766E"/>
+<text x="999.0" y="305.5" class="t13w" text-anchor="middle">6</text>
+<text x="1011.0" y="306.0" class="t14b" text-anchor="start">claim_prize</text>
+<rect x="992.0" y="314" width="57.9" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="1021.0" y="327.5" class="t13" text-anchor="middle">Winner</text>
+<text x="992.0" y="348.0" class="t13" text-anchor="start">pool −= amount;</text>
+<text x="992.0" y="364.0" class="t13" text-anchor="start">owed −= amount;</text>
+<text x="992.0" y="380.0" class="t13" text-anchor="start">winner pulls own</text>
+<text x="992.0" y="396.0" class="t13" text-anchor="start">award; single release</text>
+<text x="992.0" y="412.0" class="t13" text-anchor="start">(hackathon, bounty);</text>
+<text x="992.0" y="428.0" class="t13" text-anchor="start">pool 0 → Completed</text>
+<rect x="1152.0" y="346.0" width="88" height="32" rx="16" fill="#F1F5F9" stroke="#475569" stroke-width="1.5"/>
+<text x="1196.0" y="366.5" class="t13b" text-anchor="middle">Completed</text>
+<line x1="194" y1="362.0" x2="209" y2="362.0" class="flow"/>
+<line x1="297" y1="362.0" x2="312" y2="362.0" class="flow"/>
+<line x1="465" y1="362.0" x2="480" y2="362.0" class="flow"/>
+<line x1="633" y1="362.0" x2="648" y2="362.0" class="flow"/>
+<line x1="801" y1="362.0" x2="816" y2="362.0" class="flow"/>
+<line x1="969" y1="362.0" x2="984" y2="362.0" class="flow"/>
+<line x1="1137" y1="362.0" x2="1152" y2="362.0" class="flow"/>
+<text x="52.0" y="518.0" class="t13bs" text-anchor="start">Cancellation path</text>
+<rect x="171.0" y="528" width="184" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="186.0" cy="545" r="9.5" fill="#0F766E"/>
+<text x="186.0" y="549.5" class="t13w" text-anchor="middle">8</text>
+<text x="198.0" y="550.0" class="t14b" text-anchor="start">start_cancel</text>
+<rect x="179.0" y="558" width="69.2" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="213.6" y="571.5" class="t13" text-anchor="middle">Manager</text>
+<text x="179.0" y="592.0" class="t13" text-anchor="start">refused while prizes are</text>
+<text x="179.0" y="608.0" class="t13" text-anchor="start">claimable (90 days);</text>
+<text x="179.0" y="624.0" class="t13" text-anchor="start">owed reset to 0;</text>
+<text x="179.0" y="640.0" class="t13" text-anchor="start">Active → Cancelling;</text>
+<text x="179.0" y="656.0" class="t13" text-anchor="start">owner-only funds: refund</text>
+<text x="179.0" y="672.0" class="t13" text-anchor="start">owner, Active → Cancelled</text>
+<rect x="373.0" y="590.0" width="86" height="32" rx="16" fill="#F1F5F9" stroke="#475569" stroke-width="1.5"/>
+<text x="416.0" y="610.5" class="t13b" text-anchor="middle">Cancelling</text>
+<rect x="477.0" y="528" width="194" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="492.0" cy="545" r="9.5" fill="#0F766E"/>
+<text x="492.0" y="549.5" class="t13w" text-anchor="middle">9</text>
+<text x="504.0" y="550.0" class="t14b" text-anchor="start">process_cancel_batch</text>
+<rect x="485.0" y="558" width="61.0" height="18" rx="9" fill="#fff" stroke="#475569" stroke-width="1.1" stroke-dasharray="3 2.2"/>
+<text x="515.5" y="571.5" class="t13s" text-anchor="middle">Anyone</text>
+<text x="485.0" y="592.0" class="t13" text-anchor="start">pool −= refunds;</text>
+<text x="485.0" y="608.0" class="t13" text-anchor="start">≤ 25 refunds per call,</text>
+<text x="485.0" y="624.0" class="t13" text-anchor="start">repeat until done;</text>
+<text x="485.0" y="640.0" class="t13" text-anchor="start">pro rata when pool &lt;</text>
+<text x="485.0" y="656.0" class="t13" text-anchor="start">outside contributions;</text>
+<text x="485.0" y="672.0" class="t13" text-anchor="start">only while Cancelling</text>
+<rect x="687.0" y="528" width="184" height="156" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="702.0" cy="545" r="9.5" fill="#0F766E"/>
+<text x="702.0" y="549.5" class="t13w" text-anchor="middle">10</text>
+<text x="714.0" y="550.0" class="t14b" text-anchor="start">finalize_cancel</text>
+<rect x="695.0" y="558" width="61.0" height="18" rx="9" fill="#fff" stroke="#475569" stroke-width="1.1" stroke-dasharray="3 2.2"/>
+<text x="725.5" y="571.5" class="t13s" text-anchor="middle">Anyone</text>
+<text x="695.0" y="592.0" class="t13" text-anchor="start">pool −= residual;</text>
+<text x="695.0" y="608.0" class="t13" text-anchor="start">→ owner; pool = 0;</text>
+<text x="695.0" y="624.0" class="t13" text-anchor="start">only after all refunds</text>
+<text x="695.0" y="640.0" class="t13" text-anchor="start">are processed;</text>
+<text x="695.0" y="656.0" class="t13" text-anchor="start">Cancelling → Cancelled</text>
+<rect x="889.0" y="590.0" width="86" height="32" rx="16" fill="#F1F5F9" stroke="#475569" stroke-width="1.5"/>
+<text x="932.0" y="610.5" class="t13b" text-anchor="middle">Cancelled</text>
+<line x1="990.0" y1="506" x2="990.0" y2="684" stroke="#94A3B8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1036.0" y="518.0" class="t13bs" text-anchor="start">Milestone release</text>
+<rect x="1000.0" y="528" width="238.0" height="172" rx="10" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<circle cx="1015.0" cy="545" r="9.5" fill="#0F766E"/>
+<text x="1015.0" y="549.5" class="t13w" text-anchor="middle">7</text>
+<text x="1027.0" y="550.0" class="t14b" text-anchor="start">claim_milestone</text>
+<rect x="1008.0" y="558" width="55.3" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="1035.6" y="571.5" class="t13" text-anchor="middle">Owner</text>
+<rect x="1069.3" y="558" width="158.7" height="18" rx="9" fill="#fff" stroke="#BE123C" stroke-width="1.2"/>
+<rect x="1071.8" y="560.5" width="153.7" height="13" rx="6.5" fill="none" stroke="#BE123C" stroke-width="0.8"/>
+<text x="1148.6" y="571.5" class="t13r" text-anchor="middle">Admin · crowdfunding</text>
+<text x="1008.0" y="592.0" class="t13" text-anchor="start">pool −= milestone amount;</text>
+<text x="1008.0" y="608.0" class="t13" text-anchor="start">recipient needs a winner record;</text>
+<text x="1008.0" y="624.0" class="t13" text-anchor="start">grant: award ÷ milestones (from 5);</text>
+<text x="1008.0" y="640.0" class="t13" text-anchor="start">owed −= amount;</text>
+<text x="1008.0" y="656.0" class="t13" text-anchor="start">crowdfunding: pool ÷ milestones</text>
+<text x="1008.0" y="672.0" class="t13" text-anchor="start">left → owner (record set in 1);</text>
+<text x="1008.0" y="688.0" class="t13" text-anchor="start">fee at release; Admin co-signs</text>
+<line x1="355.0" y1="606.0" x2="373.0" y2="606.0" class="flow"/>
+<line x1="459.0" y1="606.0" x2="477.0" y2="606.0" class="flow"/>
+<line x1="671.0" y1="606.0" x2="687.0" y2="606.0" class="flow"/>
+<line x1="871.0" y1="606.0" x2="889.0" y2="606.0" class="flow"/>
+<path d="M404.0,590.0 C404.0,562.0 428.0,562.0 428.0,590.0" class="flow"/>
+<rect x="359.0" y="552.0" width="114.0" height="18" fill="#fff"/>
+<text x="416.0" y="564.0" class="t13s" text-anchor="middle">≤ 25 refunds/call</text>
+<line x1="263.0" y1="378.0" x2="263.0" y2="528" class="flow"/>
+<rect x="267.0" y="446.0" width="140.6" height="18" fill="#fff"/>
+<text x="271.0" y="458.0" class="t13s" text-anchor="start">any time while Active</text>
+<path d="M243.0,378.0 V474 H42 V706 H932.0 V622.0" class="flowd"/>
+<rect x="305.1" y="698.5" width="492.7" height="18" fill="#fff"/>
+<text x="551.5" y="710.5" class="t13s" text-anchor="middle">owner-only funds · start_cancel refunds the owner inline · Active → Cancelled</text>
+<path d="M892.5,440 V496 H1018.0 V528" class="flow"/>
+<rect x="896.5" y="476.0" width="290.2" height="18" fill="#fff"/>
+<text x="900.5" y="488.0" class="t13s" text-anchor="start">grant: milestone schedule from the award (5)</text>
+<path d="M1222.0,528 V378.0" class="flow"/>
+<rect x="1160.5" y="446.0" width="59.5" height="18" fill="#fff"/>
+<text x="1216.0" y="458.0" class="t13s" text-anchor="end">pool = 0</text>
+<line x1="640" y1="730" x2="640" y2="770" class="flow"/>
+<rect x="648.0" y="742.0" width="264.5" height="18" fill="#fff"/>
+<text x="652.0" y="754.0" class="t13s" text-anchor="start">token transfer · deposit / release / refund</text>
+<path d="M1000,770 H32 V950 H1000" fill="#F1F5F9" stroke="#0F172A" stroke-width="1.5"/>
+<text x="44.0" y="792.0" class="t14b" text-anchor="start">Escrow pool</text>
+<rect x="44.0" y="802" width="110.9" height="18" rx="4" fill="#BE123C" fill-opacity="0.08" stroke="#BE123C" stroke-width="1"/>
+<text x="99.5" y="815.0" class="t13r" text-anchor="middle">critical custody</text>
+<text x="44.0" y="848.0" class="t13s" text-anchor="start">contract token balance;</text>
+<text x="44.0" y="865.0" class="t13s" text-anchor="start">one balance for all events;</text>
+<text x="44.0" y="882.0" class="t13s" text-anchor="start">fees are forwarded,</text>
+<text x="44.0" y="899.0" class="t13s" text-anchor="start">never pooled</text>
+<line x1="228" y1="780" x2="228" y2="940" stroke="#94A3B8" stroke-width="1"/>
+<rect x="246.0" y="802.0" width="140.0" height="14" fill="#0F766E"/>
+<rect x="386.0" y="802.0" width="140.0" height="14" fill="url(#hatch)" stroke="#0F766E" stroke-width="1"/>
+<rect x="526.5" y="802.5" width="109.0" height="13" fill="#fff" stroke="#475569" stroke-width="1" stroke-dasharray="3 2"/>
+<path d="M246.0,798 V793 H526.0 V798" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="246.0" y="787.0" class="t13b" text-anchor="start">remaining_escrow</text>
+<text x="371.2" y="787.0" class="t13s" text-anchor="start">= unreserved + reserved</text>
+<text x="316.0" y="832.0" class="t13" text-anchor="middle">unreserved</text>
+<text x="456.0" y="832.0" class="t13" text-anchor="middle">EventOwedTotal (reserved)</text>
+<text x="581.0" y="832.0" class="t13" text-anchor="middle">released</text>
+<text x="240.0" y="862.0" class="t13" text-anchor="start">↑ deposits (1, 3)    ↓ claims (6, 7), refunds (9), owner residual (8, 10)</text>
+<text x="240.0" y="879.0" class="t13" text-anchor="start">reserved: ↑ select_winners (5)    ↓ claims (6, 7)    reset to 0 at 8</text>
+<text x="240.0" y="910.0" class="t13s" text-anchor="start">after step</text>
+<text x="333.0" y="910.0" class="t13b" text-anchor="end">1–4</text>
+<rect x="338.0" y="899.0" width="34.0" height="12" fill="#0F766E"/>
+<text x="390.5" y="910.0" class="t13b" text-anchor="end">5</text>
+<rect x="395.5" y="899.0" width="17.0" height="12" fill="#0F766E"/>
+<rect x="412.5" y="899.0" width="17.0" height="12" fill="url(#hatch)" stroke="#0F766E" stroke-width="1"/>
+<text x="459.7" y="910.0" class="t13b" text-anchor="end">6·7</text>
+<rect x="464.7" y="899.0" width="11.9" height="12" fill="#0F766E"/>
+<rect x="476.6" y="899.0" width="6.8" height="12" fill="url(#hatch)" stroke="#0F766E" stroke-width="1"/>
+<rect x="483.9" y="899.5" width="14.3" height="11" fill="#fff" stroke="#475569" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="517.5" y="910.0" class="t13b" text-anchor="end">8</text>
+<rect x="522.5" y="899.0" width="18.7" height="12" fill="#0F766E"/>
+<rect x="541.7" y="899.5" width="14.3" height="11" fill="#fff" stroke="#475569" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="575.2" y="910.0" class="t13b" text-anchor="end">9</text>
+<rect x="580.2" y="899.0" width="6.8" height="12" fill="#0F766E"/>
+<rect x="587.5" y="899.5" width="26.2" height="11" fill="#fff" stroke="#475569" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="639.9" y="910.0" class="t13b" text-anchor="end">10</text>
+<rect x="645.4" y="899.5" width="33.0" height="11" fill="#fff" stroke="#475569" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="688" y1="780" x2="688" y2="940" stroke="#94A3B8" stroke-width="1"/>
+<rect x="700.5" y="778.5" width="15.0" height="10" fill="#fff" stroke="#475569" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="722.0" y="787.0" class="t13b" text-anchor="start">released (derived) · left the pool to:</text>
+<text x="1168.0" y="787.0" class="t13bs" text-anchor="middle">Recipient accounts</text>
+<text x="992.0" y="814.5" class="t13s" text-anchor="end">prize · 6</text>
+<line x1="1000" y1="810.0" x2="1088" y2="810.0" class="flow"/>
+<rect x="1088.0" y="796.0" width="160" height="28" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="1091.0" y="799.0" width="154" height="22" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="1168.0" y="814.5" class="t13b" text-anchor="middle">Winner wallet</text>
+<text x="992.0" y="844.5" class="t13s" text-anchor="end">milestone · 7 (grantee / crowdfunding owner)</text>
+<line x1="1000" y1="840.0" x2="1088" y2="840.0" class="flow"/>
+<rect x="1088.0" y="826.0" width="160" height="28" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="1091.0" y="829.0" width="154" height="22" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="1168.0" y="844.5" class="t13b" text-anchor="middle">Milestone recipient</text>
+<text x="992.0" y="874.5" class="t13s" text-anchor="end">refunds · 9 (full, or pro rata)</text>
+<line x1="1000" y1="870.0" x2="1088" y2="870.0" class="flow"/>
+<rect x="1088.0" y="856.0" width="160" height="28" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="1091.0" y="859.0" width="154" height="22" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="1168.0" y="874.5" class="t13b" text-anchor="middle">Contributor wallets</text>
+<text x="992.0" y="904.5" class="t13s" text-anchor="end">residual · 8 (owner-only funds), 10</text>
+<line x1="1000" y1="900.0" x2="1088" y2="900.0" class="flow"/>
+<rect x="1088.0" y="886.0" width="160" height="28" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="1091.0" y="889.0" width="154" height="22" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="1168.0" y="904.5" class="t13b" text-anchor="middle">Owner wallet</text>
+<text x="992.0" y="934.5" class="t13s" text-anchor="end">fee · 1, 3 (crowdfunding: 7) · never pooled</text>
+<line x1="1000" y1="930.0" x2="1088" y2="930.0" class="flow"/>
+<rect x="1088.0" y="916.0" width="160" height="28" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="1091.0" y="919.0" width="154" height="22" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="1168.0" y="934.5" class="t13b" text-anchor="middle">Fee account</text>
+<rect x="24.0" y="984.0" width="30" height="20" fill="#fff" stroke="#0F172A" stroke-width="1.5"/>
+<rect x="27.0" y="987.0" width="24" height="14" fill="none" stroke="#0F172A" stroke-width="1"/>
+<text x="62.0" y="998.5" class="t13s" text-anchor="start">External entity</text>
+<rect x="170.25840909090908" y="984" width="30" height="20" rx="6" fill="#0F766E" fill-opacity="0.06" stroke="#0F766E" stroke-width="1.5"/>
+<text x="208.3" y="998.5" class="t13s" text-anchor="start">Process · contract</text>
+<rect x="339.9290056818182" y="984" width="30" height="20" rx="6" fill="#1E3A8A" fill-opacity="0.06" stroke="#1E3A8A" stroke-width="1.5"/>
+<text x="377.9" y="998.5" class="t13s" text-anchor="start">Process · Boundless</text>
+<rect x="522.0308522727273" y="985" width="30" height="18" rx="9" fill="#F1F5F9" stroke="#475569" stroke-width="1.5"/>
+<text x="560.0" y="998.5" class="t13s" text-anchor="start">Event state</text>
+<path d="M678.8136363636364,984 H648.8136363636364 V1004 H678.8136363636364" fill="#F1F5F9" stroke="#0F172A" stroke-width="1.5"/>
+<text x="686.8" y="998.5" class="t13s" text-anchor="start">Data store</text>
+<line x1="769.8705113636364" y1="994" x2="799.8705113636364" y2="994" class="flow"/>
+<text x="807.9" y="998.5" class="t13s" text-anchor="start">Data / token flow</text>
+<line x1="932.5155681818183" y1="994" x2="962.5155681818183" y2="994" class="flowd"/>
+<text x="970.5" y="998.5" class="t13s" text-anchor="start">Conditional path</text>
+<rect x="1091.5630965909093" y="984" width="30" height="20" rx="5" class="tb"/>
+<text x="1129.6" y="998.5" class="t13s" text-anchor="start">Trust boundary</text>
+<text x="24.0" y="1026.5" class="t13bs" text-anchor="start">Signer chips</text>
+<rect x="117.7" y="1013" width="55.3" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="145.3" y="1026.5" class="t13" text-anchor="middle">Owner</text>
+<text x="180.9" y="1026.5" class="t13s" text-anchor="start">must sign (require_auth)</text>
+<rect x="354.7" y="1013" width="69.2" height="18" rx="9" fill="#fff" stroke="#0F172A" stroke-width="1"/>
+<text x="389.3" y="1026.5" class="t13" text-anchor="middle">Manager</text>
+<text x="431.9" y="1026.5" class="t13s" text-anchor="start">the owner until a manager accepts</text>
+<rect x="670.7" y="1013" width="61.0" height="18" rx="9" fill="#fff" stroke="#475569" stroke-width="1.1" stroke-dasharray="3 2.2"/>
+<text x="701.2" y="1026.5" class="t13s" text-anchor="middle">Anyone</text>
+<text x="739.7" y="1026.5" class="t13s" text-anchor="start">permissionless · no signature</text>
+<rect x="943.4" y="1013" width="59.2" height="18" rx="9" fill="#fff" stroke="#BE123C" stroke-width="1.2"/>
+<rect x="945.9" y="1015.5" width="54.2" height="13" rx="6.5" fill="none" stroke="#BE123C" stroke-width="0.8"/>
+<text x="972.9" y="1026.5" class="t13r" text-anchor="middle">Admin</text>
+<text x="1010.5" y="1026.5" class="t13s" text-anchor="start">2-of-3 multi-sig · critical custody</text>
+</svg>

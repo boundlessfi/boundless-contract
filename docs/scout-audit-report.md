@@ -266,3 +266,50 @@ For audit panel reference -- these Scout warnings require no code change:
 | C-7 | `events/storage.rs:303,305,327` | `checked_sub(1).ok_or()` in `remove_applicant()` |
 | M-1 | `events/event_ops.rs:693,707` | `.ok_or(Error::InvalidDistribution)?` replacing `.unwrap()` |
 | M-2 | `events/storage.rs:309` | `.ok_or(Error::EventNotFound)?` replacing `.expect()` |
+
+---
+
+## Re-scan — September 2026 (events 1.7.0, profile 1.2.0)
+
+**Date:** 2026-09-11
+**Source:** `feat/escrow-open-pool` @ `0943d26`
+**Tool:** `cargo-scout-audit` 0.3.16, detectors toolchain `nightly-2025-08-07`
+**Command:** `cargo scout-audit --output-format md -- --target=wasm32v1-none --no-default-features`, run per crate
+
+**Tooling caveat.** Scout 0.3.16 cannot compile a soroban-sdk 27 project: its
+pinned nightly predates the stabilisation of `str::floor_char_boundary`, which
+`soroban-sdk-macros 27.0.0` uses (`E0658` in `doc.rs:25`), and its default
+`--target=wasm32-unknown-unknown` is rejected outright by the SDK 27 build
+script. The scan was therefore run on a scratch copy of the same source with
+the workspace pinned to `soroban-sdk = "23.5.2"` (the version the June scans
+used) and the `compatibility` crate excluded. The contract source compiles
+unchanged against 23.5.2, so detector coverage of `contracts/events/src` and
+`contracts/profile/src` is unaffected; only the `soroban_version` enhancement
+flags are an artifact of the pin.
+
+| Crate | Critical | Medium | Minor | Enhancement |
+|---|---|---|---|---|
+| `boundless_events` | 2 | 19 | 0 | 30 |
+| `boundless_profile` | 1 | 2 | 0 | 19 |
+
+### Real findings
+
+| ID | File | Finding | Assessment |
+|---|---|---|---|
+| S-1 | `events/src/event_ops.rs:745` | `let anchor_idx = existing_count + (idx as u32);` — bare `+` on `u32` in the Single-release branch of `select_winners`. | **Real, low.** Needs 2³² winner rows to overflow and `overflow-checks = true` would trap rather than wrap, but it breaks the checked-arithmetic rule the repo adopted for C-3. Change to `existing_count.saturating_add(idx as u32)` before audit fieldwork. |
+
+### False positives (same classes as June)
+
+| Detector | Locations | Reason |
+|---|---|---|
+| `unprotected_update_current_contract_wasm` (CRITICAL ×2) | `events/admin.rs:236`, `profile/admin.rs:216` | Inside `apply_upgrade()`, which opens with `require_admin()`; Scout does not trace access control through the enclosing function (June C-2). |
+| `unsafe_map_get` (MEDIUM ×3) | `event_ops.rs:725,793`, `admin.rs:474` | `Map::get` returns `Option`; every site is `if let Some(floor) = …`. |
+| `dos_unexpected_revert_with_storage` (MEDIUM ×4) | `admin.rs:383`, `storage.rs:421,700,793` | `floors.set` runs inside admin-gated `migrate_events`; the three `storage.rs` sites are `push_back` on an in-memory `Vec` inside paged read helpers (June M-9). |
+| `dos_unbounded_operation` (MEDIUM ×7) | `admin.rs:425-440,464-488`, `event_ops.rs:675-681`, `grant.rs:63-81`, `storage.rs:419-423,698-702,791-795` | Read helpers are bounded by `limit.min(VIEW_PAGE_LIMIT)`. Migration loops walk one event's winner rows per call, admin-only, one-time. `select_winners` (Multi) and `claim_milestone` scan an event's winner rows, bounded by prior selections × milestones and gated by manager/owner auth. |
+| `front_running` (MEDIUM ×2) | `escrow.rs:34,72` | Amounts are validated at every call site (`InvalidBudget`, `BelowMinimumContribution`, floor checks); Soroban has no public mempool ordering game equivalent to the detector's model (June M-5). |
+| `dynamic_storage` (MEDIUM ×4) | `events/storage.rs:132,162`, `profile/storage.rs:113,135` | Bounded semver strings on admin-only paths (June M-6). |
+| `avoid_vec_map_input` (MEDIUM ×1) | `events/lib.rs:225` (`select_winners`) | Every element validated: dedupe, `amount > 0`, floor, ≤ 50 (June M-8). |
+| `storage_change_events` (ENHANCEMENT ×47) | `lib.rs` dispatchers, both crates | Dispatcher wrappers delegate to modules that emit events; `ManagerChanged` shipped with two-step delegation (#88), closing the one genuine gap noted in July. |
+| `soroban_version` (ENHANCEMENT ×2) | `Cargo.toml` | Artifact of the 23.5.2 pin used to run the tool; the workspace is on 27.0.0. |
+
+Net: one real low-severity finding (S-1), queued; zero real CRITICAL or MEDIUM.
