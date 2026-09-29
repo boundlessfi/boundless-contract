@@ -11,8 +11,12 @@
 > on-chain (`profile/src/credits.rs`). The 1.0.0 → 1.1.0 upgrade (2026-06)
 > removed on-chain credits — they are now an off-chain ledger in
 > boundless-nestjs — so `credits.rs` and its findings (e.g. C-1 / C-6) no
-> longer have an on-chain counterpart. References below are preserved
-> unedited as the record of the scan.
+> longer have an on-chain counterpart. The 1.7.0 → 2.0.0 upgrade removed
+> the on-chain participation records in the same way, so the findings that
+> touch `apply()`, `remove_applicant()`, `applicant_at()`,
+> `applicant_count()` and `applicants_snapshot()` no longer have one
+> either. References below are preserved unedited as the record of the
+> scan.
 
 ---
 
