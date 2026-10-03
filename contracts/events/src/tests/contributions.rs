@@ -20,8 +20,6 @@ const TOTAL_BUDGET: i128 = 1_000_0000000_i128;
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
-    #[allow(dead_code)]
-    profile: ProfileContractClient<'a>,
     owner: Address,
     token_addr: Address,
     fee_account: Address,
@@ -64,7 +62,6 @@ fn setup<'a>() -> Ctx<'a> {
     Ctx {
         env,
         events,
-        profile,
         owner,
         token_addr,
         fee_account,

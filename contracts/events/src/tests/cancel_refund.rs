@@ -16,12 +16,10 @@ const FEE_BPS: u32 = 250;
 const TOTAL_BUDGET: i128 = 1_000_0000000_i128;
 const MIN_CONTRIB: i128 = 100_000_000_i128;
 
-#[allow(dead_code)]
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
     events_id: Address,
-    profile: ProfileContractClient<'a>,
     owner: Address,
     token_addr: Address,
     token_admin: token::StellarAssetClient<'a>,
@@ -67,7 +65,6 @@ fn setup_with_env<'a>(env: Env) -> Ctx<'a> {
         env,
         events,
         events_id,
-        profile,
         owner,
         token_addr,
         token_admin,
@@ -380,16 +377,14 @@ fn missing_running_total_with_contributors_fails_closed() {
     let add_funds_err = ctx
         .events
         .try_add_funds(&id, &partner, &100_0000000_i128, &BytesN::random(&ctx.env))
-        .err()
-        .expect("missing total rejected")
+        .expect_err("missing total rejected")
         .unwrap();
     assert_eq!(add_funds_err, Error::CancellationTotalMissing);
 
     let cancel_err = ctx
         .events
         .try_start_cancel(&id, &BytesN::random(&ctx.env))
-        .err()
-        .expect("missing total rejected")
+        .expect_err("missing total rejected")
         .unwrap();
     assert_eq!(cancel_err, Error::CancellationTotalMissing);
     assert_eq!(ctx.events.get_event(&id).status, EventStatus::Active);

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env};
 
 use crate::errors::Error;
@@ -37,26 +35,35 @@ pub fn next_event_id(env: &Env) -> Result<u64, Error> {
 pub mod tag {
     pub const BOOTSTRAP: u8 = 0xB0;
     pub const BUMP_REP: u8 = 0xD1;
-    pub const SLASH_REP: u8 = 0xD2;
     pub const REGISTER_EARNINGS: u8 = 0xE1;
 }
 
 /// Collision-resistant child op_id.
 ///
-/// Invariant: `sha256(parent ‖ op_tag ‖ sub_idx ‖ callee_contract_id)`.
+/// Invariant: `sha256(parent ‖ op_tag ‖ sub_idx ‖ callee_contract_id ‖ domain)`.
 /// XOR into parent bytes is malleable (reversible, squat-friendly); hashing with
-/// the profile contract id as domain separator is not.
-pub fn derive_child(env: &Env, parent: &BytesN<32>, op_tag: u8) -> BytesN<32> {
-    derive_child_indexed(env, parent, op_tag, 0)
+/// the profile contract id as domain separator is not. `domain` is the address
+/// that authorized the parent call: the profile keeps one seen-set for every
+/// events caller, so without it anyone who learns an op_id could spend its
+/// children first.
+pub fn derive_child(env: &Env, domain: &Address, parent: &BytesN<32>, op_tag: u8) -> BytesN<32> {
+    derive_child_indexed(env, domain, parent, op_tag, 0)
 }
 
-pub fn derive_child_indexed(env: &Env, parent: &BytesN<32>, op_tag: u8, sub_idx: u8) -> BytesN<32> {
+pub fn derive_child_indexed(
+    env: &Env,
+    domain: &Address,
+    parent: &BytesN<32>,
+    op_tag: u8,
+    sub_idx: u8,
+) -> BytesN<32> {
     let callee = storage::get_profile_contract(env);
     let mut payload = Bytes::new(env);
     payload.append(&Bytes::from_array(env, &parent.to_array()));
     payload.push_back(op_tag);
     payload.push_back(sub_idx);
     payload.append(&callee.to_xdr(env));
+    payload.append(&domain.clone().to_xdr(env));
     let digest = env.crypto().sha256(&payload);
     BytesN::from_array(env, &digest.to_array())
 }

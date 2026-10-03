@@ -18,8 +18,6 @@ const FUNDING_GOAL: i128 = 1_000_0000000_i128;
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
-    #[allow(dead_code)]
-    profile: ProfileContractClient<'a>,
     builder: Address,
     events_admin: Address,
     fee_account: Address,
@@ -62,7 +60,6 @@ fn setup<'a>() -> Ctx<'a> {
     Ctx {
         env,
         events,
-        profile,
         builder,
         events_admin,
         fee_account,
@@ -325,6 +322,29 @@ fn claim_milestone_out_of_range_reverts() {
 }
 
 #[test]
+fn claim_milestone_pays_only_the_campaign_owner() {
+    let ctx = setup();
+    let id = create_campaign(&ctx, 2);
+    let backer = Address::generate(&ctx.env);
+    back(&ctx, id, &backer, 400_0000000_i128);
+
+    let stranger = Address::generate(&ctx.env);
+    let err = ctx
+        .events
+        .try_claim_milestone(&id, &stranger, &0_u32, &0, &BytesN::random(&ctx.env))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, crate::errors::Error::NoSubmissions);
+
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &BytesN::random(&ctx.env));
+    let paid = ctx.events.get_winner_at(&id, &1).unwrap();
+    assert_eq!(paid.recipient, ctx.builder);
+    assert_eq!(paid.position, 1);
+    assert_eq!(paid.milestone, Some(0));
+}
+
+#[test]
 fn claim_milestone_with_empty_escrow_reverts() {
     let ctx = setup();
     let id = create_campaign(&ctx, 3);
@@ -500,4 +520,286 @@ fn crowdfunding_claim_milestone_requires_admin_auth() {
         "crowdfunding claim must demand admin co-sign"
     );
     assert!(builder_required, "builder auth still required");
+}
+
+#[test]
+fn a_release_records_the_fee_it_withheld() {
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let id = create_campaign(&ctx, 3);
+    let backer = Address::generate(&ctx.env);
+    back(&ctx, id, &backer, 900_0000000_i128);
+
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0_u32, &BytesN::random(&ctx.env));
+    let wanted = crate::events::MilestoneFeeCharged {
+        event_id: id,
+        recipient: ctx.builder.clone(),
+        milestone: 0,
+        fee: 7_5000000_i128,
+    }
+    .to_xdr(&ctx.env, &ctx.events.address);
+    let emitted = ctx.env.events().all();
+    assert!(emitted
+        .filter_by_contract(&ctx.events.address)
+        .events()
+        .contains(&wanted));
+}
+
+fn only_these_sign_the_release(ctx: &Ctx, id: u64, signers: &[&Address], op: &BytesN<32>) {
+    only_these_sign_the_release_of(ctx, id, 0, signers, op);
+}
+
+fn only_these_sign_the_release_of(
+    ctx: &Ctx,
+    id: u64,
+    milestone: u32,
+    signers: &[&Address],
+    op: &BytesN<32>,
+) {
+    extern crate std;
+    use soroban_sdk::{
+        testutils::{MockAuth, MockAuthInvoke},
+        IntoVal,
+    };
+    let args: SorobanVec<soroban_sdk::Val> =
+        (id, ctx.builder.clone(), milestone, 0_u32, op.clone()).into_val(&ctx.env);
+    let invoke = MockAuthInvoke {
+        contract: &ctx.events.address,
+        fn_name: "claim_milestone",
+        args,
+        sub_invokes: &[],
+    };
+    let mocks: std::vec::Vec<MockAuth> = signers
+        .iter()
+        .map(|address| MockAuth {
+            address,
+            invoke: &invoke,
+        })
+        .collect();
+    ctx.env.mock_auths(&mocks);
+}
+
+fn appoint_validator(ctx: &Ctx) -> Address {
+    let validator = Address::generate(&ctx.env);
+    ctx.events.propose_release_validator(&validator);
+    ctx.events.accept_release_validator();
+    validator
+}
+
+#[test]
+fn a_release_validator_co_signs_instead_of_the_admin() {
+    let ctx = setup();
+    let id = create_campaign(&ctx, 2);
+    let p = Address::generate(&ctx.env);
+    back(&ctx, id, &p, 200_0000000_i128);
+
+    let validator = appoint_validator(&ctx);
+    assert_eq!(ctx.events.get_release_validator(), Some(validator.clone()));
+
+    let op = BytesN::random(&ctx.env);
+    only_these_sign_the_release(&ctx, id, &[&ctx.builder, &ctx.events_admin], &op);
+    assert!(ctx
+        .events
+        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &op)
+        .is_err());
+
+    only_these_sign_the_release(&ctx, id, &[&ctx.builder, &validator], &op);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+    ctx.env.mock_all_auths_allowing_non_root_auth();
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    assert_eq!(token.balance(&ctx.builder), 97_5000000_i128);
+}
+
+#[test]
+fn a_proposed_validator_co_signs_nothing_until_it_accepts() {
+    let ctx = setup();
+    let id = create_campaign(&ctx, 2);
+    let p = Address::generate(&ctx.env);
+    back(&ctx, id, &p, 200_0000000_i128);
+
+    let proposed = Address::generate(&ctx.env);
+    ctx.events.propose_release_validator(&proposed);
+    assert_eq!(ctx.events.get_release_validator(), None);
+    assert_eq!(
+        ctx.events.get_pending_release_validator().unwrap().target,
+        proposed
+    );
+
+    let op = BytesN::random(&ctx.env);
+    only_these_sign_the_release(&ctx, id, &[&ctx.builder, &proposed], &op);
+    assert!(ctx
+        .events
+        .try_claim_milestone(&id, &ctx.builder, &0_u32, &0, &op)
+        .is_err());
+    only_these_sign_the_release(&ctx, id, &[&ctx.builder, &ctx.events_admin], &op);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+}
+
+#[test]
+fn only_the_proposed_key_can_accept() {
+    use soroban_sdk::{
+        testutils::{MockAuth, MockAuthInvoke},
+        IntoVal,
+    };
+    let ctx = setup();
+    let proposed = Address::generate(&ctx.env);
+    ctx.events.propose_release_validator(&proposed);
+
+    for signer in [&ctx.events_admin, &ctx.builder] {
+        ctx.env.mock_auths(&[MockAuth {
+            address: signer,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.events.address,
+                fn_name: "accept_release_validator",
+                args: ().into_val(&ctx.env),
+                sub_invokes: &[],
+            },
+        }]);
+        assert!(ctx.events.try_accept_release_validator().is_err());
+    }
+    ctx.env.mock_auths(&[MockAuth {
+        address: &proposed,
+        invoke: &MockAuthInvoke {
+            contract: &ctx.events.address,
+            fn_name: "accept_release_validator",
+            args: ().into_val(&ctx.env),
+            sub_invokes: &[],
+        },
+    }]);
+    ctx.events.accept_release_validator();
+    ctx.env.mock_all_auths_allowing_non_root_auth();
+    assert_eq!(ctx.events.get_release_validator(), Some(proposed));
+    assert!(ctx.events.get_pending_release_validator().is_none());
+}
+
+#[test]
+fn only_the_admin_proposes_cancels_or_clears() {
+    use soroban_sdk::{
+        testutils::{MockAuth, MockAuthInvoke},
+        IntoVal,
+    };
+    let ctx = setup();
+    let target = Address::generate(&ctx.env);
+    let as_builder = |fn_name: &'static str, args: SorobanVec<soroban_sdk::Val>| {
+        ctx.env.mock_auths(&[MockAuth {
+            address: &ctx.builder,
+            invoke: &MockAuthInvoke {
+                contract: &ctx.events.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+    };
+    as_builder(
+        "propose_release_validator",
+        (target.clone(),).into_val(&ctx.env),
+    );
+    assert!(ctx.events.try_propose_release_validator(&target).is_err());
+
+    ctx.env.mock_all_auths_allowing_non_root_auth();
+    ctx.events.propose_release_validator(&target);
+    as_builder("cancel_pending_release_validator", ().into_val(&ctx.env));
+    assert!(ctx.events.try_cancel_pending_release_validator().is_err());
+    as_builder("clear_release_validator", ().into_val(&ctx.env));
+    assert!(ctx.events.try_clear_release_validator().is_err());
+    ctx.env.mock_all_auths_allowing_non_root_auth();
+    assert!(ctx.events.get_pending_release_validator().is_some());
+}
+
+#[test]
+fn an_unaccepted_proposal_expires_or_can_be_withdrawn() {
+    use soroban_sdk::testutils::Ledger as _;
+    let ctx = setup();
+    let target = Address::generate(&ctx.env);
+
+    ctx.events.propose_release_validator(&target);
+    ctx.events.cancel_pending_release_validator();
+    assert_eq!(
+        ctx.events
+            .try_accept_release_validator()
+            .err()
+            .unwrap()
+            .unwrap(),
+        crate::errors::Error::PendingRotationMismatch
+    );
+    assert_eq!(
+        ctx.events
+            .try_cancel_pending_release_validator()
+            .err()
+            .unwrap()
+            .unwrap(),
+        crate::errors::Error::PendingRotationMismatch
+    );
+
+    ctx.events.propose_release_validator(&target);
+    let expires = ctx
+        .events
+        .get_pending_release_validator()
+        .unwrap()
+        .expires_at_ledger;
+    ctx.env
+        .ledger()
+        .with_mut(|l| l.sequence_number = expires + 1);
+    assert_eq!(
+        ctx.events
+            .try_accept_release_validator()
+            .err()
+            .unwrap()
+            .unwrap(),
+        crate::errors::Error::PendingRotationExpired
+    );
+    assert_eq!(ctx.events.get_release_validator(), None);
+}
+
+#[test]
+fn replacing_a_validator_keeps_the_old_one_until_the_new_one_accepts() {
+    let ctx = setup();
+    let id = create_campaign(&ctx, 3);
+    let p = Address::generate(&ctx.env);
+    back(&ctx, id, &p, 300_0000000_i128);
+    let old = appoint_validator(&ctx);
+
+    let new = Address::generate(&ctx.env);
+    ctx.events.propose_release_validator(&new);
+    let op = BytesN::random(&ctx.env);
+    only_these_sign_the_release(&ctx, id, &[&ctx.builder, &old], &op);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &op);
+
+    ctx.env.mock_all_auths_allowing_non_root_auth();
+    ctx.events.accept_release_validator();
+    let op = BytesN::random(&ctx.env);
+    only_these_sign_the_release_of(&ctx, id, 1, &[&ctx.builder, &old], &op);
+    assert!(ctx
+        .events
+        .try_claim_milestone(&id, &ctx.builder, &1_u32, &0, &op)
+        .is_err());
+    only_these_sign_the_release_of(&ctx, id, 1, &[&ctx.builder, &new], &op);
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &1_u32, &0, &op);
+}
+
+#[test]
+fn clearing_the_validator_returns_co_signing_to_the_admin_at_once() {
+    let ctx = setup();
+    let id = create_campaign(&ctx, 2);
+    let p = Address::generate(&ctx.env);
+    back(&ctx, id, &p, 200_0000000_i128);
+    appoint_validator(&ctx);
+    ctx.events
+        .propose_release_validator(&Address::generate(&ctx.env));
+
+    ctx.events.clear_release_validator();
+    assert_eq!(ctx.events.get_release_validator(), None);
+    assert!(ctx.events.get_pending_release_validator().is_none());
+
+    ctx.events
+        .claim_milestone(&id, &ctx.builder, &0_u32, &0, &BytesN::random(&ctx.env));
+    let auths = ctx.env.auths();
+    assert!(auths.iter().any(|(addr, _)| *addr == ctx.events_admin));
 }

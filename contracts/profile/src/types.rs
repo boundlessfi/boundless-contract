@@ -52,7 +52,6 @@ pub enum DataKey {
     EventsContract,
     PendingEventsContract,
     Paused,
-    DeploymentSeq,
 
     Profile(Address),
     EarningsByToken(Address, Address),

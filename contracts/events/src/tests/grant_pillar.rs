@@ -12,14 +12,12 @@ use boundless_profile::{ProfileContract, ProfileContractClient};
 const FEE_BPS: u32 = 250;
 const TOTAL_BUDGET: i128 = 10_000_0000000_i128;
 
-#[allow(dead_code)]
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
     profile: ProfileContractClient<'a>,
     owner: Address,
     token_addr: Address,
-    token_admin: token::StellarAssetClient<'a>,
     fee_account: Address,
 }
 
@@ -61,7 +59,6 @@ fn setup<'a>() -> Ctx<'a> {
         profile,
         owner,
         token_addr,
-        token_admin,
         fee_account,
     }
 }
@@ -234,11 +231,11 @@ fn claim_milestone_marks_completed_on_last() {
 }
 
 // ============================================================
-// claim_milestone: credit/reputation side-effects
+// claim_milestone: earnings/reputation side-effects
 // ============================================================
 
 #[test]
-fn claim_milestone_earns_credits_and_bumps_reputation() {
+fn claim_milestone_records_earnings_and_bumps_reputation() {
     let ctx = setup();
     let recipient = Address::generate(&ctx.env);
     let id = create_grant(&ctx, 4);

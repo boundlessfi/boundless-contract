@@ -4,19 +4,16 @@
 use soroban_sdk::{contract, contractimpl, contractmeta, Address, BytesN, Env, String, Vec};
 
 mod admin;
-mod bounty;
-mod crowdfunding;
-mod errors;
+pub mod errors;
 mod escrow;
 mod event_ops;
 mod events;
 mod grant;
-mod hackathon;
 mod idempotency;
 mod profile_client;
 mod storage;
 mod token_whitelist;
-mod types;
+pub mod types;
 
 #[cfg(test)]
 mod tests;
@@ -66,6 +63,30 @@ impl EventsContract {
 
     pub fn set_fee_account(env: Env, new_account: Address) -> Result<(), Error> {
         admin::set_fee_account(&env, new_account)
+    }
+
+    pub fn propose_release_validator(env: Env, target: Address) -> Result<(), Error> {
+        admin::propose_release_validator(&env, target)
+    }
+
+    pub fn accept_release_validator(env: Env) -> Result<(), Error> {
+        admin::accept_release_validator(&env)
+    }
+
+    pub fn cancel_pending_release_validator(env: Env) -> Result<(), Error> {
+        admin::cancel_pending_release_validator(&env)
+    }
+
+    pub fn clear_release_validator(env: Env) -> Result<(), Error> {
+        admin::clear_release_validator(&env)
+    }
+
+    pub fn get_release_validator(env: Env) -> Option<Address> {
+        storage::get_release_validator(&env)
+    }
+
+    pub fn get_pending_release_validator(env: Env) -> Option<PendingValidator> {
+        storage::get_pending_release_validator(&env)
     }
 
     pub fn set_profile_contract(env: Env, new_addr: Address) -> Result<(), Error> {
@@ -158,6 +179,23 @@ impl EventsContract {
         event_ops::finalize_cancel(&env, event_id, op_id)
     }
 
+    pub fn claim_refund(
+        env: Env,
+        event_id: u64,
+        contributor: Address,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        event_ops::claim_refund(&env, event_id, contributor, op_id)
+    }
+
+    pub fn get_unclaimed_refund(
+        env: Env,
+        event_id: u64,
+        contributor: Address,
+    ) -> Result<i128, Error> {
+        event_ops::get_unclaimed_refund(&env, event_id, contributor)
+    }
+
     pub fn add_funds(
         env: Env,
         event_id: u64,
@@ -196,6 +234,10 @@ impl EventsContract {
         event_ops::propose_manager(&env, event_id, new_manager)
     }
 
+    pub fn reclaim_management(env: Env, event_id: u64) -> Result<(), Error> {
+        event_ops::reclaim_management(&env, event_id)
+    }
+
     pub fn accept_manager(env: Env, event_id: u64) -> Result<(), Error> {
         event_ops::accept_manager(&env, event_id)
     }
@@ -226,6 +268,16 @@ impl EventsContract {
     // ============================================================
     // READS (id-keyed only; no linear scans)
     // ============================================================
+    pub fn forfeit_milestone(
+        env: Env,
+        event_id: u64,
+        recipient: Address,
+        milestone: u32,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        grant::forfeit_milestone(&env, event_id, recipient, milestone, op_id)
+    }
+
     pub fn get_event(env: Env, event_id: u64) -> Result<EventRecord, Error> {
         event_ops::get_event(&env, event_id)
     }

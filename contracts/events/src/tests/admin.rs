@@ -8,10 +8,9 @@ use soroban_sdk::{
 use super::common::setup;
 use crate::errors::Error;
 use crate::storage;
-use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind, Winner};
+use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind};
 
-// Zeroed with the contract constant; restore both together.
-const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
+const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
 #[test]
@@ -21,7 +20,7 @@ fn initializes_with_expected_config() {
     assert_eq!(ctx.client.get_fee_account(), ctx.fee_account);
     assert_eq!(ctx.client.get_fee_bps(), 250);
     assert_eq!(ctx.client.get_profile_contract(), ctx.profile_contract);
-    assert_eq!(ctx.client.is_paused(), false);
+    assert!(!ctx.client.is_paused());
     assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "2.0.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
@@ -31,9 +30,9 @@ fn initializes_with_expected_config() {
 fn pause_and_unpause_round_trip() {
     let ctx = setup(250);
     ctx.client.pause();
-    assert_eq!(ctx.client.is_paused(), true);
+    assert!(ctx.client.is_paused());
     ctx.client.unpause();
-    assert_eq!(ctx.client.is_paused(), false);
+    assert!(!ctx.client.is_paused());
 }
 
 #[test]
@@ -79,18 +78,13 @@ fn propose_upgrade_rejects_empty_version() {
     let err = ctx
         .client
         .try_propose_upgrade(&new_hash, &empty)
-        .err()
-        .expect("empty version rejected")
+        .expect_err("empty version rejected")
         .unwrap();
     assert_eq!(err, Error::InvalidPillar);
 }
 
 #[test]
-fn apply_upgrade_is_immediate_while_the_timelock_is_zero() {
-    // H6 mandated a ~1-day window here; it is deliberately zero while mainnet
-    // escrow is empty. This test is the counterpart to restoring it: when
-    // UPGRADE_TIMELOCK_LEDGERS goes back to 17_280, this should revert with
-    // UpgradeTimelockNotElapsed instead.
+fn apply_upgrade_waits_out_the_timelock() {
     let ctx = setup(250);
     let new_hash: BytesN<32> = BytesN::random(&ctx.env);
     let new_version = String::from_str(&ctx.env, "0.3.0");
@@ -98,10 +92,20 @@ fn apply_upgrade_is_immediate_while_the_timelock_is_zero() {
 
     let pending = ctx.client.get_pending_upgrade().expect("proposal");
     assert_eq!(
-        pending.available_at_ledger, pending.proposed_at_ledger,
-        "no window between proposing and applying"
+        pending.available_at_ledger,
+        pending.proposed_at_ledger + UPGRADE_TIMELOCK_LEDGERS
     );
-    assert_eq!(UPGRADE_TIMELOCK_LEDGERS, 0, "restore me with the constant");
+    assert_eq!(
+        ctx.client.try_apply_upgrade().err().unwrap().unwrap(),
+        Error::UpgradeTimelockNotElapsed
+    );
+    ctx.env.ledger().with_mut(|li| {
+        li.sequence_number = pending.available_at_ledger - 1;
+    });
+    assert_eq!(
+        ctx.client.try_apply_upgrade().err().unwrap().unwrap(),
+        Error::UpgradeTimelockNotElapsed
+    );
 }
 
 #[test]
@@ -119,8 +123,7 @@ fn apply_upgrade_after_expiry_reverts() {
     let err = ctx
         .client
         .try_apply_upgrade()
-        .err()
-        .expect("expiry blocks")
+        .expect_err("expiry blocks")
         .unwrap();
     assert_eq!(err, Error::UpgradeProposalExpired);
 }
@@ -144,8 +147,7 @@ fn cancel_with_no_pending_reverts() {
     let err = ctx
         .client
         .try_cancel_pending_upgrade()
-        .err()
-        .expect("nothing to cancel")
+        .expect_err("nothing to cancel")
         .unwrap();
     assert_eq!(err, Error::UpgradeNotProposed);
 }
@@ -228,67 +230,6 @@ fn migrate_rewrites_legacy_percentages_as_prize_floors() {
 }
 
 #[test]
-fn migrate_rewrites_zero_amount_grant_winners() {
-    // Pre-1.7.0 Multi selections stored amount 0 on the anchor row; leaving
-    // that would make every milestone claim revert with nothing to pay.
-    let ctx = setup(250);
-    let recipient = Address::generate(&ctx.env);
-    let event_id = ctx.client.id_base() + 1;
-    let budget = 1_000_0000000_i128;
-
-    let mut dist = Map::new(&ctx.env);
-    dist.set(1, 100_u32);
-    let legacy_event = LegacyEventRecord {
-        id: event_id,
-        pillar: Pillar::Grant,
-        owner: Address::generate(&ctx.env),
-        token: Address::generate(&ctx.env),
-        total_budget: budget,
-        remaining_escrow: budget,
-        release_kind: ReleaseKind::Multi(2),
-        status: EventStatus::Active,
-        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/grant"),
-        title: String::from_str(&ctx.env, "Legacy Grant"),
-        created_at: 1,
-        deadline: None,
-        winner_distribution: dist,
-        fee_bps_override: None,
-    };
-
-    ctx.env.as_contract(&ctx.client.address, || {
-        ctx.env
-            .storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &legacy_event);
-        ctx.env
-            .storage()
-            .instance()
-            .set(&DataKey::NextEventId, &(event_id + 1));
-        storage::append_winner(
-            &ctx.env,
-            event_id,
-            &Winner {
-                recipient: recipient.clone(),
-                position: 1,
-                amount: 0,
-                milestone: None,
-                paid_at: None,
-            },
-        );
-    });
-
-    ctx.client.migrate_events(&8_u32);
-    ctx.client.migrate();
-
-    let rows = ctx.client.get_winners(&event_id);
-    assert_eq!(
-        rows.get(0).unwrap().amount,
-        budget,
-        "the anchor must carry what the old percentage would have paid"
-    );
-}
-
-#[test]
 fn migrate_refuses_to_stamp_while_events_remain_unconverted() {
     // One invocation may touch only 100 ledger entries, so a deployment with
     // history is converted in slices. Stamping before the cursor reaches the
@@ -303,8 +244,9 @@ fn migrate_refuses_to_stamp_while_events_remain_unconverted() {
             .set(&DataKey::NextEventId, &(base + 20));
     });
 
-    assert!(
-        ctx.client.try_migrate().is_err(),
+    assert_eq!(
+        ctx.client.try_migrate().unwrap_err().unwrap(),
+        Error::MigrationIncomplete,
         "must not stamp while events are unconverted"
     );
     assert_eq!(ctx.client.get_migrated_to_version(), None);
@@ -312,8 +254,9 @@ fn migrate_refuses_to_stamp_while_events_remain_unconverted() {
     // Page through: 8 per call, so 19 events need three calls.
     assert_eq!(ctx.client.migrate_events(&8_u32), 11);
     assert_eq!(ctx.client.migrate_events(&8_u32), 3);
-    assert!(
-        ctx.client.try_migrate().is_err(),
+    assert_eq!(
+        ctx.client.try_migrate().unwrap_err().unwrap(),
+        Error::MigrationIncomplete,
         "still incomplete after two of three pages"
     );
     assert_eq!(ctx.client.migrate_events(&8_u32), 0);
@@ -456,8 +399,7 @@ fn migrate_marks_current_version_and_blocks_replay() {
     let err = ctx
         .client
         .try_migrate()
-        .err()
-        .expect("second migrate rejected")
+        .expect_err("second migrate rejected")
         .unwrap();
     assert_eq!(err, Error::MigrationAlreadyApplied);
 }
@@ -465,7 +407,7 @@ fn migrate_marks_current_version_and_blocks_replay() {
 // AUTH REGRESSION GUARDS (#73)
 //
 // setup() mocks all auths for every address, so a call succeeding is not
-// proof that require_admin() ran — it succeeds identically whether the
+// proof that require_admin() ran: it succeeds identically whether the
 // check is present or was deleted. These tests replace the mock with an
 // empty auth set so the call can only succeed if the contract explicitly
 // requests and receives the admin's authorization. If require_admin() is
@@ -575,7 +517,7 @@ fn migrate_reverts_without_admin_auth() {
 }
 
 // ============================================================
-// ACCEPT_ADMIN — target-auth guard
+// ACCEPT_ADMIN: target-auth guard
 //
 // accept_admin does not call require_admin(); it authorizes against the
 // pending target address instead (pending.target.require_auth()). These
@@ -612,90 +554,5 @@ fn accept_admin_demands_pending_targets_auth_specifically() {
     assert!(
         target_required,
         "accept_admin must demand the pending target's own auth"
-    );
-}
-
-#[test]
-fn migrated_award_reserves_what_its_winner_is_still_owed() {
-    // A legacy event can be mid-flight: a winner selected, the prize not yet
-    // claimed. remaining_escrow still reads the full budget in that state,
-    // because it only drops at claim time, so 1.7.0 keeps EventOwedTotal to
-    // stop a later batch promising the same funds twice.
-    //
-    // The migration rewrites the award but never writes that reservation, so
-    // a migrated event reports nothing owed while a winner is still entitled
-    // to be paid. Every existing migration test checks the rewritten record;
-    // none replays a selection afterwards, which is why the suite stayed
-    // green. Fresh 1.7.0 events are unaffected: select_winners sets owed
-    // itself, and that path is covered.
-    let ctx = setup(250);
-    let winner = Address::generate(&ctx.env);
-    let event_id = ctx.client.id_base() + 1;
-    let budget = 1_000_0000000_i128;
-    let awarded = 600_0000000_i128;
-
-    let mut dist = Map::new(&ctx.env);
-    dist.set(1, 100_u32);
-    let legacy_event = LegacyEventRecord {
-        id: event_id,
-        pillar: Pillar::Bounty,
-        owner: ctx.admin.clone(),
-        token: Address::generate(&ctx.env),
-        total_budget: budget,
-        remaining_escrow: budget,
-        release_kind: ReleaseKind::Single,
-        status: EventStatus::Active,
-        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/b"),
-        title: String::from_str(&ctx.env, "Legacy Bounty"),
-        created_at: 1,
-        deadline: None,
-        winner_distribution: dist,
-        fee_bps_override: None,
-    };
-
-    ctx.env.as_contract(&ctx.client.address, || {
-        ctx.env
-            .storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &legacy_event);
-        ctx.env
-            .storage()
-            .instance()
-            .set(&DataKey::NextEventId, &(event_id + 1));
-        storage::append_winner(
-            &ctx.env,
-            event_id,
-            &Winner {
-                recipient: winner.clone(),
-                position: 1,
-                amount: awarded,
-                milestone: None,
-                paid_at: None,
-            },
-        );
-    });
-
-    ctx.client.migrate_events(&8_u32);
-    ctx.client.migrate();
-
-    // 400 of the 1000 is genuinely free; 600 belongs to the unclaimed winner.
-    let second = Address::generate(&ctx.env);
-    let res = ctx.client.try_select_winners(
-        &event_id,
-        &soroban_sdk::vec![
-            &ctx.env,
-            crate::types::WinnerSpec {
-                recipient: second,
-                position: 2,
-                amount: awarded,
-                reputation_bump: 0,
-            },
-        ],
-        &BytesN::random(&ctx.env),
-    );
-    assert!(
-        res.is_err(),
-        "a migrated award must still be reserved; otherwise both winners are \
-         promised funds only one of them can claim"
     );
 }

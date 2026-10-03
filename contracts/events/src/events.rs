@@ -1,8 +1,6 @@
-#![allow(dead_code)]
-
 use soroban_sdk::{contractevent, Address, BytesN, String};
 
-use crate::types::Pillar;
+use crate::types::{CancellationBranch, Pillar};
 
 #[contractevent]
 pub struct EventCreated {
@@ -54,6 +52,47 @@ pub struct ContributorRefunded {
 }
 
 #[contractevent]
+pub struct WinnerAwarded {
+    pub event_id: u64,
+    pub recipient: Address,
+    pub position: u32,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct CancellationStarted {
+    pub event_id: u64,
+    pub branch: CancellationBranch,
+    pub remaining: i128,
+    pub non_owner_total: i128,
+}
+
+/// The fee withheld from a crowdfunding release. `MilestoneClaimed.amount`
+/// stays gross; the creator received `amount - fee`.
+#[contractevent]
+pub struct MilestoneFeeCharged {
+    pub event_id: u64,
+    pub recipient: Address,
+    pub milestone: u32,
+    pub fee: i128,
+}
+
+#[contractevent]
+pub struct MilestoneForfeited {
+    pub event_id: u64,
+    pub recipient: Address,
+    pub milestone: u32,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct RefundDeferred {
+    pub event_id: u64,
+    pub contributor: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
 pub struct OwnerResidualRefunded {
     pub event_id: u64,
     pub owner: Address,
@@ -66,7 +105,9 @@ pub struct WinnersSelected {
     pub count: u32,
 }
 
-#[contractevent]
+// Published with every field, as before SDK 28: indexers read `milestone` as
+// a fixed field and must see null, not a missing key.
+#[contractevent(sparse = false)]
 pub struct WinnerPaid {
     pub event_id: u64,
     pub recipient: Address,
@@ -106,6 +147,26 @@ pub struct PendingAdminSet {
 #[contractevent]
 pub struct FeeAccountUpdated {
     pub new_account: Address,
+}
+
+#[contractevent]
+pub struct ReleaseValidatorProposed {
+    pub target: Address,
+    pub expires_at_ledger: u32,
+}
+
+#[contractevent]
+pub struct ValidatorProposalCancelled {}
+
+#[contractevent(sparse = false)]
+pub struct ReleaseValidatorUpdated {
+    pub validator: Option<Address>,
+}
+
+#[contractevent]
+pub struct ManagementReclaimed {
+    pub event_id: u64,
+    pub owner: Address,
 }
 
 #[contractevent]

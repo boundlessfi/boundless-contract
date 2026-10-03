@@ -1,13 +1,9 @@
-#![allow(dead_code)]
-
-use soroban_sdk::{contracttype, Address, BytesN, Env, Vec};
-
-use soroban_sdk::String;
+use soroban_sdk::{Address, BytesN, Env, Map, String, Vec};
 
 use crate::errors::Error;
 use crate::types::{
-    CancellationState, DataKey, EventRecord, PendingAdmin, PendingManager, PendingUpgrade,
-    PrizeAward, Winner,
+    CancellationState, DataKey, EventRecord, GrantAward, GrantProgress, PendingAdmin,
+    PendingManager, PendingUpgrade, PendingValidator, PrizeAward, Winner,
 };
 
 // ============================================================
@@ -18,11 +14,6 @@ const INSTANCE_TTL_BUMP: u32 = 518_400;
 
 const EVENT_TTL_THRESHOLD: u32 = 86_400;
 const EVENT_TTL_BUMP: u32 = 1_555_200;
-
-#[contracttype(export = false)]
-enum LegacyDataKey {
-    OpSeen(BytesN<32>),
-}
 
 pub fn touch_instance(env: &Env) {
     env.storage()
@@ -110,6 +101,59 @@ pub fn set_paused(env: &Env, paused: bool) {
     env.storage().instance().set(&DataKey::Paused, &paused);
 }
 
+pub fn get_release_validator(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::ReleaseValidator)
+}
+
+pub fn set_release_validator(env: &Env, validator: &Option<Address>) {
+    match validator {
+        Some(v) => env.storage().instance().set(&DataKey::ReleaseValidator, v),
+        None => env.storage().instance().remove(&DataKey::ReleaseValidator),
+    }
+}
+
+pub fn get_pending_release_validator(env: &Env) -> Option<PendingValidator> {
+    env.storage()
+        .instance()
+        .get(&DataKey::PendingReleaseValidator)
+}
+
+pub fn set_pending_release_validator(env: &Env, pending: &PendingValidator) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingReleaseValidator, pending);
+}
+
+pub fn clear_pending_release_validator(env: &Env) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::PendingReleaseValidator);
+}
+
+pub fn get_paused_at(env: &Env) -> Option<u64> {
+    env.storage().instance().get(&DataKey::PausedAt)
+}
+
+pub fn set_paused_at(env: &Env, at: Option<u64>) {
+    match at {
+        Some(at) => env.storage().instance().set(&DataKey::PausedAt, &at),
+        None => env.storage().instance().remove(&DataKey::PausedAt),
+    }
+}
+
+pub fn get_paused_seconds(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::PausedSeconds)
+        .unwrap_or(0)
+}
+
+pub fn set_paused_seconds(env: &Env, seconds: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PausedSeconds, &seconds);
+}
+
 pub fn get_deployment_seq(env: &Env) -> u32 {
     env.storage()
         .instance()
@@ -122,7 +166,7 @@ pub fn set_deployment_seq(env: &Env, seq: u32) {
 }
 
 // ============================================================
-// VERSION / UPGRADE / MIGRATION (instance; H6)
+// VERSION / UPGRADE / MIGRATION (instance)
 // ============================================================
 pub fn get_version(env: &Env) -> Option<String> {
     env.storage().instance().get(&DataKey::Version)
@@ -300,6 +344,12 @@ pub fn set_event_manager(env: &Env, id: u64, manager: &Address) {
     touch_event_persistent(env, &key);
 }
 
+pub fn clear_event_manager(env: &Env, id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventManager(id));
+}
+
 pub fn get_pending_manager(env: &Env, id: u64) -> Option<PendingManager> {
     let key = DataKey::PendingManager(id);
     let p: Option<PendingManager> = env.storage().persistent().get(&key);
@@ -405,21 +455,6 @@ pub fn owed_total(env: &Env, id: u64) -> i128 {
 pub fn set_owed_total(env: &Env, id: u64, owed: i128) {
     let key = DataKey::EventOwedTotal(id);
     env.storage().persistent().set(&key, &owed);
-    touch_event_persistent(env, &key);
-}
-
-pub fn get_prize_base_escrow(env: &Env, id: u64) -> Option<i128> {
-    let key = DataKey::EventPrizeBaseEscrow(id);
-    let b: Option<i128> = env.storage().persistent().get(&key);
-    if b.is_some() {
-        touch_event_persistent(env, &key);
-    }
-    b
-}
-
-pub fn set_prize_base_escrow(env: &Env, id: u64, base: i128) {
-    let key = DataKey::EventPrizeBaseEscrow(id);
-    env.storage().persistent().set(&key, &base);
     touch_event_persistent(env, &key);
 }
 
@@ -561,6 +596,55 @@ pub fn mark_milestone_claimed(env: &Env, id: u64, recipient: &Address, milestone
     touch_event_persistent(env, &key);
 }
 
+pub fn get_grant_roster(env: &Env, id: u64) -> Option<Map<Address, GrantAward>> {
+    let key = DataKey::GrantRoster(id);
+    let roster: Option<Map<Address, GrantAward>> = env.storage().persistent().get(&key);
+    if roster.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    roster
+}
+
+pub fn set_grant_roster(env: &Env, id: u64, roster: &Map<Address, GrantAward>) {
+    let key = DataKey::GrantRoster(id);
+    env.storage().persistent().set(&key, roster);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_grant_progress(env: &Env, id: u64, recipient: &Address) -> GrantProgress {
+    let key = DataKey::GrantProgress(id, recipient.clone());
+    let progress: Option<GrantProgress> = env.storage().persistent().get(&key);
+    if progress.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    progress.unwrap_or_default()
+}
+
+pub fn set_grant_progress(env: &Env, id: u64, recipient: &Address, progress: &GrantProgress) {
+    let key = DataKey::GrantProgress(id, recipient.clone());
+    env.storage().persistent().set(&key, progress);
+    touch_event_persistent(env, &key);
+}
+
+pub fn unclaimed_refund(env: &Env, id: u64, contributor: &Address) -> i128 {
+    let key = DataKey::UnclaimedRefund(id, contributor.clone());
+    let amount: Option<i128> = env.storage().persistent().get(&key);
+    if amount.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    amount.unwrap_or(0)
+}
+
+pub fn set_unclaimed_refund(env: &Env, id: u64, contributor: &Address, amount: i128) {
+    let key = DataKey::UnclaimedRefund(id, contributor.clone());
+    if amount > 0 {
+        env.storage().persistent().set(&key, &amount);
+        touch_event_persistent(env, &key);
+    } else {
+        env.storage().persistent().remove(&key);
+    }
+}
+
 // ============================================================
 // CROWDFUNDING MILESTONES CLAIMED (persistent)
 // ============================================================
@@ -607,17 +691,10 @@ pub fn clear_cancellation_state(env: &Env, id: u64) {
 // IDEMPOTENCY (temporary; auto-TTL)
 // ============================================================
 pub fn is_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) -> bool {
-    let scoped_seen = env
-        .storage()
+    env.storage()
         .temporary()
         .get(&DataKey::OpSeen(domain.clone(), op_id.clone()))
-        .unwrap_or(false);
-    scoped_seen
-        || env
-            .storage()
-            .temporary()
-            .get(&LegacyDataKey::OpSeen(op_id.clone()))
-            .unwrap_or(false)
+        .unwrap_or(false)
 }
 
 pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {

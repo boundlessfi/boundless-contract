@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use soroban_sdk::{Address, Env};
 
 use crate::admin;

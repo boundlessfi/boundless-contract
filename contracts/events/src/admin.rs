@@ -1,11 +1,15 @@
-use soroban_sdk::{contracttype, panic_with_error, Address, BytesN, Env, Map, String, Symbol, Val};
+use soroban_sdk::{
+    contracttype, panic_with_error, Address, BytesN, ContractExecutable, Env, Map, String, Symbol,
+    Val,
+};
 
 use crate::errors::Error;
 use crate::events as evt;
 use crate::idempotency;
 use crate::storage;
 use crate::types::{
-    DataKey, EventRecord, EventStatus, PendingAdmin, PendingUpgrade, Pillar, ReleaseKind, Winner,
+    DataKey, EventRecord, EventStatus, PendingAdmin, PendingUpgrade, PendingValidator, Pillar,
+    ReleaseKind,
 };
 
 /// The pre-1.7.0 `EventRecord`, kept only so `migrate` can decode rows written
@@ -34,14 +38,12 @@ const PENDING_ADMIN_TTL_LEDGERS: u32 = 120_960;
 
 pub(crate) const MAX_FEE_BPS: u32 = 1_000;
 
-// H6 (audit 2026-06) mandated 17_280 ledgers, ~1 day, on mainnet. Zeroed
-// deliberately while mainnet escrow is empty so the 1.7.0 rollout can iterate.
-// RESTORE to 17_280 before the first funded campaign: with no window, a
-// compromised admin key can propose and apply a wasm swap in one go, and
-// cancel_pending_upgrade never gets a chance to fire. Tracked in BACKLOG.
-// The cfg split is kept so restoring is a single-value edit.
+// About a day on mainnet: without a window a compromised admin quorum can
+// propose and apply a wasm swap in one session, before anyone watching can
+// react or cancel_pending_upgrade can fire. Testnet builds skip it so
+// upgrades can iterate.
 #[cfg(not(feature = "testnet"))]
-const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
+const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 #[cfg(feature = "testnet")]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
@@ -156,6 +158,86 @@ pub fn set_fee_account(env: &Env, new_account: Address) -> Result<(), Error> {
 }
 
 // ============================================================
+// CROWDFUNDING RELEASE VALIDATOR (two-step, like the admin)
+// ============================================================
+/// The proposed key co-signs nothing until it accepts, which proves someone
+/// holds it; until then the current validator, or the admin, still co-signs.
+pub fn propose_release_validator(env: &Env, target: Address) -> Result<(), Error> {
+    require_admin(env)?;
+    if storage::get_pending_release_validator(env).is_some() {
+        evt::ValidatorProposalCancelled {}.publish(env);
+    }
+    let expires_at = env
+        .ledger()
+        .sequence()
+        .saturating_add(PENDING_ADMIN_TTL_LEDGERS);
+    storage::set_pending_release_validator(
+        env,
+        &PendingValidator {
+            target: target.clone(),
+            expires_at_ledger: expires_at,
+        },
+    );
+    storage::touch_instance(env);
+    evt::ReleaseValidatorProposed {
+        target,
+        expires_at_ledger: expires_at,
+    }
+    .publish(env);
+    Ok(())
+}
+
+pub fn accept_release_validator(env: &Env) -> Result<(), Error> {
+    let pending =
+        storage::get_pending_release_validator(env).ok_or(Error::PendingRotationMismatch)?;
+    if env.ledger().sequence() > pending.expires_at_ledger {
+        return Err(Error::PendingRotationExpired);
+    }
+    pending.target.require_auth();
+
+    storage::set_release_validator(env, &Some(pending.target.clone()));
+    storage::clear_pending_release_validator(env);
+    storage::touch_instance(env);
+    evt::ReleaseValidatorUpdated {
+        validator: Some(pending.target),
+    }
+    .publish(env);
+    Ok(())
+}
+
+pub fn cancel_pending_release_validator(env: &Env) -> Result<(), Error> {
+    require_admin(env)?;
+    if storage::get_pending_release_validator(env).is_none() {
+        return Err(Error::PendingRotationMismatch);
+    }
+    storage::clear_pending_release_validator(env);
+    storage::touch_instance(env);
+    evt::ValidatorProposalCancelled {}.publish(env);
+    Ok(())
+}
+
+/// Takes effect at once, unlike appointing one: removing the validator is how
+/// a compromised key is cut off. Co-signing returns to the admin.
+pub fn clear_release_validator(env: &Env) -> Result<(), Error> {
+    require_admin(env)?;
+    storage::set_release_validator(env, &None);
+    if storage::get_pending_release_validator(env).is_some() {
+        storage::clear_pending_release_validator(env);
+        evt::ValidatorProposalCancelled {}.publish(env);
+    }
+    storage::touch_instance(env);
+    evt::ReleaseValidatorUpdated { validator: None }.publish(env);
+    Ok(())
+}
+
+pub fn release_cosigner(env: &Env) -> Result<Address, Error> {
+    match storage::get_release_validator(env) {
+        Some(validator) => Ok(validator),
+        None => storage::get_admin(env),
+    }
+}
+
+// ============================================================
 // PROFILE CONTRACT BINDING
 // ============================================================
 pub fn set_profile_contract(env: &Env, new_addr: Address) -> Result<(), Error> {
@@ -174,6 +256,9 @@ pub fn set_profile_contract(env: &Env, new_addr: Address) -> Result<(), Error> {
 // ============================================================
 pub fn pause(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
+    if storage::get_paused_at(env).is_none() {
+        storage::set_paused_at(env, Some(env.ledger().timestamp()));
+    }
     storage::set_paused(env, true);
     storage::touch_instance(env);
     evt::Paused {}.publish(env);
@@ -182,6 +267,12 @@ pub fn pause(env: &Env) -> Result<(), Error> {
 
 pub fn unpause(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
+    if let Some(at) = storage::get_paused_at(env) {
+        let paused_for = env.ledger().timestamp().saturating_sub(at);
+        let total = storage::get_paused_seconds(env).saturating_add(paused_for);
+        storage::set_paused_seconds(env, total);
+        storage::set_paused_at(env, None);
+    }
     storage::set_paused(env, false);
     storage::touch_instance(env);
     evt::Unpaused {}.publish(env);
@@ -189,7 +280,7 @@ pub fn unpause(env: &Env) -> Result<(), Error> {
 }
 
 // ============================================================
-// UPGRADE (timelocked; H6)
+// UPGRADE (timelocked)
 // ============================================================
 pub fn propose_upgrade(
     env: &Env,
@@ -234,7 +325,7 @@ pub fn apply_upgrade(env: &Env) -> Result<(), Error> {
     }
     storage::touch_instance(env);
     env.deployer()
-        .update_current_contract_wasm(pending.wasm_hash.clone());
+        .update_current_contract(ContractExecutable::Wasm(pending.wasm_hash.clone()));
     storage::set_version(env, &pending.new_version);
     storage::clear_pending_upgrade(env);
     evt::UpgradeApplied {
@@ -264,7 +355,7 @@ pub fn cancel_pending_upgrade(env: &Env) -> Result<(), Error> {
 }
 
 // ============================================================
-// MIGRATE (post-upgrade one-shot; H6)
+// MIGRATE (post-upgrade one-shot)
 // ============================================================
 pub fn migrate(env: &Env) -> Result<(), Error> {
     require_admin(env)?;
@@ -285,11 +376,8 @@ pub fn migrate(env: &Env) -> Result<(), Error> {
     // paged through `migrate_events` because one invocation may touch only 100
     // ledger entries, and stamping early would leave the remainder undecodable
     // with no way to resume: this is one-shot.
-    //
-    // Reuses EventIdOverflow rather than adding a variant — contracterror is at
-    // the 50-case cap. It means "events remain", not a counter fault.
     if migration_remaining(env) > 0 {
-        return Err(Error::EventIdOverflow);
+        return Err(Error::MigrationIncomplete);
     }
 
     storage::set_migrated_to_version(env, &current);
@@ -316,15 +404,14 @@ fn migration_remaining(env: &Env) -> u64 {
 /// until it reports zero and only then call `migrate`.
 ///
 /// Paged rather than one-shot because an invocation may touch at most 100
-/// ledger entries and write 50. A deployment with real history — testnet holds
-/// over a hundred events — cannot be converted in a single transaction, and a
+/// ledger entries and write 50. A deployment with real history (testnet holds
+/// over a hundred events) cannot be converted in a single transaction, and a
 /// one-shot pass that aborts leaves every event undecodable.
 pub fn migrate_events(env: &Env, max_events: u32) -> Result<u64, Error> {
     require_admin(env)?;
 
-    // Each event costs a record read plus a record write, and a Multi event
-    // adds a read and a write per winner. Eight leaves headroom for the winner
-    // rewrites inside the write limit.
+    // Each event costs a record read and, when converted, a record write;
+    // eight stays far inside the per-transaction entry limits.
     const MAX_PER_CALL: u32 = 8;
     let budget = if max_events == 0 || max_events > MAX_PER_CALL {
         MAX_PER_CALL
@@ -402,90 +489,6 @@ fn migrate_one_event(env: &Env, id: u64) {
             env.storage().persistent().set(&key, &migrated);
         }
     }
-    migrate_winner_amounts(env, id);
-    migrate_owed_total(env, id);
-}
-
-/// Rebuild `EventOwedTotal` for a migrated event.
-///
-/// 1.7.0 reserves awarded-but-unclaimed prizes, because `remaining_escrow`
-/// only drops at claim time and a second selection would otherwise see funds
-/// an earlier winner is still entitled to. Pre-1.7.0 state has no such
-/// counter, so a migrated event would report nothing reserved while a winner
-/// was still owed, and the next batch could promise the same money twice.
-///
-/// Outstanding is the same quantity the live path maintains: award amounts
-/// that have not been paid out, less whatever milestone rows already paid.
-/// A Single award marks its anchor `paid_at` on claim; a grant leaves the
-/// anchor open and appends one paid row per milestone.
-fn migrate_owed_total(env: &Env, event_id: u64) {
-    let count = storage::winner_count(env, event_id);
-    let mut awarded: i128 = 0;
-    let mut paid: i128 = 0;
-    for idx in 0..count {
-        let w = match storage::winner_at(env, event_id, idx) {
-            Some(w) => w,
-            None => continue,
-        };
-        match w.milestone {
-            None => {
-                if w.paid_at.is_none() {
-                    awarded = awarded.saturating_add(w.amount);
-                }
-            }
-            Some(_) => {
-                paid = paid.saturating_add(w.amount);
-            }
-        }
-    }
-    let owed = awarded.saturating_sub(paid);
-    if owed > 0 {
-        storage::set_owed_total(env, event_id, owed);
-    }
-}
-
-/// Pre-1.7.0 `Multi` selections stored `amount: 0` on the anchor winner row,
-/// because a grant milestone derived its payout from the percentage
-/// distribution at claim time. `claim_milestone` now reads that amount, so an
-/// unrewritten row would compute a payout of zero and revert on every claim,
-/// with no way to re-select and no exit but cancelling the grant.
-///
-/// The floor for the winner's position is exactly what the old formula would
-/// have produced, since both are `total_budget * percent / 100`.
-fn migrate_winner_amounts(env: &Env, event_id: u64) {
-    let event = match storage::get_event(env, event_id) {
-        Some(e) => e,
-        None => return,
-    };
-    if !matches!(event.release_kind, ReleaseKind::Multi(_)) {
-        return;
-    }
-    let count = storage::winner_count(env, event_id);
-    for idx in 0..count {
-        let w = match storage::winner_at(env, event_id, idx) {
-            Some(w) => w,
-            None => continue,
-        };
-        // Milestone rows already carry what was actually paid; only the anchor
-        // was written with a placeholder amount.
-        if w.milestone.is_some() || w.amount != 0 {
-            continue;
-        }
-        if let Some(floor) = event.prize_floors.get(w.position) {
-            storage::set_winner_at(
-                env,
-                event_id,
-                idx,
-                &Winner {
-                    recipient: w.recipient.clone(),
-                    position: w.position,
-                    amount: floor,
-                    milestone: None,
-                    paid_at: w.paid_at,
-                },
-            );
-        }
-    }
 }
 
 // ============================================================
@@ -530,6 +533,16 @@ pub fn require_admin(env: &Env) -> Result<(), Error> {
     let admin = storage::get_admin(env)?;
     admin.require_auth();
     Ok(())
+}
+
+/// Seconds the contract has been open, the clock claim windows run on.
+pub fn open_time(env: &Env) -> u64 {
+    let now = env.ledger().timestamp();
+    let mut paused = storage::get_paused_seconds(env);
+    if let Some(at) = storage::get_paused_at(env) {
+        paused = paused.saturating_add(now.saturating_sub(at));
+    }
+    now.saturating_sub(paused)
 }
 
 pub fn require_not_paused(env: &Env) -> Result<(), Error> {

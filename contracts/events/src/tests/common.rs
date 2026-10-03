@@ -9,7 +9,6 @@ use crate::event_ops::MAX_REFUNDS_PER_BATCH;
 use crate::types::EventStatus;
 use crate::{EventsContract, EventsContractClient};
 
-#[allow(dead_code)]
 pub fn drive_cancel<'a>(env: &Env, client: &EventsContractClient<'a>, id: u64) {
     let op_start = BytesN::random(env);
     client.start_cancel(&id, &op_start);
@@ -32,7 +31,6 @@ pub fn drive_cancel<'a>(env: &Env, client: &EventsContractClient<'a>, id: u64) {
 }
 
 pub struct TestCtx<'a> {
-    #[allow(dead_code)]
     pub env: Env,
     pub admin: Address,
     pub fee_account: Address,

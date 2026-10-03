@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use soroban_sdk::{contractevent, Address, BytesN, String, Symbol};
 
 #[contractevent]
@@ -9,13 +7,6 @@ pub struct ProfileBootstrapped {
 
 #[contractevent]
 pub struct ReputationBumped {
-    pub user: Address,
-    pub delta: u32,
-    pub reason: Symbol,
-}
-
-#[contractevent]
-pub struct ReputationSlashed {
     pub user: Address,
     pub delta: u32,
     pub reason: Symbol,

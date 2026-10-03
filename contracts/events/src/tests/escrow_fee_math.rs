@@ -16,8 +16,6 @@ const TOTAL_BUDGET: i128 = 1_000_0000000_i128; // 1000 USDC at 7 decimals
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
-    #[allow(dead_code)]
-    profile: ProfileContractClient<'a>,
     owner: Address,
     token_addr: Address,
     fee_account: Address,
@@ -60,7 +58,6 @@ fn setup_with_bps<'a>(fee_bps: u32) -> Ctx<'a> {
     Ctx {
         env,
         events,
-        profile,
         owner,
         token_addr,
         fee_account,
@@ -361,7 +358,7 @@ fn zero_global_bps_no_override_charges_no_fee() {
 }
 
 // ============================================================
-// release math: select_winners Single — percent of escrow
+// release math: select_winners Single, percent of escrow
 // ============================================================
 
 #[test]

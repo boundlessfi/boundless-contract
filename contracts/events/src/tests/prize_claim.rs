@@ -285,7 +285,7 @@ fn op_id_replay_reverts() {
 
     // Both positions go to the same recipient so the two claims share an
     // op_id domain; reusing the op_id must revert even though position 2 is
-    // not yet paid. (Cross-recipient op_id reuse is intentionally allowed —
+    // not yet paid. (Cross-recipient op_id reuse is intentionally allowed:
     // OpSeen is namespaced per authorizing caller.)
     let a = Address::generate(&ctx.env);
     select_one(&ctx, id, &a, 1, TOTAL_BUDGET * 60 / 100, 0);
@@ -379,6 +379,63 @@ fn cancel_blocked_while_unclaimed_prizes_within_window() {
         token.balance(&ctx.owner) - owner_before,
         TOTAL_BUDGET * 40 / 100
     );
+}
+
+#[test]
+fn time_spent_paused_does_not_run_down_the_claim_window() {
+    let ctx = setup();
+    let id = create_single(&ctx, dist_100(&ctx.env));
+    let w = Address::generate(&ctx.env);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 0);
+    let day = 86_400;
+    let start = ctx.env.ledger().timestamp();
+
+    ctx.env.ledger().with_mut(|li| li.timestamp = start + day);
+    ctx.events.pause();
+    ctx.env
+        .ledger()
+        .with_mut(|li| li.timestamp = start + 92 * day);
+    ctx.events.unpause();
+
+    let blocked = ctx
+        .events
+        .try_start_cancel(&id, &BytesN::random(&ctx.env))
+        .err()
+        .unwrap()
+        .unwrap();
+    assert_eq!(blocked, crate::errors::Error::WinnersAlreadySelected);
+
+    // 91 paused days are added back: the window now closes at day 181
+    ctx.env
+        .ledger()
+        .with_mut(|li| li.timestamp = start + 91 * day + PRIZE_CLAIM_WINDOW_SECS);
+    assert!(ctx
+        .events
+        .try_start_cancel(&id, &BytesN::random(&ctx.env))
+        .is_err());
+    ctx.env
+        .ledger()
+        .with_mut(|li| li.timestamp = start + 91 * day + PRIZE_CLAIM_WINDOW_SECS + 1);
+    drive_cancel(&ctx.env, &ctx.events, id);
+    assert_eq!(ctx.events.get_event(&id).status, EventStatus::Cancelled);
+}
+
+#[test]
+fn a_winner_can_claim_after_a_long_pause() {
+    let ctx = setup();
+    let id = create_single(&ctx, dist_100(&ctx.env));
+    let w = Address::generate(&ctx.env);
+    select_one(&ctx, id, &w, 1, TOTAL_BUDGET, 0);
+
+    ctx.events.pause();
+    ctx.env.ledger().with_mut(|li| {
+        li.timestamp += PRIZE_CLAIM_WINDOW_SECS * 2;
+    });
+    ctx.events.unpause();
+    ctx.events
+        .claim_prize(&id, &1_u32, &BytesN::random(&ctx.env));
+    let token = token::Client::new(&ctx.env, &ctx.token_addr);
+    assert_eq!(token.balance(&w), TOTAL_BUDGET);
 }
 
 #[test]

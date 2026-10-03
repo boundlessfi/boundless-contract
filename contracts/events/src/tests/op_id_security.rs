@@ -118,13 +118,15 @@ fn sha256_child_ids_differ_for_xor_colliding_parents() {
     let parent_b = BytesN::from_array(env, &b);
     assert_ne!(parent_a, parent_b);
 
-    // derive_child reads profile contract storage — must run as the events contract.
+    // derive_child reads profile contract storage, so it must run as the events contract.
     let (child_a, child_b, child_rep, child_i0, child_i1) = env.as_contract(&ctx.events_id, || {
-        let child_a = idempotency::derive_child(env, &parent_a, tag::BOOTSTRAP);
-        let child_b = idempotency::derive_child(env, &parent_b, tag::BOOTSTRAP);
-        let child_rep = idempotency::derive_child(env, &parent_a, tag::BUMP_REP);
-        let child_i0 = idempotency::derive_child_indexed(env, &parent_a, tag::BOOTSTRAP, 0);
-        let child_i1 = idempotency::derive_child_indexed(env, &parent_a, tag::BOOTSTRAP, 1);
+        let child_a = idempotency::derive_child(env, &ctx.owner, &parent_a, tag::BOOTSTRAP);
+        let child_b = idempotency::derive_child(env, &ctx.owner, &parent_b, tag::BOOTSTRAP);
+        let child_rep = idempotency::derive_child(env, &ctx.owner, &parent_a, tag::BUMP_REP);
+        let child_i0 =
+            idempotency::derive_child_indexed(env, &ctx.owner, &parent_a, tag::BOOTSTRAP, 0);
+        let child_i1 =
+            idempotency::derive_child_indexed(env, &ctx.owner, &parent_a, tag::BOOTSTRAP, 1);
         (child_a, child_b, child_rep, child_i0, child_i1)
     });
 
@@ -136,6 +138,14 @@ fn sha256_child_ids_differ_for_xor_colliding_parents() {
     assert_eq!(child_a, child_i0);
     assert_ne!(child_i0, child_i1);
     assert_ne!(child_a, parent_a);
+
+    let child_other_caller = env.as_contract(&ctx.events_id, || {
+        idempotency::derive_child(env, &ctx.applicant, &parent_a, tag::BOOTSTRAP)
+    });
+    assert_ne!(
+        child_a, child_other_caller,
+        "the same parent under another authorizer must not share children"
+    );
 }
 
 /// Attacker squats derived child ids via bootstrap_self; legitimate claim_prize still pays.
@@ -156,14 +166,14 @@ fn bootstrap_self_cannot_front_run_events_child_op_ids() {
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    // Parent op_id the winner will use for claim_prize — attacker observes it and
+    // Parent op_id the winner will use for claim_prize; the attacker observes it and
     // pre-marks the derived profile child ids via unprivileged bootstrap_self.
     let claim_op = BytesN::random(&ctx.env);
     let (bootstrap_child, rep_child, earnings_child) = ctx.env.as_contract(&ctx.events_id, || {
         (
-            idempotency::derive_child(&ctx.env, &claim_op, tag::BOOTSTRAP),
-            idempotency::derive_child(&ctx.env, &claim_op, tag::BUMP_REP),
-            idempotency::derive_child(&ctx.env, &claim_op, tag::REGISTER_EARNINGS),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::BOOTSTRAP),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::BUMP_REP),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::REGISTER_EARNINGS),
         )
     });
 
@@ -197,7 +207,7 @@ fn events_domain_child_op_id_replay_still_rejected() {
     // Bootstrap via events path twice with the same child id.
     let parent = BytesN::random(env);
     let child = env.as_contract(&ctx.events_id, || {
-        idempotency::derive_child(env, &parent, tag::BOOTSTRAP)
+        idempotency::derive_child(env, &ctx.owner, &parent, tag::BOOTSTRAP)
     });
     let user = Address::generate(env);
 
@@ -241,8 +251,7 @@ fn event_id_overflow_reverts() {
     let err = ctx
         .events
         .try_create_event(&params, &BytesN::random(env))
-        .err()
-        .expect("event creation should fail when next_event_id overflows")
+        .expect_err("event creation should fail when next_event_id overflows")
         .unwrap();
     assert_eq!(err, crate::errors::Error::EventIdOverflow);
 

@@ -280,7 +280,7 @@ fn select_winners_multi_position_splits_by_distribution() {
 }
 
 // ============================================================
-// select_winners — rejections / edges
+// select_winners: rejections and edges
 // ============================================================
 
 #[test]

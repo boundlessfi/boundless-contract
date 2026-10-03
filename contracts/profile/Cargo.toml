@@ -1,6 +1,6 @@
 [package]
 name = "boundless-profile"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
 publish = false
 
@@ -10,7 +10,7 @@ doctest = false
 
 [features]
 # Testnet-only: zero the upgrade timelock so upgrades apply immediately for fast
-# iteration. NEVER enable on mainnet — the default (feature off) keeps the full
+# iteration. NEVER enable on mainnet: the default (feature off) keeps the full
 # audit-mandated ~1-day timelock, so forgetting the flag fails safe (secure).
 testnet = []
 
