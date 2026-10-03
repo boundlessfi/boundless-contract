@@ -1,6 +1,4 @@
-#![allow(dead_code)]
-
-use soroban_sdk::{contracttype, Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env};
 
 use soroban_sdk::String;
 
@@ -15,11 +13,6 @@ const INSTANCE_TTL_BUMP: u32 = 518_400;
 
 const PROFILE_TTL_THRESHOLD: u32 = 86_400;
 const PROFILE_TTL_BUMP: u32 = 1_555_200;
-
-#[contracttype(export = false)]
-enum LegacyDataKey {
-    OpSeen(BytesN<32>),
-}
 
 pub fn touch_instance(env: &Env) {
     env.storage()
@@ -98,12 +91,8 @@ pub fn set_paused(env: &Env, paused: bool) {
     env.storage().instance().set(&DataKey::Paused, &paused);
 }
 
-pub fn set_deployment_seq(env: &Env, seq: u32) {
-    env.storage().instance().set(&DataKey::DeploymentSeq, &seq);
-}
-
 // ============================================================
-// VERSION / UPGRADE / MIGRATION (instance; H6)
+// VERSION / UPGRADE / MIGRATION (instance)
 // ============================================================
 pub fn get_version(env: &Env) -> Option<String> {
     env.storage().instance().get(&DataKey::Version)
@@ -177,17 +166,10 @@ pub fn set_earnings(env: &Env, user: &Address, token: &Address, amount: i128) {
 // IDEMPOTENCY (temporary; auto-TTL)
 // ============================================================
 pub fn is_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) -> bool {
-    let scoped_seen = env
-        .storage()
+    env.storage()
         .temporary()
         .get(&DataKey::OpSeen(domain.clone(), op_id.clone()))
-        .unwrap_or(false);
-    scoped_seen
-        || env
-            .storage()
-            .temporary()
-            .get(&LegacyDataKey::OpSeen(op_id.clone()))
-            .unwrap_or(false)
+        .unwrap_or(false)
 }
 
 pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {

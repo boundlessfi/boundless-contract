@@ -18,10 +18,10 @@ const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 fn initializes_with_expected_config() {
     let ctx = setup();
     assert_eq!(ctx.client.get_admin(), ctx.admin);
-    assert_eq!(ctx.client.is_paused(), false);
+    assert!(!ctx.client.is_paused());
     assert_eq!(ctx.client.get_events_contract(), None);
     assert_eq!(ctx.client.get_pending_events_contract(), None);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.2.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.2.1"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
@@ -30,9 +30,9 @@ fn initializes_with_expected_config() {
 fn pause_and_unpause_round_trip() {
     let ctx = setup();
     ctx.client.pause();
-    assert_eq!(ctx.client.is_paused(), true);
+    assert!(ctx.client.is_paused());
     ctx.client.unpause();
-    assert_eq!(ctx.client.is_paused(), false);
+    assert!(!ctx.client.is_paused());
 }
 
 // ============================================================
@@ -57,8 +57,7 @@ fn second_set_events_contract_reverts_already_configured() {
     let err = ctx
         .client
         .try_set_events_contract(&events_b)
-        .err()
-        .expect("expected second set to fail")
+        .expect_err("expected second set to fail")
         .unwrap();
     assert_eq!(err, Error::EventsContractAlreadyConfigured);
 }
@@ -100,8 +99,7 @@ fn accept_before_timelock_reverts() {
     let err = ctx
         .client
         .try_accept_events_contract()
-        .err()
-        .expect("expected timelock to block")
+        .expect_err("expected timelock to block")
         .unwrap();
     assert_eq!(err, Error::PendingEventsContractTimelock);
     assert_eq!(ctx.client.get_events_contract(), Some(events_a));
@@ -123,8 +121,7 @@ fn accept_after_expiry_reverts_and_admin_must_cancel_to_prune() {
     let err = ctx
         .client
         .try_accept_events_contract()
-        .err()
-        .expect("expected expiry to block")
+        .expect_err("expected expiry to block")
         .unwrap();
     assert_eq!(err, Error::PendingEventsContractExpired);
 
@@ -156,8 +153,7 @@ fn cancel_with_no_pending_reverts() {
     let err = ctx
         .client
         .try_cancel_pending_events_contract()
-        .err()
-        .expect("expected mismatch")
+        .expect_err("expected mismatch")
         .unwrap();
     assert_eq!(err, Error::PendingEventsContractMismatch);
 }
@@ -189,19 +185,28 @@ fn propose_upgrade_records_pending() {
 }
 
 #[test]
-fn apply_upgrade_before_timelock_reverts_profile() {
+fn apply_upgrade_waits_out_the_timelock_profile() {
     let ctx = setup();
     let new_hash: BytesN<32> = BytesN::random(&ctx.env);
     let new_version = String::from_str(&ctx.env, "0.3.0");
     ctx.client.propose_upgrade(&new_hash, &new_version);
 
-    let err = ctx
-        .client
-        .try_apply_upgrade()
-        .err()
-        .expect("timelock blocks")
-        .unwrap();
-    assert_eq!(err, Error::UpgradeTimelockNotElapsed);
+    let pending = ctx.client.get_pending_upgrade().expect("proposal");
+    assert_eq!(
+        pending.available_at_ledger,
+        pending.proposed_at_ledger + UPGRADE_TIMELOCK_LEDGERS
+    );
+    assert_eq!(
+        ctx.client.try_apply_upgrade().err().unwrap().unwrap(),
+        Error::UpgradeTimelockNotElapsed
+    );
+    ctx.env.ledger().with_mut(|li| {
+        li.sequence_number = pending.available_at_ledger - 1;
+    });
+    assert_eq!(
+        ctx.client.try_apply_upgrade().err().unwrap().unwrap(),
+        Error::UpgradeTimelockNotElapsed
+    );
 }
 
 #[test]
@@ -219,8 +224,7 @@ fn apply_upgrade_after_expiry_reverts_profile() {
     let err = ctx
         .client
         .try_apply_upgrade()
-        .err()
-        .expect("expiry blocks")
+        .expect_err("expiry blocks")
         .unwrap();
     assert_eq!(err, Error::UpgradeProposalExpired);
 }
@@ -232,14 +236,13 @@ fn migrate_marks_version_and_blocks_replay_profile() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "1.2.0"))
+        Some(String::from_str(&ctx.env, "1.2.1"))
     );
 
     let err = ctx
         .client
         .try_migrate()
-        .err()
-        .expect("second migrate rejected")
+        .expect_err("second migrate rejected")
         .unwrap();
     assert_eq!(err, Error::MigrationAlreadyApplied);
 }
@@ -248,7 +251,7 @@ fn migrate_marks_version_and_blocks_replay_profile() {
 // AUTH REGRESSION GUARDS (#73)
 //
 // Mirror of the events-contract guards in
-// contracts/events/src/tests/admin.rs — see that file for the rationale.
+// contracts/events/src/tests/admin.rs; see that file for the rationale.
 // ============================================================
 
 #[test]
@@ -387,7 +390,7 @@ fn migrate_reverts_without_admin_auth() {
 }
 
 // ============================================================
-// ACCEPT_ADMIN — target-auth guard
+// ACCEPT_ADMIN: target-auth guard
 //
 // accept_admin does not call require_admin(); it authorizes against the
 // pending target address instead (pending.target.require_auth()). These

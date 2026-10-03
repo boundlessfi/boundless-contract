@@ -1,5 +1,7 @@
 use soroban_sdk::contracterror;
 
+// Retired codes are never reused, so a code in an old log or client keeps its
+// meaning: 4, 5.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -7,8 +9,6 @@ pub enum Error {
     AlreadyInitialized = 1,
     AdminCannotBeZero = 2,
     EventsContractNotConfigured = 3,
-    Unauthorized = 4,
-    NotAdmin = 5,
     PendingAdminMismatch = 6,
     PendingAdminExpired = 7,
     NotInitialized = 8,
@@ -18,6 +18,7 @@ pub enum Error {
     PendingEventsContractTimelock = 17,
 
     ProfileNotFound = 10,
+    DeltaTooLarge = 11,
     InvalidAmount = 12,
     ReasonRequired = 13,
 

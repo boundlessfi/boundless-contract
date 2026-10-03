@@ -6,7 +6,7 @@ test: build
 	cargo test
 
 build:
-	stellar contract build
+	../../scripts/build-release.sh --package boundless-events
 	@ls -l ../../target/wasm32v1-none/release/*.wasm
 
 size:

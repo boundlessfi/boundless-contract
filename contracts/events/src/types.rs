@@ -73,7 +73,11 @@ pub struct EventRecord {
     pub title: String,
     pub created_at: u64,
     pub deadline: Option<u64>,
-    pub winner_distribution: Map<u32, u32>,
+    /// Advertised minimum per position, in token-native units. `select_winners`
+    /// may pay above a floor but never below it, so a published prize table is
+    /// a guarantee rather than an estimate. Positions absent from the map carry
+    /// no floor and are payable at any positive amount.
+    pub prize_floors: Map<u32, i128>,
     pub fee_bps_override: Option<u32>,
 }
 
@@ -91,31 +95,9 @@ pub struct CreateEventParams {
     pub content_uri: String,
     pub title: String,
     pub deadline: Option<u64>,
-    pub winner_distribution: Map<u32, u32>,
+    pub prize_floors: Map<u32, i128>,
     pub fee_bps_override: Option<u32>,
     pub manager: Option<Address>,
-}
-
-// ============================================================
-// SUBMISSION
-// ============================================================
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Submission {
-    pub applicant: Address,
-    pub content_uri: String,
-    pub submitted_at: u64,
-}
-
-// ============================================================
-// CONTRIBUTION
-// ============================================================
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Contribution {
-    pub contributor: Address,
-    pub amount: i128,
-    pub contributed_at: u64,
 }
 
 // ============================================================
@@ -139,6 +121,10 @@ pub struct Winner {
 pub struct WinnerSpec {
     pub recipient: Address,
     pub position: u32,
+    /// Award amount in token-native units. Allocation happens here, at payout,
+    /// not at create: the event holds a pool and each selection names what it
+    /// spends from it.
+    pub amount: i128,
     pub reputation_bump: u32,
 }
 
@@ -162,12 +148,6 @@ pub enum DataKey {
     Event(u64),
 
     EventManager(u64),
-
-    EventApplicantCount(u64),
-    EventApplicantAt(u64, u32),
-    EventApplicantSlot(u64, Address),
-
-    EventSubmission(u64, Address),
 
     EventWinnerCount(u64),
     EventWinnerAt(u64, u32),
@@ -195,20 +175,62 @@ pub enum DataKey {
     SupportedTokenAt(u32),
     SupportedTokenSlot(Address),
 
-    // Appended in 1.2.0 to preserve existing key discriminants.
     NonOwnerContributionTotal(u64),
 
-    // Appended in 1.3.0 to preserve existing key discriminants.
     EventPrizeAward(u64, u32),
     EventUnclaimedPrizes(u64),
-    EventPrizeBaseEscrow(u64),
     EventPrizeClaimExpiry(u64),
 
-    // Appended for two-step manager rotation to preserve key discriminants.
     PendingManager(u64),
 
-    // Appended to cap per-event submission storage growth (security fix).
-    EventSubmissionCount(u64),
+    // Sum of awarded-but-unclaimed prizes. `remaining_escrow` only drops at
+    // claim time, so without this a second selection would see funds an
+    // earlier winner is still entitled to and could promise them twice.
+    EventOwedTotal(u64),
+
+    // Next event id `migrate_events` has yet to convert. The pass is paged
+    // because one invocation may touch only 100 ledger entries, so a
+    // deployment with real history cannot be migrated in a single call.
+    MigrationCursor,
+
+    // Grant awards by recipient, written once at selection, and each
+    // recipient's release progress. A release reads these instead of walking
+    // the winner rows, which grow with every payment. Grants selected before
+    // these keys existed have no roster and keep the row walk.
+    GrantRoster(u64),
+    GrantProgress(u64, Address),
+
+    // A cancel refund the contributor's account could not take (frozen, or no
+    // trustline). Held for `claim_refund` so one account cannot stall the
+    // crank for everyone behind it.
+    UnclaimedRefund(u64, Address),
+
+    // When the current pause began, and the seconds spent paused before it.
+    // Claim windows run on time the contract was open, so a pause cannot run
+    // a winner's window out while they are unable to claim.
+    PausedAt,
+    PausedSeconds,
+
+    // Co-signs crowdfunding milestone releases in place of the admin, so the
+    // keys that can upgrade the contract are not needed for routine payouts.
+    ReleaseValidator,
+    PendingReleaseValidator,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GrantAward {
+    pub position: u32,
+    pub amount: i128,
+}
+
+/// Milestones a recipient has settled, released or forfeited, and what they
+/// were worth. The last settlement takes whatever is left of the award.
+#[contracttype]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct GrantProgress {
+    pub settled: u32,
+    pub settled_amount: i128,
 }
 
 // ============================================================
@@ -232,6 +254,13 @@ pub struct PendingAdmin {
     pub expires_at_ledger: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingValidator {
+    pub target: Address,
+    pub expires_at_ledger: u32,
+}
+
 // ============================================================
 // PENDING MANAGER payload (target + expiry ledger)
 // ============================================================
@@ -243,7 +272,7 @@ pub struct PendingManager {
 }
 
 // ============================================================
-// PENDING UPGRADE (timelocked wasm rotation, H6)
+// PENDING UPGRADE (timelocked wasm rotation)
 // ============================================================
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

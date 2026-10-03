@@ -4,19 +4,16 @@
 use soroban_sdk::{contract, contractimpl, contractmeta, Address, BytesN, Env, String, Vec};
 
 mod admin;
-mod bounty;
-mod crowdfunding;
-mod errors;
+pub mod errors;
 mod escrow;
 mod event_ops;
 mod events;
 mod grant;
-mod hackathon;
 mod idempotency;
 mod profile_client;
 mod storage;
 mod token_whitelist;
-mod types;
+pub mod types;
 
 #[cfg(test)]
 mod tests;
@@ -24,7 +21,7 @@ mod tests;
 use crate::errors::Error;
 use crate::types::*;
 
-contractmeta!(key = "version", val = "1.6.0");
+contractmeta!(key = "version", val = "2.0.0");
 contractmeta!(
     key = "description",
     val = "Boundless events contract: hackathon, bounty, grant + escrow"
@@ -68,6 +65,30 @@ impl EventsContract {
         admin::set_fee_account(&env, new_account)
     }
 
+    pub fn propose_release_validator(env: Env, target: Address) -> Result<(), Error> {
+        admin::propose_release_validator(&env, target)
+    }
+
+    pub fn accept_release_validator(env: Env) -> Result<(), Error> {
+        admin::accept_release_validator(&env)
+    }
+
+    pub fn cancel_pending_release_validator(env: Env) -> Result<(), Error> {
+        admin::cancel_pending_release_validator(&env)
+    }
+
+    pub fn clear_release_validator(env: Env) -> Result<(), Error> {
+        admin::clear_release_validator(&env)
+    }
+
+    pub fn get_release_validator(env: Env) -> Option<Address> {
+        storage::get_release_validator(&env)
+    }
+
+    pub fn get_pending_release_validator(env: Env) -> Option<PendingValidator> {
+        storage::get_pending_release_validator(&env)
+    }
+
     pub fn set_profile_contract(env: Env, new_addr: Address) -> Result<(), Error> {
         admin::set_profile_contract(&env, new_addr)
     }
@@ -94,6 +115,13 @@ impl EventsContract {
 
     pub fn cancel_pending_upgrade(env: Env) -> Result<(), Error> {
         admin::cancel_pending_upgrade(&env)
+    }
+
+    /// Converts up to `max_events` pre-1.7.0 event records, returning how many
+    /// remain. Loop until it reports zero, then call `migrate`. Paged because
+    /// one invocation cannot touch every event of a deployment with history.
+    pub fn migrate_events(env: Env, max_events: u32) -> Result<u64, Error> {
+        admin::migrate_events(&env, max_events)
     }
 
     pub fn migrate(env: Env) -> Result<(), Error> {
@@ -151,6 +179,23 @@ impl EventsContract {
         event_ops::finalize_cancel(&env, event_id, op_id)
     }
 
+    pub fn claim_refund(
+        env: Env,
+        event_id: u64,
+        contributor: Address,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        event_ops::claim_refund(&env, event_id, contributor, op_id)
+    }
+
+    pub fn get_unclaimed_refund(
+        env: Env,
+        event_id: u64,
+        contributor: Address,
+    ) -> Result<i128, Error> {
+        event_ops::get_unclaimed_refund(&env, event_id, contributor)
+    }
+
     pub fn add_funds(
         env: Env,
         event_id: u64,
@@ -159,49 +204,6 @@ impl EventsContract {
         op_id: BytesN<32>,
     ) -> Result<(), Error> {
         event_ops::add_funds(&env, event_id, from, amount, op_id)
-    }
-
-    // ============================================================
-    // BOUNTY PARTICIPATION
-    // ============================================================
-    pub fn apply_to_bounty(
-        env: Env,
-        bounty_id: u64,
-        applicant: Address,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        bounty::apply(&env, bounty_id, applicant, op_id)
-    }
-
-    pub fn withdraw_application(
-        env: Env,
-        bounty_id: u64,
-        applicant: Address,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        bounty::withdraw_application(&env, bounty_id, applicant, op_id)
-    }
-
-    // ============================================================
-    // SUBMISSION
-    // ============================================================
-    pub fn submit(
-        env: Env,
-        event_id: u64,
-        applicant: Address,
-        content_uri: String,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        event_ops::submit(&env, event_id, applicant, content_uri, op_id)
-    }
-
-    pub fn withdraw_submission(
-        env: Env,
-        event_id: u64,
-        applicant: Address,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        event_ops::withdraw_submission(&env, event_id, applicant, op_id)
     }
 
     // ============================================================
@@ -230,6 +232,10 @@ impl EventsContract {
     // ============================================================
     pub fn propose_manager(env: Env, event_id: u64, new_manager: Address) -> Result<(), Error> {
         event_ops::propose_manager(&env, event_id, new_manager)
+    }
+
+    pub fn reclaim_management(env: Env, event_id: u64) -> Result<(), Error> {
+        event_ops::reclaim_management(&env, event_id)
     }
 
     pub fn accept_manager(env: Env, event_id: u64) -> Result<(), Error> {
@@ -262,39 +268,18 @@ impl EventsContract {
     // ============================================================
     // READS (id-keyed only; no linear scans)
     // ============================================================
+    pub fn forfeit_milestone(
+        env: Env,
+        event_id: u64,
+        recipient: Address,
+        milestone: u32,
+        op_id: BytesN<32>,
+    ) -> Result<(), Error> {
+        grant::forfeit_milestone(&env, event_id, recipient, milestone, op_id)
+    }
+
     pub fn get_event(env: Env, event_id: u64) -> Result<EventRecord, Error> {
         event_ops::get_event(&env, event_id)
-    }
-
-    pub fn get_submission(
-        env: Env,
-        event_id: u64,
-        applicant: Address,
-    ) -> Result<Submission, Error> {
-        event_ops::get_submission(&env, event_id, applicant)
-    }
-
-    // Full-list getters return the first page (VIEW_PAGE_LIMIT entries);
-    // page through the _page variants or the per-index getters for more.
-    pub fn get_applicants(env: Env, event_id: u64) -> Result<Vec<Address>, Error> {
-        event_ops::get_applicants(&env, event_id)
-    }
-
-    pub fn get_applicants_page(
-        env: Env,
-        event_id: u64,
-        start: u32,
-        limit: u32,
-    ) -> Result<Vec<Address>, Error> {
-        event_ops::get_applicants_page(&env, event_id, start, limit)
-    }
-
-    pub fn get_applicant_count(env: Env, event_id: u64) -> Result<u32, Error> {
-        event_ops::get_applicant_count(&env, event_id)
-    }
-
-    pub fn get_applicant_at(env: Env, event_id: u64, idx: u32) -> Result<Option<Address>, Error> {
-        event_ops::get_applicant_at(&env, event_id, idx)
     }
 
     pub fn get_winners(env: Env, event_id: u64) -> Result<Vec<Winner>, Error> {

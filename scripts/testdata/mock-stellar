@@ -2,9 +2,28 @@
 set -euo pipefail
 
 # Test-only CLI mock for test-mainnet-upgrade-guards.sh. It never uses a network.
+# Fake wasm files are text with "kind=" and "version=" lines; contract state
+# comes from FAKE_* variables set by the test.
+
+arg_after() {
+    local flag="$1" previous="" arg
+    shift
+    for arg in "$@"; do
+        if [ "$previous" = "$flag" ]; then
+            printf '%s\n' "$arg"
+            return 0
+        fi
+        previous="$arg"
+    done
+    return 1
+}
+
+wasm_field() {
+    sed -n "s/^$2=//p" "$1" | head -1
+}
 
 if [ "${1:-}" = "--version" ]; then
-    printf 'stellar 27.0.0 (test)\n'
+    printf 'stellar %s (test)\n' "${FAKE_CLI_VERSION:-28.1.0}"
     exit 0
 fi
 
@@ -17,17 +36,34 @@ EOF
     exit 0
 fi
 
-if [ "${1:-}" = "contract" ] && [ "${2:-}" = "info" ] && [ "${3:-}" = "hash" ]; then
-    contract_id=""
-    previous=""
-    for arg in "$@"; do
-        if [ "$previous" = "--contract-id" ] || [ "$previous" = "--id" ]; then
-            contract_id="$arg"
-            break
-        fi
-        previous="$arg"
-    done
+if [ "${1:-}" = "contract" ] && [ "${2:-}" = "info" ]; then
+    if wasm="$(arg_after --wasm "$@")"; then
+        kind="$(wasm_field "$wasm" kind)"
+        version="$(wasm_field "$wasm" version)"
+        case "${3:-}" in
+            meta)
+                if [ -n "$version" ]; then
+                    printf '[{"sc_meta_v0":{"key":"version","val":"%s"}}]\n' "$version"
+                else
+                    printf '[]\n'
+                fi
+                ;;
+            interface)
+                case "$kind" in
+                    events) printf '[{"function_v0":{"name":"create_event"}},{"function_v0":{"name":"migrate_events"}}]\n' ;;
+                    profile) printf '[{"function_v0":{"name":"register_earnings"}}]\n' ;;
+                    *) printf '[]\n' ;;
+                esac
+                ;;
+            *)
+                printf 'unsupported fake info command: %s\n' "$*" >&2
+                exit 1
+                ;;
+        esac
+        exit 0
+    fi
 
+    contract_id="$(arg_after --contract-id "$@" || arg_after --id "$@" || true)"
     case "$contract_id" in
         EVENTS) printf '%s\n' "${FAKE_EVENTS_LIVE_HASH:?missing FAKE_EVENTS_LIVE_HASH}" ;;
         PROFILE) printf '%s\n' "${FAKE_PROFILE_LIVE_HASH:?missing FAKE_PROFILE_LIVE_HASH}" ;;
@@ -47,11 +83,8 @@ if [ "${1:-}" = "tx" ] && [ "${2:-}" = "simulate" ]; then
 fi
 
 if [ "${1:-}" = "contract" ] && [ "${2:-}" = "invoke" ]; then
-    contract_id=""
     function_name=""
     after_separator=false
-    previous=""
-
     for arg in "$@"; do
         if [ "$arg" = "--build-only" ]; then
             printf 'BUILT-XDR\n'
@@ -65,44 +98,53 @@ if [ "${1:-}" = "contract" ] && [ "${2:-}" = "invoke" ]; then
             after_separator=true
         fi
     done
-
-    for arg in "$@"; do
-        if [ "$previous" = "--id" ]; then
-            contract_id="$arg"
-            break
-        fi
-        previous="$arg"
-    done
+    contract_id="$(arg_after --id "$@" || true)"
 
     if [ "$contract_id" = "EVENTS" ]; then
-        version="${FAKE_EVENTS_VERSION:-1.1.0}"
+        version="${FAKE_EVENTS_VERSION:-1.7.0}"
         paused="${FAKE_EVENTS_PAUSED:-false}"
         pending="${FAKE_EVENTS_PENDING:-null}"
         migrated="${FAKE_EVENTS_MIGRATED:-null}"
+        applied_code=69
     elif [ "$contract_id" = "PROFILE" ]; then
-        version="${FAKE_PROFILE_VERSION:-1.1.0}"
+        version="${FAKE_PROFILE_VERSION:-1.2.0}"
         paused="${FAKE_PROFILE_PAUSED:-false}"
         pending="${FAKE_PROFILE_PENDING:-null}"
         migrated="${FAKE_PROFILE_MIGRATED:-null}"
-        events_contract="${FAKE_PROFILE_EVENTS_CONTRACT:-EVENTS}"
-        pending_events_contract="${FAKE_PROFILE_EVENTS_PENDING:-null}"
+        applied_code=43
     else
         printf 'unknown fake contract id: %s\n' "$contract_id" >&2
         exit 1
     fi
+    remaining="${FAKE_EVENTS_MIGRATION_REMAINING:-0}"
 
     case "$function_name" in
         version) printf '"%s"\n' "$version" ;;
-        get_admin) printf '"GADMIN"\n' ;;
+        get_admin) printf '"%s"\n' "${FAKE_ADMIN:-GADMIN}" ;;
         is_paused) printf '%s\n' "$paused" ;;
         get_pending_upgrade) printf '%s\n' "$pending" ;;
         get_migrated_to_version) printf '%s\n' "$migrated" ;;
-        get_events_contract) printf '"%s"\n' "$events_contract" ;;
-        get_pending_events_contract) printf '%s\n' "$pending_events_contract" ;;
-        id_base) printf '271539957145796608\n' ;;
-        get_event)
-            printf 'HostError: Error(Contract, #30)\n' >&2
-            exit 1
+        get_events_contract) printf '"%s"\n' "${FAKE_PROFILE_EVENTS_CONTRACT:-EVENTS}" ;;
+        get_pending_events_contract) printf '%s\n' "${FAKE_PROFILE_EVENTS_PENDING:-null}" ;;
+        get_release_validator) printf '%s\n' "${FAKE_EVENTS_VALIDATOR:-null}" ;;
+        migrate)
+            if [ "$contract_id" = "EVENTS" ] && [ "$remaining" -gt 0 ]; then
+                printf 'error: transaction simulation failed: HostError: Error(Contract, #97)\n' >&2
+                exit 1
+            fi
+            if [ "$migrated" = "\"$version\"" ]; then
+                printf 'error: transaction simulation failed: HostError: Error(Contract, #%s)\n' "$applied_code" >&2
+                exit 1
+            fi
+            ;;
+        migrate_events)
+            max="$(arg_after --max_events "$@")"
+            if [ "$max" -eq 0 ] || [ "$max" -gt 8 ]; then
+                max=8
+            fi
+            left=$((remaining - max))
+            [ "$left" -gt 0 ] || left=0
+            printf '%s\n' "$left"
             ;;
         *) printf 'null\n' ;;
     esac

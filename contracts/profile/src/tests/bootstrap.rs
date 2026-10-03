@@ -63,8 +63,7 @@ fn bootstrap_self_rejects_a_replayed_op_id() {
     let err = ctx
         .client
         .try_bootstrap_self(&user, &op_id)
-        .err()
-        .expect("a replayed op_id must be rejected")
+        .expect_err("a replayed op_id must be rejected")
         .unwrap();
     assert_eq!(err, Error::OpAlreadySeen);
 }

@@ -8,7 +8,7 @@ Where this fits in:
 
 - **If you are one of the three signers:** read Parts A, B, C, D, F.1 to F.4, H, I, J, K, L. You can skim Parts E and F.0 to understand what the founder is doing on the other side.
 - **If you are a Boundless employee who is not a signer:** read Parts A, B, F (skim F.0), G, I, J, K, L. Knowing what the admin can and cannot do (Part I) is what keeps you from being phished.
-- **If you are the founder running setup:** read everything in this guide, then also read `docs/admin-custody-policy.md` (the formal policy) and `docs/multisig-preflight.md` (the engineer-facing checklist).
+- **If you are the founder running setup:** read everything here, then `docs/admin-custody-policy.md` (the formal policy), `docs/DEPLOYMENT.md` (the deploy and the admin rotation) and `docs/contract-ops-runbook.md` (how an admin transaction is built, simulated, signed and submitted).
 
 ---
 
@@ -28,7 +28,7 @@ The "keys" here are crypto wallet keys stored in Freighter (a browser extension)
 |---|---|
 | **The multi-sig account** | A Stellar account (a G-address) that the contract treats as admin. It has no individual owner. It only acts when two of three signers agree. |
 | **Signer 1 / 2 / 3** | Three people. Each has their own Freighter wallet on their own computer. Each holds one key. |
-| **Threshold** | The number of signatures needed to do something. Boundless uses 2-of-3 for normal stuff and 3-of-3 for the most dangerous stuff (changing the fee account, swapping admin). |
+| **Threshold** | The number of signatures needed to do something. Boundless uses 2-of-3 for normal stuff and 3-of-3 for the most dangerous stuff (changing the fee account, swapping admin, appointing a release validator). |
 | **Freighter** | A free browser extension that holds your Stellar wallet keys. Available at [freighter.app](https://freighter.app). |
 | **Stellar Lab** | A free website at [lab.stellar.org](https://lab.stellar.org) that lets you build, sign, and submit transactions. We use it to sign multi-sig transactions because Freighter can connect to it. |
 | **Recovery phrase** | 12 random words Freighter shows you once when you first set it up. Whoever has these words can become you. Treat them like a winning lottery ticket. |
@@ -156,329 +156,29 @@ Estimated time: 45 minutes on testnet, plus a 1-day cooldown before repeating on
 
 A common point of confusion: **the multi-sig is NOT the same account that deploys the contract.** They are two different Stellar accounts with different lifetimes and different security models.
 
-There are two distinct accounts in play:
-
 | Account | Lifetime | Role | Signature model |
 |---|---|---|---|
-| **Deployer (initial-admin key)** | Short. Created right before deploy, destroyed right after rotation. | Pays the deploy fee. Runs `stellar contract deploy`. Becomes admin via the contract's constructor. Then hands admin off to the multi-sig and dies. | Single-sig (just one normal Stellar key). |
-| **Multi-sig (the bootstrap account in §E.2 below)** | Long. Lives as long as Boundless does. | Never deploys anything. Becomes admin AFTER the deploy, via `set_admin` + `accept_admin`. Holds admin authority from then on. | 2-of-3 (after §E.5). |
+| **Deployer (initial-admin key)** | Short. Created right before deploy, destroyed right after rotation. | Pays the deploy fee. Deploys both contracts. Becomes admin via the contracts' constructors. Then hands admin off to the multi-sig and dies. | Single-sig (just one normal Stellar key). |
+| **Multi-sig (the bootstrap account in §E.3 below)** | Long. Lives as long as Boundless does. | Never deploys anything. Becomes admin AFTER the deploy, via `set_admin` + `accept_admin`. Holds admin authority from then on. | 2-of-3 (after §E.6). |
 
-The handoff sequence, from `docs/mainnet-deploy-runbook.md` §2.7:
+The handoff, in order (the commands are in `docs/DEPLOYMENT.md`, Section 4):
 
-```bash
-# 1. Founder deploys with the throwaway single-sig deployer key.
-stellar contract deploy --source-account boundless-deployer ...
+1. The founder deploys both contracts with the throwaway deployer key.
+2. The deployer nominates the multi-sig with `set_admin` on each contract.
+3. The multi-sig (two of three signers) accepts with `accept_admin` on each contract.
+4. The founder destroys the deployer key.
 
-# 2. Founder rotates admin from deployer to multi-sig.
-stellar contract invoke \
-  --source-account boundless-deployer \
-  --id <EVENTS_CONTRACT_ID> \
-  -- set_admin --new_admin <MULTISIG_G_ADDRESS>
-
-# 3. Multi-sig (2-of-3) accepts admin authority.
-stellar contract invoke \
-  --source-account <MULTISIG_G_ADDRESS> \
-  --id <EVENTS_CONTRACT_ID> \
-  -- accept_admin
-
-# 4. Founder destroys the deployer key. It is no longer needed.
-stellar keys rm boundless-deployer
-```
-
-After step 4, the only thing that can change contract admin settings is the multi-sig. The deployer key does not exist. There is no path back through the old key, and that is the point.
+After step 4, the only thing that can change contract admin settings is the multi-sig. There is no path back through the old key, and that is the point.
 
 Why this separation matters:
 
 - **Deploying with a single-sig key is fast.** Push the wasm, run the constructor, done. Coordinating three signers just to push contract code would be painful and would give an attacker more windows to interpose.
-- **The deployer is disposable.** If the deployer key leaks before §E.0 step 2, the damage is bounded to a throwaway account that holds no funds. The multi-sig stays clean.
-- **The multi-sig is permanent.** It outlives the deployer. It also outlives any individual signer (Part J covers rotation). The deployer dies young; the multi-sig is built to last.
+- **The deployer is disposable.** If the deployer key leaks before step 2, the damage is bounded to a throwaway account that holds no funds. The multi-sig stays clean.
+- **The multi-sig is permanent.** It outlives the deployer and any individual signer (Part J covers losing one).
 
-So when §E.2 below tells you to create a bootstrap account, that account is destined to become the multi-sig in §E.5. It is not the account you will use to run `stellar contract deploy`. Keep them separate.
+So when §E.3 below tells you to create a bootstrap account, that account is destined to become the multi-sig in §E.6. It is not the account you use to deploy. Keep them separate.
 
-### E.0.B. The complete end-to-end sequence (founder cheat sheet)
-
-This is the full timeline from a clean slate to a fully-rotated mainnet deploy. Twelve steps. Read it once before you start so you have the whole map, then come back and walk through it in order.
-
-Steps that are detailed elsewhere in this guide are cross-linked. Steps that come from other docs (`mainnet-deploy-runbook.md`, `multisig-preflight.md`) are flagged.
-
-#### Step 1. Configure .env.deploy
-
-The deploy scripts read parameters from `.env.deploy` at the repo root. Copy the template and fill in the values.
-
-```bash
-cd boundless-contract
-cp .env.deploy.example .env.deploy
-```
-
-Open `.env.deploy` in your editor and set:
-
-| Variable | What it is |
-|---|---|
-| `ADMIN_IDENTITY` | The name of the Stellar CLI identity that will deploy and hold initial admin authority. Default is `boundless-admin`. This is the throwaway deployer per §E.0, NOT the final admin. Rename to `boundless-deployer` if the default name reads as misleading; the scripts only care about the value. |
-| `FEE_ACCOUNT` | The G-address that receives platform fees. **Separate account.** Not the deployer, not the multi-sig. Must hold a trustline for every token you register; the contract does not enforce this at registration. |
-| `FEE_BPS` | Platform fee in basis points (`100 = 1%`, `250 = 2.5%`). The `.env.deploy.example` template and `deploy.sh` validate the range as `[0, 1000]`, matching the contract's `MAX_FEE_BPS = 1000` (10%) cap per the 2026-06 audit (L4 finding). Values above 1000 are rejected at the script level before any deploy work happens. |
-
-> Contract versions up to 1.0.0 also required a `BOOTSTRAP_CREDITS` value for the profile constructor. The 1.1.0 credit-removal upgrade (2026-06) moved credits to an off-chain ledger in boundless-nestjs; the profile constructor now takes only `--admin`.
-
-`.env.deploy` is gitignored. Never commit a populated file.
-
-#### Step 2. Create the deployer Stellar identity
-
-The deployer is the throwaway single-sig key per §E.0. Generate it under the name you set as `ADMIN_IDENTITY` in `.env.deploy`.
-
-```bash
-stellar keys generate boundless-deployer --network mainnet
-stellar keys address boundless-deployer       # write this down
-```
-
-(Use `--network testnet` and the testnet name `boundless-admin` if rehearsing on testnet.)
-
-The secret stays in the OS keychain. You will not see it.
-
-#### Step 3. Fund the deployer
-
-Send about 10 XLM to the deployer address from your treasury. That budget covers:
-
-- Account reserve (currently 1 XLM).
-- Both contract uploads + deploys (Soroban resource fees: typically <1 XLM each).
-- One `set_events_contract` wiring call.
-- One `register_supported_token` per token.
-- Two `set_admin` rotation calls in Steps 9 + 10.
-- A small headroom.
-
-Verify funding:
-
-```bash
-curl -s "https://horizon.stellar.org/accounts/$(stellar keys address boundless-deployer)" | jq '.balances'
-```
-
-On testnet, friendbot funds it for free:
-
-```bash
-curl "https://friendbot.stellar.org/?addr=$(stellar keys address boundless-admin)"
-```
-
-#### Step 4. Run the deploy script
-
-The script `scripts/deploy/deploy.sh` does the whole deploy in one shot: builds both contract wasms via `stellar contract build`, deploys `boundless-profile`, deploys `boundless-events` wired to profile, calls `profile.set_events_contract` to complete the back-wiring, and writes a deployment record at `deployments/<network>.json`.
-
-```bash
-./scripts/deploy/deploy.sh mainnet
-```
-
-The script:
-
-- Aborts if `stellar` CLI is older than 26.0.0 (Rust 1.90.0 emits reference-types wasm that earlier CLIs reject at simulation time).
-- Aborts if any of `ADMIN_IDENTITY`, `FEE_ACCOUNT`, `FEE_BPS` is unset.
-- Aborts if `FEE_BPS` is outside `[0, 1000]` (matches the contract's `MAX_FEE_BPS = 1000` cap per audit L4; see Step 1).
-- Prints the profile contract id and events contract id on success.
-
-Copy both ids into your team notes and into the boundless-nestjs deployment env:
-
-```
-BOUNDLESS_EVENTS_CONTRACT_ADDRESS=<events id>
-BOUNDLESS_PROFILE_CONTRACT_ADDRESS=<profile id>
-```
-
-Under the hood, the constructor invocations are:
-
-- `boundless-profile`: `--admin <DEPLOYER_ADDR>`.
-- `boundless-events`: `--admin <DEPLOYER_ADDR> --fee_account <FEE_ACCOUNT> --fee_bps <FEE_BPS> --profile_contract <PROFILE_ID>`.
-- Wiring call: `profile.set_events_contract --new_addr <EVENTS_ID>`.
-
-You generally do not need to invoke these by hand. The script is the source of truth; if it breaks, fix the script, do not work around it.
-
-#### Step 5. Register each supported token
-
-```bash
-./scripts/deploy/register_token.sh mainnet <USDC_MAINNET_SAC>
-```
-
-The script:
-
-- Reads the events contract id and fee account from `deployments/mainnet.json` (so Step 4 must have succeeded).
-- Prompts: `fee account holds an active trustline for this token? [y/N]`. **Do not skip this prompt.** The contract does NOT enforce the trustline at registration; missing it means every deposit will fail at runtime.
-- On confirmation, calls `register_supported_token --token <TOKEN>` from the deployer.
-- Appends the token to `supported_tokens` in the deployment record.
-
-To verify the trustline before answering `y`:
-
-```bash
-stellar account get --account "$FEE_ACCOUNT" --network mainnet | jq '.balances'
-```
-
-The asset code + issuer must appear in `balances[]`. If they do not, build a Change Trust operation on the fee account in Stellar Lab first, then re-run the script.
-
-Repeat for each token you support (USDC mandatory, native XLM SAC if you accept XLM).
-
-#### Step 6. Verify on-chain state
-
-```bash
-./scripts/deploy/verify.sh mainnet
-```
-
-The script reads `deployments/mainnet.json` and queries each contract for its full admin-visible state:
-
-- **Events:** `get_admin`, `get_fee_account`, `get_fee_bps`, `get_profile_contract`, `is_paused`.
-- **Profile:** `get_admin`, `get_events_contract`, `is_paused`.
-
-Expected output at this point:
-
-- Both `admin` fields return the **deployer address** (rotation has not happened yet).
-- `events.fee_account` matches `.env.deploy`.
-- `events.fee_bps` matches `.env.deploy`.
-- `events.profile_contract` matches the profile id.
-- `profile.events_contract` matches the events id.
-- Both `is_paused` return `false`.
-
-If anything is wrong, fix it now. The deployer still has single-sig admin authority through Step 8; from Step 9 onward every fix needs two signatures.
-
-#### Step 7. (Optional) Smoke from boundless-nestjs
-
-For extra confidence before the rotation, run the contract smoke battery from boundless-nestjs against the live mainnet deploy:
-
-```bash
-cd ../boundless-nestjs
-BOUNDLESS_EVENTS_CONTRACT_ADDRESS=<events id> \
-BOUNDLESS_PROFILE_CONTRACT_ADDRESS=<profile id> \
-STELLAR_NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015" \
-SMOKE_OWNER_ADDRESS=$(stellar keys address boundless-deployer) \
-SMOKE_TOKEN=<USDC_MAINNET_SAC> \
-npx ts-node -r tsconfig-paths/register scripts/smoke/escrow-contract.ts
-```
-
-The read-path + build-path + drift checks should all pass. Any failure here means the off-chain orchestrator does not agree with the freshly-deployed contract; do NOT rotate admin until that is resolved.
-
-#### Step 8. Build the multi-sig (Parts E.1 through E.8)
-
-This is the middle of the timeline. Walk through:
-
-- §E.1: Decide the three signers (founder + internal employee + external trusted person).
-- Have each signer run Part D to set up Freighter and send you their G-address.
-- §E.2: Generate the bootstrap account (`boundless-multisig-bootstrap`).
-- §E.3: Fund it with ~5 XLM.
-- §E.4: Add the three signer addresses (one `set-options` tx each).
-- §E.5: Set thresholds 0/2/2 AND `--master-weight 0` in a single tx.
-- §E.6: Run `verify-multisig.sh`. Must print `PASS: all 6 checks passed`.
-- §E.7: Tell the signers it is ready.
-- §E.8: 1-day cooldown on mainnet so any mistake surfaces before the rotation.
-
-At the end of Step 8 you have a working multi-sig that is NOT yet recognized by the contract.
-
-#### Step 9. Rotate admin on the events contract
-
-This is the moment the multi-sig becomes real. Two transactions:
-
-```bash
-# 9.a. From the deployer (single-sig): hand admin to the multi-sig.
-EVENTS_ID=$(jq -r '.events_contract' deployments/mainnet.json)
-stellar contract invoke \
-  --source-account boundless-deployer \
-  --id "$EVENTS_ID" \
-  --network mainnet \
-  -- \
-  set_admin \
-  --new_admin <MULTISIG_G_ADDRESS>
-
-# 9.b. From the multi-sig (needs 2-of-3 signatures): accept admin.
-# Build per §F.0.B, get the Lab signing link, collect two signatures,
-# then submit per §F.0.C.
-stellar contract invoke \
-  --source-account <MULTISIG_G_ADDRESS> \
-  --id "$EVENTS_ID" \
-  --network mainnet \
-  --build-only \
-  -- \
-  accept_admin
-```
-
-Step 9.b is the first time the multi-sig signs anything on mainnet. Treat it like a drill: clear comms in `#ops-admin-requests`, both signers verify the Lab tx matches `accept_admin` against the events contract id, two signatures collected, then submit.
-
-**Verification:** `./scripts/deploy/verify.sh mainnet` now shows `events.admin` = multi-sig address (profile.admin still = deployer until Step 10).
-
-#### Step 10. Rotate admin on the profile contract
-
-Repeat Step 9 against the profile contract.
-
-```bash
-PROFILE_ID=$(jq -r '.profile_contract' deployments/mainnet.json)
-stellar contract invoke \
-  --source-account boundless-deployer \
-  --id "$PROFILE_ID" \
-  --network mainnet \
-  -- \
-  set_admin \
-  --new_admin <MULTISIG_G_ADDRESS>
-
-# Then multi-sig accept_admin per §F.0.B.
-stellar contract invoke \
-  --source-account <MULTISIG_G_ADDRESS> \
-  --id "$PROFILE_ID" \
-  --network mainnet \
-  --build-only \
-  -- \
-  accept_admin
-```
-
-**Verification:** `./scripts/deploy/verify.sh mainnet` now shows BOTH contracts' `admin` = multi-sig address.
-
-#### Step 11. Final verification + proof-of-life
-
-Re-run both verification scripts. Both must pass cleanly.
-
-```bash
-./scripts/admin/verify-multisig.sh <MULTISIG_G_ADDRESS> mainnet
-./scripts/deploy/verify.sh mainnet
-```
-
-- `verify-multisig.sh` must still print `PASS: all 6 checks passed`. Rotation should not have touched the multi-sig itself.
-- `verify.sh` must show both `events.admin` and `profile.admin` as the multi-sig address.
-
-Then do one real admin op end to end to prove the multi-sig signing path works in production. The lowest-risk option is a no-op `set_fee_bps --new_bps <current value>` (e.g., re-set to whatever `events.fee_bps` already reads). It changes nothing but exercises the full multi-sig build + sign + submit flow against the live contract.
-
-Record in team notes:
-
-- The events `set_admin` tx hash and `accept_admin` tx hash.
-- The profile `set_admin` tx hash and `accept_admin` tx hash.
-- The proof-of-life multi-sig tx hash.
-- The output of `verify-multisig.sh`.
-- The output of `verify.sh`.
-
-This is your evidence the rotation happened cleanly.
-
-#### Step 12. Destroy the deployer + close out BACKLOG
-
-Once Step 11 is fully green:
-
-```bash
-stellar keys rm boundless-deployer
-```
-
-The deployer secret is gone from your OS keychain. The remaining XLM balance on the deployer account is stranded (you can sweep it to the treasury before this step if you want; the gas headroom is small enough that abandoning it is also fine).
-
-Update `BACKLOG.md`:
-
-- Move `Mainnet admin multi-sig provisioned per docs/admin-custody-policy.md (3 signers, 2-of-3).` from open to Done. Link the four rotation tx hashes + the `verify-multisig` + `verify.sh` outputs.
-- If a `Destroy deployer key after mainnet rotation` entry exists, mark it Done with the date.
-
-After Step 12, the contracts are live, the multi-sig is admin on both, and there is no single-sig back door anywhere. From this point on every admin op runs through Parts F and G of this guide.
-
-#### Recap of the whole sequence
-
-1. Configure `.env.deploy` (ADMIN_IDENTITY, FEE_ACCOUNT, FEE_BPS).
-2. Generate the deployer identity (`stellar keys generate boundless-deployer`).
-3. Fund the deployer (~10 XLM).
-4. Run `./scripts/deploy/deploy.sh mainnet` (builds + deploys both contracts + wires `set_events_contract` + writes `deployments/mainnet.json`).
-5. Run `./scripts/deploy/register_token.sh mainnet <token>` per supported token (confirm fee-account trustline at the prompt).
-6. Run `./scripts/deploy/verify.sh mainnet` to confirm on-chain state matches the deployment record.
-7. (Optional) Smoke from boundless-nestjs against the deployed contracts.
-8. Build the multi-sig (§E.1 through §E.8).
-9. Rotate events admin to multi-sig (`set_admin` from deployer + `accept_admin` from multi-sig).
-10. Rotate profile admin to multi-sig (same two transactions on profile).
-11. Re-run both verifiers + do one proof-of-life multi-sig op. Record all hashes.
-12. `stellar keys rm boundless-deployer` + close out `BACKLOG.md`.
-
-Estimated wall time for a confident operator: half a day on testnet, a full day on mainnet (mostly the §E.8 cooldown + waiting for signers to arrive in the channel).
+The whole sequence, start to finish: build the multi-sig (§E.1 to §E.10 below), deploy and verify with the deployer (`docs/DEPLOYMENT.md` 4.2 to 4.5), rotate admin to the multi-sig and prove it with one no-op admin operation (`docs/DEPLOYMENT.md` 4.5), destroy the deployer key (4.6), then close out (§E.11).
 
 ### E.1. Decide who the three signers are
 
@@ -508,13 +208,34 @@ What NOT to do:
 
 Once you pick the three, each of them walks through Part D of this guide to set up Freighter and send you their G-address. From here on we assume all three G-addresses are in hand.
 
-### E.2. Create the bootstrap Stellar account
+### E.2. Pre-conditions and key generation
 
-The "bootstrap" account is a regular Stellar account that will turn into the multi-sig. We create it with one normal key, fund it, configure it, and then disable that original key. After §E.5 it can only act when two of the three signers agree.
+Before anyone generates a key:
+
+- [ ] The founder and every signer have re-read `admin-custody-policy.md` in the past 30 days.
+- [ ] The three signers are identified by name and role (founder, internal, external) and recorded in the founder's notes.
+- [ ] The founder has personally confirmed each signer is reachable on a backup channel that is not the one used to enroll them.
+- [ ] A path is chosen: software (the launch baseline) or hardware (the target state). The trade-offs are in `admin-custody-policy.md` §3-bis.
+
+**Software path (launch baseline).** Each signer completes Part D on their own machine. Part D covers every hygiene requirement in policy §3-bis: dedicated browser profile, Freighter only, full disk encryption, a unique passphrase, a paper-only recovery phrase, reading the address back in two places, and one signed test transaction. Different people, different machines, and if you can manage it different operating systems: the 2-of-3 is only as strong as the independence of the three machines.
+
+**Hardware path (target state).** For each signer, on their own machine with the device present:
+
+- [ ] Generate a new ed25519 keypair on the Yubikey or equivalent; the secret never leaves the device.
+- [ ] Read the public address back from the device twice, in two different tools, and confirm they match.
+- [ ] Sign a testnet transaction using only the device.
+- [ ] Back up per policy §3 (a 2-of-3 Shamir split in three physically separate places).
+- [ ] Send the public address to the founder over an authenticated channel.
+
+Either way, the founder ends up with three G-addresses, each tied to a secret only its signer can reach.
+
+### E.3. Create the bootstrap Stellar account
+
+The "bootstrap" account is a regular Stellar account that will turn into the multi-sig. We create it with one normal key, fund it, configure it, and then disable that original key. After §E.6 it can only act when two of the three signers agree.
 
 You will need:
 
-- Stellar CLI version 23.x or newer installed (run `stellar --version` to check).
+- Stellar CLI 28.1.0 installed (run `stellar --version` to check).
 - A clean machine you trust (your own laptop with disk encryption on, not a shared workstation).
 - Internet access.
 
@@ -532,13 +253,13 @@ Print the public address so you can see what was generated:
 stellar keys address boundless-multisig-bootstrap
 ```
 
-You will get back a G-address such as `GAVSIZQZFWUOFMCTDEBY43DBE5GV4RJRW423QQE5QIITLUTVNF34GY4J`. Write this down. After §E.5 this is the address the Boundless contract will recognize as admin.
+You will get back a G-address such as `GAVSIZQZFWUOFMCTDEBY43DBE5GV4RJRW423QQE5QIITLUTVNF34GY4J`. Write this down. After §E.6 this is the address the Boundless contract will recognize as admin.
 
-### E.3. Fund the bootstrap account
+### E.4. Fund the bootstrap account
 
 A Stellar account does not exist on the network until it has the minimum balance (currently 1 XLM plus 0.5 XLM per data entry such as a signer or trustline). Fund it before you try to configure it, or the configuration transactions will fail with `account_not_found`.
 
-**Testnet:** use friendbot. Replace `<ADDRESS>` with the address you printed in §E.2.
+**Testnet:** use friendbot. Replace `<ADDRESS>` with the address you printed in §E.3.
 
 ```bash
 curl "https://friendbot.stellar.org/?addr=<ADDRESS>"
@@ -548,11 +269,11 @@ You should get back a JSON payload. The bootstrap will now have 10,000 testnet X
 
 **Mainnet:** send at least 5 XLM to the bootstrap address from the founder's existing mainnet Stellar account (your treasury or your personal wallet). 5 XLM covers the minimum reserve plus headroom for four signer entries (master + three) and a small fee budget for the setup transactions.
 
-### E.4. Add the three signer addresses
+### E.5. Add the three signer addresses
 
-Each signer is added in a separate `set-options` transaction. Each transaction is signed automatically by the bootstrap's master key (which still has weight 1 at this point; the CLI handles the signing using the secret it stored in §E.2). You will not see a sign prompt.
+Each signer is added in a separate `set-options` transaction. Each transaction is signed automatically by the bootstrap's master key (which still has weight 1 at this point; the CLI handles the signing using the secret it stored in §E.3). You will not see a sign prompt.
 
-Adapt `--network` and `--network-passphrase` if you are on mainnet (use `mainnet` and `"Public Global Stellar Network ; September 2015"`).
+Use `--network testnet` while practicing and your named mainnet network for real (`docs/DEPLOYMENT.md` 4.2). Pass only `--network`; adding `--network-passphrase` as well breaks RPC resolution.
 
 ```bash
 # Signer 1: the founder's Freighter address
@@ -560,38 +281,35 @@ stellar tx new set-options \
   --source-account boundless-multisig-bootstrap \
   --signer GDSBURJQPMB7HW7TYN3AL2RSISUHIJIWBWSEM2UQFZJFAP7FX2SU2A4K \
   --signer-weight 1 \
-  --network testnet \
-  --network-passphrase "Test SDF Network ; September 2015"
+  --network testnet
 
 # Signer 2: the internal employee's Freighter address
 stellar tx new set-options \
   --source-account boundless-multisig-bootstrap \
   --signer GB6ZG4GIPF2YVYPVC4YKLADM2DT73UMV7TR5IERI3YJJOV4NEHLWTWE5 \
   --signer-weight 1 \
-  --network testnet \
-  --network-passphrase "Test SDF Network ; September 2015"
+  --network testnet
 
 # Signer 3: the external trusted person's Freighter address
 stellar tx new set-options \
   --source-account boundless-multisig-bootstrap \
   --signer GCHITNTBTYD6P76GLPGVUXVDFPPF6EAXZ23QEUXVSFFLV3IQDPIRQRQN \
   --signer-weight 1 \
-  --network testnet \
-  --network-passphrase "Test SDF Network ; September 2015"
+  --network testnet
 ```
 
 What each flag does:
 
-- `--source-account boundless-multisig-bootstrap`: tells the CLI to use the keystore alias from §E.2 as both the transaction source AND the signer. The CLI loads the secret from your OS keychain, signs the tx, and submits it. You never see the secret.
+- `--source-account boundless-multisig-bootstrap`: tells the CLI to use the keystore alias from §E.3 as both the transaction source AND the signer. The CLI loads the secret from your OS keychain, signs the tx, and submits it. You never see the secret.
 - `--signer <G-address>`: the public address of the person we are adding. Copy this from the message that signer sent you. **Triple-check this string.** A single wrong character means the multi-sig adds the wrong person and that signer's real address is silently excluded.
 - `--signer-weight 1`: their signing weight. Weight 1 means each signer counts as one vote. Weight 0 would remove the signer; weights above 1 would give that signer disproportionate power.
-- `--network` and `--network-passphrase`: which Stellar network to use. Keep these consistent across all three calls or you will end up with signers on one network and configuration on another.
+- `--network`: which Stellar network to use. Keep it the same across all three calls or you will end up with signers on one network and configuration on another.
 
 After all three calls succeed, the bootstrap account has four signers total: the original master key (weight 1) plus the three new G-addresses (weight 1 each). The thresholds are still 0/0/0 at this point, so any one of those four keys can authorize anything. The multi-sig is not yet locked. We fix that in the next step.
 
-### E.5. Set the thresholds AND disable the master key
+### E.6. Set the thresholds AND disable the master key
 
-This is the step that turns the account into a real multi-sig. It is the most important transaction in the whole setup; if you skip the `--master-weight 0` part, the multi-sig is defeated because the original bootstrap key can still sign solo. (This is the trap call-out in `docs/multisig-preflight.md` §2.)
+This is the step that turns the account into a real multi-sig. It is the most important transaction in the whole setup; if you skip the `--master-weight 0` part, the multi-sig is defeated because the original bootstrap key can still sign solo. An attacker who steals that one seed could then sign alone.
 
 Do it all in a single transaction:
 
@@ -602,69 +320,95 @@ stellar tx new set-options \
   --med-threshold 2 \
   --high-threshold 2 \
   --master-weight 0 \
-  --network testnet \
-  --network-passphrase "Test SDF Network ; September 2015"
+  --network testnet
 ```
 
 What each flag means in plain English:
 
 - `--low-threshold 0`: read-only operations (such as `bump_sequence`) need no signatures. There is nothing sensitive at this tier.
 - `--med-threshold 2`: normal operations (`set_fee_bps`, `pause`, `unpause`, contract upgrades) need two signatures from the three signers.
-- `--high-threshold 2`: dangerous operations (`set_fee_account`, `set_admin`, adding or removing signers) need two signatures by Stellar's account model. The Boundless policy in `admin-custody-policy.md` §4 requires three-of-three for these operations in practice. The three-of-three rule is enforced by the founder requesting all three signatures in Slack, not by the threshold itself.
-- `--master-weight 0`: the original bootstrap key (the one you generated in §E.2) can no longer sign. From this moment on, the only way to do anything with this account is to collect two signatures from the three signers added in §E.4.
+- `--high-threshold 2`: dangerous operations (`set_fee_account`, `set_admin`, `propose_release_validator`, adding or removing signers) need two signatures by Stellar's account model. The Boundless policy in `admin-custody-policy.md` §4 requires three-of-three for the first three in practice. That rule is enforced by the founder requesting all three signatures, not by the threshold itself.
+- `--master-weight 0`: the original bootstrap key (the one you generated in §E.3) can no longer sign. From this moment on, the only way to do anything with this account is to collect two signatures from the three signers added in §E.5.
 
 After this transaction lands, the bootstrap secret in the CLI keystore is useless. Keep it as evidence but understand it is now a dead key. If you lose it, that is fine. If someone steals it, that is also fine. There is nothing it can do alone.
 
-### E.6. Verify with the script
+### E.7. Verify with the script
 
-Run the verification script. It is the safety net that catches any mistake you made above.
+Run the verification script. It is the safety net that catches any mistake you made above. Pin the roster you collected so it also fails on any signer you did not expect:
 
 ```bash
-./scripts/admin/verify-multisig.sh <BOOTSTRAP_ADDRESS> testnet
+EXPECTED_SIGNERS=<G1>,<G2>,<G3> ./scripts/admin/verify-multisig.sh <BOOTSTRAP_ADDRESS> testnet
 ```
 
-It must print exactly:
-
-```
-PASS: all 6 checks passed
-```
-
-The 6 checks are:
+It must end with `PASS: all 9 checks passed` (8 without `EXPECTED_SIGNERS`). The checks are:
 
 1. Master key weight = 0.
 2. Low threshold = 0.
 3. Medium threshold = 2.
 4. High threshold = 2.
-5. Exactly 3 non-master signers.
+5. Exactly 3 signers with non-zero weight.
 6. Each signer has weight 1.
+7. No pre-auth transaction, hash-x or signed-payload signers (they would count toward the quorum without a person behind them).
+8. Every signer is a distinct G-address, not the multi-sig itself.
+9. With `EXPECTED_SIGNERS` set, the signer set is exactly that roster.
 
-Below that, the script prints the three signer addresses it found. **Read them.** Confirm by eye that each one matches one of the three G-addresses the signers sent you. A typo in §E.4 means the multi-sig is configured but with the wrong people in it, and you only discover that when you try to use it for real.
+Below that, the script prints the three signer addresses it found. **Read them.** Confirm by eye that each one matches one of the three G-addresses the signers sent you.
 
 If verification fails:
 
 - Re-read which check failed.
 - If you have NOT yet flipped `--master-weight 0`, you can fix things with another `set-options` transaction from the bootstrap. For example, if you typoed Signer 2's address, run `set-options --signer <wrong-address> --signer-weight 0` to remove the wrong entry, then `set-options --signer <correct-address> --signer-weight 1` to add the right one.
-- If you HAVE already flipped `--master-weight 0` and the multi-sig is broken, you cannot fix it with the bootstrap. You start over from §E.2 with a fresh bootstrap account. The old one is abandoned; the small XLM balance is the cost of the mistake.
+- If you HAVE already flipped `--master-weight 0` and the multi-sig is broken, you cannot fix it with the bootstrap. You start over from §E.3 with a fresh bootstrap account. The old one is abandoned; the small XLM balance is the cost of the mistake.
 
-Do NOT move on with a failing `verify-multisig`.
+Do NOT move on with a failing `verify-multisig`. Run it again with `mainnet` against the production multi-sig before the rotation; `./deploy_mainnet.sh rotate-admin` runs it for you and stops if it fails.
 
-### E.7. Tell the signers it is ready
+### E.8. Fee account trustlines
 
-Share the multi-sig public address (the bootstrap address from §E.2) with all three signers via the agreed trusted channel (Signal, secure video, or in person, NOT email and NOT public Slack). Each signer should:
+The fee account receives the platform fee inside every `create_event` and `add_funds` call and every crowdfunding release. If it lacks an authorized trustline for a supported token, every one of those calls in that token reverts. Check before registering a token and before rotating the fee account:
+
+```bash
+# register_token.sh and deploy_mainnet.sh register-token run this themselves
+# and refuse to sign if it fails.
+./scripts/admin/verify-fee-trustline.sh mainnet <FEE_ACCOUNT> <CODE:ISSUER>
+
+# Before set_fee_account: run it against the NEW account once per registered
+# token, and do not sign until each passes.
+./scripts/admin/verify-fee-trustline.sh mainnet <NEW_FEE_ACCOUNT> USDC:<ISSUER>
+```
+
+`FeeAccountUpdated` and `TokenRegistered` alert the team when they land (backend monitoring).
+
+### E.9. Tell the signers it is ready
+
+Share the multi-sig public address (the bootstrap address from §E.3) with all three signers via the agreed trusted channel (Signal, secure video, or in person, NOT email and NOT public Slack). Each signer should:
 
 - Record the address in their local notes.
 - Add it as a "Watch-only" account in their Freighter so they can see whenever a transaction touches it.
 - Acknowledge receipt back to you so you have written confirmation each signer got it.
 
-### E.8. The 1-day cooldown (mainnet only)
+### E.10. Testnet drill and the 1-day cooldown (mainnet only)
 
-Wait 24 hours before doing anything important with the new multi-sig on mainnet. During this window:
+Before mainnet, run the same multi-sig against a throwaway testnet contract (`docs/contract-ops-runbook.md`, Section 4):
 
-- Re-run the testnet drill (Part H) with all three signers.
-- Have each signer practice signing one throwaway transaction on testnet, end to end.
+- [ ] A 2-of-3 signature on a routine operation, such as `set_fee_bps`.
+- [ ] A 3-of-3 signature on a high-bar operation, such as `set_fee_account`.
+- [ ] A 1-of-3 attempt on either, which must fail.
+- [ ] The drill and its transaction hashes written up in the team's notes.
+
+Then wait 24 hours before doing anything important with the new multi-sig on mainnet. During this window:
+
+- Have each signer practice signing one throwaway transaction on testnet, end to end (Part H).
 - Verify each signer can reach you on the backup channel within 1 hour.
 
 This cooldown catches "Signer 3 forgot their Freighter passphrase" and "Signer 2's recovery phrase is at the wrong house this week." Better to find out before the multi-sig is live as Boundless admin.
+
+### E.11. After the rotation
+
+Once `docs/DEPLOYMENT.md` 4.5 and 4.6 are done:
+
+- Re-run `verify-multisig.sh` with `mainnet`; the rotation must not have changed the multi-sig itself.
+- Record the two `set_admin` and two `accept_admin` transaction hashes, the proof-of-life transaction, and the output of both verifiers in the team's notes.
+- Add a Done line to `BACKLOG.md` with those hashes.
 
 ---
 
@@ -684,7 +428,7 @@ There are two shapes of admin transaction. You need to know which shape applies 
 
 **Shape 1: Stellar native operations.** Anything that changes the multi-sig account itself: adding or removing a signer, changing thresholds, paying out XLM, setting up a trustline. These are built directly in Stellar Lab.
 
-**Shape 2: Soroban contract operations.** Anything that calls into the Boundless contract: `set_fee_bps`, `pause`, `unpause`, `propose_upgrade`, `apply_upgrade`, `set_admin`, `accept_admin`, `register_supported_token`, `cancel_pending_upgrade`, `migrate`. These are built via the Stellar CLI (or an admin script), then loaded into Stellar Lab for the signers.
+**Shape 2: Soroban contract operations.** Anything that calls into a Boundless contract: `set_fee_bps`, `pause`, `unpause`, `propose_upgrade`, `apply_upgrade`, `migrate_events`, `migrate`, `set_admin`, `accept_admin`, `register_supported_token`, `propose_release_validator`, `cancel_pending_upgrade`. These are built and simulated with the Stellar CLI (or `deploy_mainnet.sh`), then loaded into Stellar Lab for the signers.
 
 #### F.0.A. Building a native op (Shape 1) in Stellar Lab
 
@@ -692,7 +436,7 @@ Example use case: rotating Signer 2 because their laptop was stolen.
 
 1. Open [lab.stellar.org](https://lab.stellar.org). Switch the network in the top-right corner to "Test Net" or "Public Net" depending on where you are.
 2. Click "Build Transaction" in the left nav.
-3. Set **Source Account** to the multi-sig G-address (the bootstrap address from §E.2).
+3. Set **Source Account** to the multi-sig G-address (the bootstrap address from §E.3).
 4. Click **Fetch Next Sequence Number** next to the Sequence field. Lab pulls the current sequence from Horizon and fills it in.
 5. Set **Base Fee** to `1000` (which is 0.0001 XLM). Bump it higher if the network is congested.
 6. Click **Add Operation** and pick **Set Options** from the drop-down. Fill in only the fields you want to change:
@@ -706,40 +450,13 @@ Example use case: rotating Signer 2 because their laptop was stolen.
 
 That is the entire founder side for a Shape 1 op. The signers then walk through §F.2 to sign and you submit at the end.
 
-#### F.0.B. Building a contract op (Shape 2) via Stellar CLI
+#### F.0.B. Building a contract op (Shape 2)
 
 Example use case: changing the platform fee from 1.5% to 1.7%.
 
-Soroban contract operations are more complex than native ops because the contract requires `admin.require_auth()`. That auth has to be packaged inside the transaction's Soroban authorization entries, not just the outer Stellar signature. The Stellar CLI handles most of this for you.
+Contract operations are never assembled by hand in Lab. The founder builds them with the Stellar CLI with the multi-sig as the source and runs them through `stellar tx simulate`, which attaches the contract's authorization and resource data; an unsimulated transaction is rejected. `docs/contract-ops-runbook.md` Section 5 has the exact commands, and for upgrades and pausing `./deploy_mainnet.sh prepare-*` does it and checks the contract's state first (`docs/upgrade-runbook.md`).
 
-```bash
-stellar contract invoke \
-  --network testnet \
-  --source-account boundless-ops-builder \
-  --id <EVENTS_CONTRACT_ID> \
-  --build-only \
-  -- \
-  set_fee_bps \
-  --new_bps 170
-```
-
-What the flags mean:
-
-- `--source-account boundless-ops-builder`: any funded Stellar account on the network. Used to simulate and pay the network fee. It does NOT need to be the admin. Use a low-balance throwaway "builder" account, not the multi-sig.
-- `--id <EVENTS_CONTRACT_ID>`: the boundless-events contract address on the network. Get this from `BACKLOG.md` (testnet) or the deploy notes (mainnet).
-- `--build-only`: tells the CLI to print the unsigned XDR instead of trying to sign and submit. Without this, the CLI would try to send the tx with just the builder's signature, which the contract would reject because the builder is not admin.
-- After the `--` separator: the contract function name (`set_fee_bps`) and its arguments. `170` is the new fee in basis points; 170 bps = 1.7%.
-
-The CLI prints an XDR string. That is your unsigned transaction with Soroban auth placeholders.
-
-You now need two things:
-
-1. **Replace the source account** from `boundless-ops-builder` to the multi-sig, because the contract checks the admin via auth, but Lab and Horizon also expect a coherent source. The cleanest way: paste the XDR into Stellar Lab's **View XDR** tab, change the Source Account field to the multi-sig address, click **Save** → Lab re-encodes it.
-2. **Re-simulate** so the Soroban resource fee and footprint match the new source. Lab does this for you when you click **Sign Transaction**.
-
-Then copy the Lab signing URL and post it to the signers.
-
-For ops that are tricky to hand-assemble (any `propose_upgrade`, `apply_upgrade`, or `migrate`), there are helper scripts in `boundless-nestjs/scripts/admin/` that produce the correct XDR directly. Use those if they exist for your op; they handle the source-account swap and Soroban auth packaging for you. If a helper does not exist yet for the op you need, write one before you do this manually on mainnet.
+The founder then opens Lab's **Sign Transaction** view, pastes the prepared XDR, and shares that link with the signers.
 
 #### F.0.C. Posting the request to signers
 
@@ -756,9 +473,8 @@ Then tag the signers you need. For a 2-sig op, tag two of the three (rotate whic
 
 Wait for the signed XDRs to come back in the thread. Once you have a quorum:
 
-1. Paste the final fully-signed XDR into Stellar Lab's **Submit Transaction** tab.
-2. Click **Submit**. Lab posts it to Horizon.
-3. The tx hash comes back. Paste the hash in the Slack thread to confirm: `Landed: <https://stellar.expert/explorer/testnet/tx/HASH|HASH>`.
+1. Submit the final fully-signed XDR from the CLI: `stellar tx send "<signed-xdr>" --network <net>`. The CLI prints the exact error if it fails; Lab's Submit can look successful when nothing landed.
+2. Paste the hash in the Slack thread to confirm: `Landed: <https://stellar.expert/explorer/testnet/tx/HASH|HASH>`.
 
 That closes the loop for everyone watching.
 
@@ -792,7 +508,7 @@ When you click the link, Lab opens with the transaction already loaded. It shows
 
 A second signer does the same thing: clicks the Lab link the founder posts (or the updated XDR from step F.2), reviews the transaction, signs with their Freighter, posts the result back.
 
-Once two signatures are on the transaction, the founder (or anyone with the final XDR) clicks "Submit" in Lab. Lab sends it to Stellar. A few seconds later it lands on chain. Done.
+Once two signatures are on the transaction, the founder submits it with `stellar tx send`. A few seconds later it lands on chain. Done.
 
 ### F.4. What to refuse to sign
 
@@ -854,25 +570,27 @@ After the drill, the founder logs it in the team's notes with the testnet transa
 
 ## Part I. What this multi-sig is allowed to do
 
-The Boundless contract limits even the admin. Knowing what the admin can and cannot do helps you sanity-check requests.
+The Boundless contracts limit even the admin. Knowing what the admin can and cannot do helps you sanity-check requests.
 
-The admin **can:**
+On the events contract the admin **can:**
 
 - Change the default fee rate (`set_fee_bps`).
 - Change the fee account address (`set_fee_account`). This one needs all three signatures.
-- Pause the contract in an emergency (`pause`).
-- Resume after a fix (`unpause`).
-- Propose a contract upgrade (`propose_upgrade`). The upgrade does not apply for at least one day after the proposal, so customers can react.
-- Apply a proposed upgrade after the timelock (`apply_upgrade`).
-- Cancel a queued upgrade (`cancel_pending_upgrade`).
-- Run the post-upgrade migration (`migrate`).
-- Add or remove tokens from the whitelist.
-- Rotate the admin itself (`set_admin` and `accept_admin`). Needs all three signatures.
+- Pause the contract in an emergency (`pause`) and resume after a fix (`unpause`).
+- Propose a contract upgrade (`propose_upgrade`). On current mainnet builds the upgrade cannot apply until about a day (17,280 ledgers) after the proposal, so users can see it coming. The deployed events 1.7.0 and profile 1.2.0 builds have no such wait; the 2.0.0 upgrade restores it.
+- Apply a proposed upgrade after that wait (`apply_upgrade`), or cancel it (`cancel_pending_upgrade`).
+- Run the post-upgrade migration (`migrate_events`, then `migrate`).
+- Add or remove tokens from the whitelist (`register_supported_token`, `deregister_supported_token`).
+- Rotate the admin itself (`set_admin`, then `accept_admin` from the new admin). Needs all three signatures.
+- Appoint a crowdfunding release validator (`propose_release_validator`, all three signatures), withdraw the proposal, or remove the validator at once (`clear_release_validator`). The validator key accepts the appointment with its own signature, never the multi-sig's. While no validator is appointed, the multi-sig co-signs crowdfunding milestone releases itself.
+- Point events at a different profile contract (`set_profile_contract`).
+
+On the profile contract the admin **can** pause, unpause and upgrade it the same way, rotate its admin, move its binding to a new events contract through a timelocked two-step (`propose_events_contract`, then `accept_events_contract` about a day later), and lower a user's reputation with a recorded reason (`admin_slash_reputation`).
 
 The admin **cannot:**
 
-- Take funds out of escrow. Escrow is paid only by the contract's own rules (winners, milestones, refunds). The admin has no withdrawal authority.
-- Override an event's winner. Winners are set by `select_winners` and are subject to the contract's checks.
+- Take funds out of escrow. Escrow is paid only by the contract's own rules (winners, milestones, refunds). The admin has no withdrawal authority, and a release validator only decides when a crowdfunding release happens, never where the money goes.
+- Override an event's winner. Winners are set by the event's owner or manager through `select_winners`, subject to the contract's checks.
 - Reverse a settled transaction. Once a payment lands, it lands.
 
 If anyone tells you to "let me sign one thing to drain the escrow," that request is impossible. The contract will reject it. Refuse anyway and call the founder.
@@ -954,11 +672,12 @@ Things that defeat the multi-sig:
 | **Admin** | The role the contract recognizes as allowed to change settings. The Boundless admin is the multi-sig account. |
 | **Boundless** | The platform you work for. Runs bounties, hackathons, grants, and crowdfunding on Stellar. |
 | **Contract** | The on-chain code that runs Boundless. There are two: `events` and `profile`. |
+| **Release validator** | A key outside the multi-sig that the admin can appoint to co-sign crowdfunding milestone releases. It cannot move money anywhere else. |
 | **Drill** | A practice run of the multi-sig procedure on testnet. We do it once before mainnet and every quarter after. |
 | **Escrow** | Money held by the contract on behalf of an event, waiting to be paid to winners or refunded to contributors. |
 | **Founder** | Collins. The current operator of the multi-sig and the main contact for any signing question. |
 | **Friendbot** | A free Stellar service that hands out testnet XLM. We use it to fund testnet wallets. |
-| **High threshold** | The signature count needed for the most dangerous ops (`set_fee_account`, `set_admin`). Set to 2 by default for Boundless but the policy requires 3 of 3 in practice for those operations. |
+| **High threshold** | The signature count needed for the most dangerous ops (`set_fee_account`, `set_admin`, `propose_release_validator`). Set to 2 by default for Boundless but the policy requires 3 of 3 in practice for those operations. |
 | **Lab (Stellar Lab)** | A free website that lets us build and sign transactions. The tool we use for multi-sig signing. |
 | **Low threshold** | The signature count for read-only ops. Set to 0 because no important op uses the low threshold. |
 | **Medium threshold** | The signature count for normal ops (`set_fee_bps`, `pause`, `unpause`, upgrades). Set to 2. This is the workhorse setting. |
@@ -981,8 +700,9 @@ Things that defeat the multi-sig:
 ## Where to look next
 
 - `docs/admin-custody-policy.md`: the formal policy. Read it once.
-- `docs/multisig-preflight.md`: the technical checklist for setting up a new multi-sig. Founder uses this for setup.
-- `docs/mainnet-deploy-runbook.md`: the procedure for deploying Boundless contracts and pointing them at the multi-sig.
+- `docs/DEPLOYMENT.md`: deploying the contracts and handing admin to the multi-sig.
+- `docs/contract-ops-runbook.md`: how every admin transaction is built, simulated, signed and submitted.
+- `docs/upgrade-runbook.md`: contract upgrades, pause and unpause.
 - `scripts/admin/verify-multisig.sh`: the script that confirms a multi-sig is correctly configured.
 
 If anything in this guide is unclear, ask the founder to update it. The whole point of writing it down is so the next person does not have to figure it out from scratch.

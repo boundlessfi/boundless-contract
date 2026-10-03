@@ -1,25 +1,28 @@
-use soroban_sdk::{Address, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{Address, BytesN, Env, Map, Symbol, Vec};
 
 use crate::admin::{self, MAX_FEE_BPS};
-use crate::bounty;
-use crate::crowdfunding;
 use crate::errors::Error;
 use crate::escrow;
 use crate::events as evt;
-use crate::grant;
-use crate::hackathon;
 use crate::idempotency::{self, tag};
 use crate::profile_client;
 use crate::storage;
 use crate::token_whitelist;
 use crate::types::{
-    CancellationBranch, CancellationState, CreateEventParams, EventRecord, EventStatus,
-    PendingManager, Pillar, PrizeAward, ReleaseKind, Submission, Winner, WinnerSpec,
+    CancellationBranch, CancellationState, CreateEventParams, EventRecord, EventStatus, GrantAward,
+    PendingManager, Pillar, PrizeAward, ReleaseKind, Winner, WinnerSpec,
 };
 
 const MAX_TITLE_LEN: u32 = 120;
 
-const MAX_WINNERS_PER_SELECT: u32 = 50;
+// Sized to fit one transaction under mainnet's 100-entry footprint and
+// 50-write limits, which the test host enforces. A single-release award writes
+// a winner row and a prize award; a grant award writes a winner row and shares
+// one roster entry. Single-release events may select in several batches;
+// grants select once, so the grant cap is also the most recipients a grant
+// can have.
+pub const MAX_AWARDS_PER_SELECT: u32 = 20;
+pub const MAX_GRANT_AWARDS: u32 = 40;
 
 const PENDING_MANAGER_TTL_LEDGERS: u32 = 17_280;
 
@@ -27,18 +30,24 @@ const PENDING_MANAGER_TTL_LEDGERS: u32 = 17_280;
 // before winners are selected). A per-event override needs a migration.
 pub const PRIZE_CLAIM_WINDOW_SECS: u64 = 90 * 24 * 60 * 60;
 
-// Participant sets (applicants, contributors, submissions) are unbounded:
-// each entry is its own persistent ledger entry paid for by the participant's
-// own transaction, and no state-changing path iterates the full set in one
-// transaction (refunds are cranked in batches, winner selection takes an
-// explicit bounded list). Full-list reads page through VIEW_PAGE_LIMIT
-// entries per call so simulation stays inside per-tx read-entry limits.
-pub const VIEW_PAGE_LIMIT: u32 = 100;
-pub const MAX_CONTENT_URI_LEN: u32 = 256;
+// Contributor sets are unbounded: each entry is its own persistent ledger
+// entry paid for by the contributor's own transaction, and no state-changing
+// path iterates the full set in one transaction (refunds are cranked in
+// batches, winner selection takes an explicit bounded list). Full-list reads
+// page through VIEW_PAGE_LIMIT entries per call so simulation stays inside
+// the 100-entry footprint, which a page also spends on the instance, the
+// event and the count.
+pub const VIEW_PAGE_LIMIT: u32 = 90;
 
-pub const MAX_REFUNDS_PER_BATCH: u32 = 25;
+// Each refund touches the contributor's amount, slot and token balance; 15 keeps
+// a batch inside the 100-entry footprint with room to spare.
+pub const MAX_REFUNDS_PER_BATCH: u32 = 15;
 
 const MIN_CONTRIBUTION_STROOPS: i128 = 100_000_000_i128;
+
+// Reputation is minted by whoever owns an event, and anyone can own one, so
+// a single award or release must not be able to move it far.
+pub const MAX_REPUTATION_BUMP: u32 = 100;
 
 // ============================================================
 // CREATE EVENT
@@ -74,14 +83,22 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
         return Err(Error::InvalidBudget);
     }
 
-    if params.winner_distribution.is_empty() {
+    if params.prize_floors.is_empty() {
         return Err(Error::InvalidDistribution);
     }
-    let mut sum: u32 = 0;
-    for (_pos, percent) in params.winner_distribution.iter() {
-        sum = sum.saturating_add(percent);
+    // Floors may total less than the budget. The headroom is deliberate: it is
+    // what a later selection draws on to award a position that had no floor at
+    // create time.
+    let mut floor_sum: i128 = 0;
+    for (_pos, floor) in params.prize_floors.iter() {
+        if floor <= 0 {
+            return Err(Error::InvalidDistribution);
+        }
+        floor_sum = floor_sum
+            .checked_add(floor)
+            .ok_or(Error::DistributionMismatch)?;
     }
-    if sum != 100 {
+    if floor_sum > params.total_budget {
         return Err(Error::DistributionMismatch);
     }
 
@@ -112,14 +129,17 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
         title: params.title.clone(),
         created_at: env.ledger().timestamp(),
         deadline: params.deadline,
-        winner_distribution: params.winner_distribution.clone(),
+        prize_floors: params.prize_floors.clone(),
         fee_bps_override: params.fee_bps_override,
     };
-    match params.pillar {
-        Pillar::Hackathon => hackathon::validate_create(env, &provisional, &params.owner)?,
-        Pillar::Bounty => bounty::validate_create(env, &provisional, &params.owner)?,
-        Pillar::Grant => grant::validate_create(env, &provisional, &params.owner)?,
-        Pillar::Crowdfunding => crowdfunding::validate_create(env, &provisional, &params.owner)?,
+    let release_kind_fits = match params.pillar {
+        Pillar::Hackathon | Pillar::Bounty => matches!(params.release_kind, ReleaseKind::Single),
+        Pillar::Grant | Pillar::Crowdfunding => {
+            matches!(params.release_kind, ReleaseKind::Multi(n) if n > 0)
+        }
+    };
+    if !release_kind_fits {
+        return Err(Error::InvalidReleaseKind);
     }
 
     if !is_crowdfunding {
@@ -192,6 +212,10 @@ pub fn propose_manager(env: &Env, event_id: u64, new_manager: Address) -> Result
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     resolve_manager(env, event_id, &event.owner).require_auth();
 
+    if storage::get_pending_manager(env, event_id).is_some() {
+        evt::PendingManagerCancelled { event_id }.publish(env);
+    }
+
     let expires_at = env
         .ledger()
         .sequence()
@@ -247,6 +271,33 @@ pub fn cancel_pending_manager(env: &Env, event_id: u64) -> Result<(), Error> {
     storage::clear_pending_manager(env, event_id);
 
     evt::PendingManagerCancelled { event_id }.publish(env);
+    Ok(())
+}
+
+/// The owner takes management back from a delegated manager, which is how an
+/// event recovers from a manager key that is lost. Only before any award: from
+/// selection on, the awards are the manager's decision and stay theirs.
+pub fn reclaim_management(env: &Env, event_id: u64) -> Result<(), Error> {
+    admin::require_not_paused(env)?;
+    let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    if !matches!(event.status, EventStatus::Active) {
+        return Err(Error::EventNotActive);
+    }
+    event.owner.require_auth();
+    if !matches!(event.pillar, Pillar::Crowdfunding) && storage::winner_count(env, event_id) > 0 {
+        return Err(Error::WinnersAlreadySelected);
+    }
+
+    storage::clear_event_manager(env, event_id);
+    if storage::get_pending_manager(env, event_id).is_some() {
+        storage::clear_pending_manager(env, event_id);
+        evt::PendingManagerCancelled { event_id }.publish(env);
+    }
+    evt::ManagementReclaimed {
+        event_id,
+        owner: event.owner,
+    }
+    .publish(env);
     Ok(())
 }
 
@@ -358,14 +409,25 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
         && storage::unclaimed_prize_count(env, event_id) > 0
     {
         let expiry = storage::get_prize_claim_expiry(env, event_id).unwrap_or(0);
-        if env.ledger().timestamp() <= expiry {
+        if admin::open_time(env) <= expiry {
             return Err(Error::WinnersAlreadySelected);
         }
+    }
+    // A grant award ends milestone by milestone, released or forfeited, each
+    // on the record. Cancelling over an owed award would end it silently.
+    if matches!(event.pillar, Pillar::Grant) && storage::owed_total(env, event_id) > 0 {
+        return Err(Error::AwardsOutstanding);
     }
 
     let manager = resolve_manager(env, event_id, &event.owner);
     manager.require_auth();
     idempotency::require_unseen(env, &manager, &op_id)?;
+
+    // Cancelling supersedes every award: both claim paths require Active, so
+    // from here nothing can be claimed and the reservation must be released
+    // rather than withheld. Withholding it would strand the funds with no
+    // path back out. The guards above are what protect awards still claimable.
+    storage::set_owed_total(env, event_id, 0);
 
     let remaining = event.remaining_escrow;
     let count = storage::contributor_count(env, event_id);
@@ -378,6 +440,13 @@ pub fn start_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<(), E
     } else {
         CancellationBranch::ProRataPartners
     };
+    evt::CancellationStarted {
+        event_id,
+        branch,
+        remaining,
+        non_owner_total,
+    }
+    .publish(env);
 
     if matches!(branch, CancellationBranch::OwnerOnly) {
         if remaining > 0 {
@@ -420,8 +489,13 @@ pub fn process_cancel_batch(
     op_id: BytesN<32>,
 ) -> Result<u32, Error> {
     admin::require_not_paused(env)?;
+    // An empty batch would still spend the op_id, letting a stranger burn the
+    // id the backend is about to use.
+    if max_refunds == 0 {
+        return Err(Error::InvalidBatchSize);
+    }
     // Permissionless crank: no caller to authorize, so namespace under the
-    // contract's own address — isolated from every user/privileged domain.
+    // contract's own address, isolated from every user/privileged domain.
     let domain = env.current_contract_address();
     idempotency::require_unseen(env, &domain, &op_id)?;
 
@@ -462,16 +536,32 @@ pub fn process_cancel_batch(
             CancellationBranch::OwnerOnly => 0,
         };
 
-        if payout > 0 {
-            escrow::release(env, &event.token, &c, payout);
+        storage::set_contributor_amount(env, event_id, &c, 0);
+        if payout <= 0 {
+            // A pro-rata share can floor to nothing; say so rather than skip.
+            evt::ContributorRefunded {
+                event_id,
+                contributor: c.clone(),
+                amount: 0,
+            }
+            .publish(env);
+        } else if escrow::try_release(env, &event.token, &c, payout) {
             evt::ContributorRefunded {
                 event_id,
                 contributor: c.clone(),
                 amount: payout,
             }
             .publish(env);
+        } else {
+            let held = storage::unclaimed_refund(env, event_id, &c).saturating_add(payout);
+            storage::set_unclaimed_refund(env, event_id, &c, held);
+            evt::RefundDeferred {
+                event_id,
+                contributor: c.clone(),
+                amount: payout,
+            }
+            .publish(env);
         }
-        storage::set_contributor_amount(env, event_id, &c, 0);
     }
 
     storage::set_cancellation_state(env, event_id, &state);
@@ -523,106 +613,37 @@ pub fn finalize_cancel(env: &Env, event_id: u64, op_id: BytesN<32>) -> Result<()
     Ok(())
 }
 
-// ============================================================
-// SUBMIT
-// ============================================================
-pub fn submit(
+pub fn claim_refund(
     env: &Env,
     event_id: u64,
-    applicant: Address,
-    content_uri: String,
+    contributor: Address,
     op_id: BytesN<32>,
 ) -> Result<(), Error> {
     admin::require_not_paused(env)?;
-
     let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    if !matches!(event.status, EventStatus::Active) {
-        return Err(Error::EventNotActive);
+    contributor.require_auth();
+    idempotency::require_unseen(env, &contributor, &op_id)?;
+
+    let amount = storage::unclaimed_refund(env, event_id, &contributor);
+    if amount <= 0 {
+        return Err(Error::NoRefundOwed);
     }
-    if matches!(event.pillar, Pillar::Crowdfunding) {
-        return Err(Error::InvalidPillar);
-    }
+    storage::set_unclaimed_refund(env, event_id, &contributor, 0);
+    idempotency::mark_seen(env, &contributor, &op_id);
 
-    applicant.require_auth();
-    idempotency::require_unseen(env, &applicant, &op_id)?;
-
-    // Reused rather than adding a new variant — stays inside the
-    // contracterror 50-variant cap (see BACKLOG.md L7 for precedent).
-    if content_uri.len() > MAX_CONTENT_URI_LEN {
-        return Err(Error::TitleTooLong);
-    }
-
-    let existing = storage::get_submission(env, event_id, &applicant);
-
-    if existing.is_none() {
-        let needs_application = matches!(event.pillar, Pillar::Bounty | Pillar::Grant);
-        if needs_application && storage::applicant_slot(env, event_id, &applicant) == 0 {
-            return Err(Error::ApplicantNotApplied);
-        }
-    }
-
-    // Count the submission before writing. There is no cap: each submission
-    // is its own ledger entry whose write and rent are paid by the
-    // submitter's transaction, so spam addresses fund their own storage and
-    // cannot lock real participants out of a full event.
-    storage::append_submission(env, event_id, &applicant)?;
-
-    let submitted_at = existing
-        .as_ref()
-        .map(|s| s.submitted_at)
-        .unwrap_or_else(|| env.ledger().timestamp());
-
-    let submission = Submission {
-        applicant: applicant.clone(),
-        content_uri: content_uri.clone(),
-        submitted_at,
-    };
-    storage::set_submission(env, event_id, &applicant, &submission);
-
-    evt::Submitted {
+    escrow::release(env, &event.token, &contributor, amount);
+    evt::ContributorRefunded {
         event_id,
-        applicant: applicant.clone(),
-        content_uri,
+        contributor,
+        amount,
     }
     .publish(env);
-
-    idempotency::mark_seen(env, &applicant, &op_id);
     Ok(())
 }
 
-// ============================================================
-// WITHDRAW SUBMISSION
-// ============================================================
-pub fn withdraw_submission(
-    env: &Env,
-    event_id: u64,
-    applicant: Address,
-    op_id: BytesN<32>,
-) -> Result<(), Error> {
-    admin::require_not_paused(env)?;
-
-    let event = storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    if !matches!(event.status, EventStatus::Active) {
-        return Err(Error::EventNotActive);
-    }
-
-    applicant.require_auth();
-    idempotency::require_unseen(env, &applicant, &op_id)?;
-
-    if storage::get_submission(env, event_id, &applicant).is_none() {
-        return Err(Error::SubmissionNotFound);
-    }
-
-    storage::remove_submission(env, event_id, &applicant);
-
-    evt::SubmissionWithdrawn {
-        event_id,
-        applicant: applicant.clone(),
-    }
-    .publish(env);
-
-    idempotency::mark_seen(env, &applicant, &op_id);
-    Ok(())
+pub fn get_unclaimed_refund(env: &Env, event_id: u64, contributor: Address) -> Result<i128, Error> {
+    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
+    Ok(storage::unclaimed_refund(env, event_id, &contributor))
 }
 
 // ============================================================
@@ -649,30 +670,27 @@ pub fn select_winners(
     idempotency::require_unseen(env, &manager, &op_id)?;
 
     let existing_count = storage::winner_count(env, event_id);
-    match event.release_kind {
-        ReleaseKind::Single => {
-            // Winner rows but no base-escrow key means a pre-1.3.0 push-model
-            // event: keep it one-shot. New events award each position once.
-            if existing_count > 0 && storage::get_prize_base_escrow(env, event_id).is_none() {
-                return Err(Error::WinnersAlreadySelected);
-            }
-        }
-        ReleaseKind::Multi(_) => {
-            for idx in 0..existing_count {
-                if let Some(w) = storage::winner_at(env, event_id, idx) {
-                    if w.milestone.is_none() {
-                        return Err(Error::WinnersAlreadySelected);
-                    }
-                }
-            }
-        }
+    // A grant selects once, and only a selection gives it winner records.
+    // Single events award in batches; each position may be awarded once,
+    // enforced per position below.
+    if matches!(event.release_kind, ReleaseKind::Multi(_)) && existing_count > 0 {
+        return Err(Error::WinnersAlreadySelected);
     }
 
     if winners.is_empty() {
         return Err(Error::NoSubmissions);
     }
-    if winners.len() > MAX_WINNERS_PER_SELECT {
+    let cap = match event.release_kind {
+        ReleaseKind::Single => MAX_AWARDS_PER_SELECT,
+        ReleaseKind::Multi(_) => MAX_GRANT_AWARDS,
+    };
+    if winners.len() > cap {
         return Err(Error::InvalidWinnerPosition);
+    }
+    for spec in winners.iter() {
+        if spec.reputation_bump > MAX_REPUTATION_BUMP {
+            return Err(Error::ReputationBumpTooLarge);
+        }
     }
 
     let mut seen_positions: Vec<u32> = Vec::new(env);
@@ -687,54 +705,50 @@ pub fn select_winners(
         if already {
             return Err(Error::DuplicateWinnerPosition);
         }
-        if event.winner_distribution.get(spec.position).is_none() {
-            return Err(Error::InvalidWinnerPosition);
-        }
         seen_positions.push_back(spec.position);
     }
 
-    let now = env.ledger().timestamp();
+    let now = admin::open_time(env);
 
     match event.release_kind {
         ReleaseKind::Single => {
-            // Amounts are fixed against the escrow baseline captured at the
-            // first selection; claim_prize does the transfer and profile calls.
-            let base_escrow = match storage::get_prize_base_escrow(env, event_id) {
-                Some(b) => b,
-                None => {
-                    let b = event.remaining_escrow;
-                    storage::set_prize_base_escrow(env, event_id, b);
-                    b
-                }
-            };
+            // `remaining_escrow` only drops at claim time, so a prize named by
+            // an earlier selection is still sitting in it. Reserving the owed
+            // total is what stops a later selection promising the same funds
+            // twice and leaving the second winner unable to claim.
+            let owed_before = storage::owed_total(env, event_id);
 
-            let mut total_owed: i128 = 0;
+            let mut batch_total: i128 = 0;
             for spec in winners.iter() {
                 if storage::get_prize_award(env, event_id, spec.position).is_some() {
                     return Err(Error::DuplicateWinnerPosition);
                 }
-                let percent = event
-                    .winner_distribution
-                    .get(spec.position)
-                    .ok_or(Error::InvalidDistribution)? as i128;
-                let amount = base_escrow.saturating_mul(percent) / 100_i128;
-                if amount <= 0 {
+                if spec.amount <= 0 {
                     return Err(Error::InvalidDistribution);
                 }
-                total_owed = total_owed.saturating_add(amount);
+                if let Some(floor) = event.prize_floors.get(spec.position) {
+                    if spec.amount < floor {
+                        return Err(Error::InvalidDistribution);
+                    }
+                }
+                batch_total = batch_total
+                    .checked_add(spec.amount)
+                    .ok_or(Error::InsufficientEscrow)?;
             }
-            if total_owed > event.remaining_escrow {
+            let committed = batch_total
+                .checked_add(owed_before)
+                .ok_or(Error::InsufficientEscrow)?;
+            if committed > event.remaining_escrow {
                 return Err(Error::InsufficientEscrow);
             }
+            storage::set_owed_total(env, event_id, committed);
 
             for (idx, spec) in winners.iter().enumerate() {
-                let percent = event
-                    .winner_distribution
-                    .get(spec.position)
-                    .ok_or(Error::InvalidDistribution)? as i128;
-                let amount = base_escrow.saturating_mul(percent) / 100_i128;
+                let amount = spec.amount;
 
-                let anchor_idx = existing_count + (idx as u32);
+                let anchor_idx = existing_count
+                    .checked_add(idx as u32)
+                    .ok_or(Error::InvalidWinnerPosition)?;
                 storage::append_winner(
                     env,
                     event_id,
@@ -772,7 +786,49 @@ pub fn select_winners(
                 storage::set_prize_claim_expiry(env, event_id, expiry);
             }
         }
-        ReleaseKind::Multi(_) => {
+        ReleaseKind::Multi(milestones) => {
+            // Same reservation as Single: milestone claims drain
+            // `remaining_escrow` gradually, so without it a second grantee
+            // could be awarded funds the first is still owed.
+            let owed_before = storage::owed_total(env, event_id);
+            let mut batch_total: i128 = 0;
+            let mut roster: Map<Address, GrantAward> = Map::new(env);
+            for spec in winners.iter() {
+                // Every milestone must pay something, or the award can never
+                // be released in full.
+                if spec.amount < milestones as i128 {
+                    return Err(Error::InvalidDistribution);
+                }
+                // Releases are tracked per recipient, so a second award to the
+                // same address could never be paid.
+                if roster.contains_key(spec.recipient.clone()) {
+                    return Err(Error::DuplicateRecipient);
+                }
+                roster.set(
+                    spec.recipient.clone(),
+                    GrantAward {
+                        position: spec.position,
+                        amount: spec.amount,
+                    },
+                );
+                if let Some(floor) = event.prize_floors.get(spec.position) {
+                    if spec.amount < floor {
+                        return Err(Error::InvalidDistribution);
+                    }
+                }
+                batch_total = batch_total
+                    .checked_add(spec.amount)
+                    .ok_or(Error::InsufficientEscrow)?;
+            }
+            let committed = batch_total
+                .checked_add(owed_before)
+                .ok_or(Error::InsufficientEscrow)?;
+            if committed > event.remaining_escrow {
+                return Err(Error::InsufficientEscrow);
+            }
+            storage::set_owed_total(env, event_id, committed);
+            storage::set_grant_roster(env, event_id, &roster);
+
             for spec in winners.iter() {
                 storage::append_winner(
                     env,
@@ -780,7 +836,7 @@ pub fn select_winners(
                     &Winner {
                         recipient: spec.recipient.clone(),
                         position: spec.position,
-                        amount: 0,
+                        amount: spec.amount,
                         milestone: None,
                         paid_at: None,
                     },
@@ -792,6 +848,15 @@ pub fn select_winners(
     let winners_count = winners.len();
     storage::set_event(env, event_id, &event);
 
+    for spec in winners.iter() {
+        evt::WinnerAwarded {
+            event_id,
+            recipient: spec.recipient,
+            position: spec.position,
+            amount: spec.amount,
+        }
+        .publish(env);
+    }
     evt::WinnersSelected {
         event_id,
         count: winners_count,
@@ -803,7 +868,7 @@ pub fn select_winners(
 }
 
 // ============================================================
-// CLAIM PRIZE (pull model for Single-release events; #61)
+// CLAIM PRIZE (pull model for Single-release events)
 // ============================================================
 pub fn claim_prize(
     env: &Env,
@@ -859,6 +924,17 @@ pub fn claim_prize(
     let unclaimed = storage::unclaimed_prize_count(env, event_id);
     storage::set_unclaimed_prize_count(env, event_id, unclaimed.saturating_sub(1));
 
+    // Claiming converts owed into paid; both balances drop together so the
+    // reservation in select_winners stays exact. Checked rather than clamped:
+    // owed dropping below a claim means the reservation has already drifted,
+    // and swallowing that would let the next selection over-promise the pool.
+    let owed = storage::owed_total(env, event_id);
+    let owed_after = owed.checked_sub(amount).ok_or(Error::InsufficientEscrow)?;
+    if owed_after < 0 {
+        return Err(Error::InsufficientEscrow);
+    }
+    storage::set_owed_total(env, event_id, owed_after);
+
     event.remaining_escrow = event.remaining_escrow.saturating_sub(amount);
     if event.remaining_escrow == 0 {
         event.status = EventStatus::Completed;
@@ -882,10 +958,10 @@ pub fn claim_prize(
     let profile = profile_client::client(env);
     let reason_win = Symbol::new(env, "win");
 
-    let bootstrap_op = idempotency::derive_child(env, &op_id, tag::BOOTSTRAP);
+    let bootstrap_op = idempotency::derive_child(env, &award.recipient, &op_id, tag::BOOTSTRAP);
     let _ = profile.try_bootstrap(&award.recipient, &bootstrap_op);
 
-    let rep_op = idempotency::derive_child(env, &op_id, tag::BUMP_REP);
+    let rep_op = idempotency::derive_child(env, &award.recipient, &op_id, tag::BUMP_REP);
     let _ = profile.try_bump_reputation(
         &award.recipient,
         &award.reputation_bump,
@@ -893,7 +969,8 @@ pub fn claim_prize(
         &rep_op,
     );
 
-    let earnings_op = idempotency::derive_child(env, &op_id, tag::REGISTER_EARNINGS);
+    let earnings_op =
+        idempotency::derive_child(env, &award.recipient, &op_id, tag::REGISTER_EARNINGS);
     let _ = profile.try_register_earnings(&award.recipient, &event.token, &amount, &earnings_op);
 
     Ok(())
@@ -904,42 +981,6 @@ pub fn claim_prize(
 // ============================================================
 pub fn get_event(env: &Env, event_id: u64) -> Result<EventRecord, Error> {
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)
-}
-
-pub fn get_submission(env: &Env, event_id: u64, applicant: Address) -> Result<Submission, Error> {
-    storage::get_submission(env, event_id, &applicant).ok_or(Error::SubmissionNotFound)
-}
-
-// Full-list getters return the first VIEW_PAGE_LIMIT entries; use the
-// _page variants (or the per-index getters / the off-chain indexer) to
-// read beyond that.
-pub fn get_applicants(env: &Env, event_id: u64) -> Result<Vec<Address>, Error> {
-    get_applicants_page(env, event_id, 0, VIEW_PAGE_LIMIT)
-}
-
-pub fn get_applicants_page(
-    env: &Env,
-    event_id: u64,
-    start: u32,
-    limit: u32,
-) -> Result<Vec<Address>, Error> {
-    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::applicants_snapshot(
-        env,
-        event_id,
-        start,
-        limit.min(VIEW_PAGE_LIMIT),
-    ))
-}
-
-pub fn get_applicant_count(env: &Env, event_id: u64) -> Result<u32, Error> {
-    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::applicant_count(env, event_id))
-}
-
-pub fn get_applicant_at(env: &Env, event_id: u64, idx: u32) -> Result<Option<Address>, Error> {
-    storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
-    Ok(storage::applicant_at(env, event_id, idx))
 }
 
 pub fn get_winners(env: &Env, event_id: u64) -> Result<Vec<Winner>, Error> {
@@ -1008,6 +1049,3 @@ pub fn get_contributor_amount(
     storage::get_event(env, event_id).ok_or(Error::EventNotFound)?;
     Ok(storage::get_contributor_amount(env, event_id, &contributor))
 }
-
-#[allow(dead_code)]
-const _MARK_USED: (Option<Symbol>,) = (None,);

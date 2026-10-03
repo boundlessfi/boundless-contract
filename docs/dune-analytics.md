@@ -1,4 +1,4 @@
-# Boundless On-chain Analytics — Dune Integration Guide
+# Boundless on-chain analytics: Dune integration guide
 
 This document covers everything needed to build and maintain the Boundless Dune
 dashboard: the complete emitted-event schema (topic names, ScVal layout, field
@@ -44,17 +44,17 @@ Each row in `history_contract_events` has:
 | `contract_id` | `VARCHAR` | Contract address (StrKey) |
 | `topics_decoded` | `VARCHAR` | JSON **array of ScVal objects**. The event name is at `$[0].symbol`, e.g. `[{"symbol":"EventCreated"}]` |
 | `data_decoded` | `VARCHAR` | JSON **ScVal map**: `{"map":[{"key":{"symbol":"id"},"val":{"u64":"7"}}, ...]}`. Each value is wrapped by its ScVal type |
-| `closed_at_date` | `DATE` | **Partition column** — always filter it to avoid full-table scans |
+| `closed_at_date` | `DATE` | **Partition column**; always filter it to avoid full-table scans |
 | `topics` / `data` | `VARCHAR` | Raw XDR (use the `*_decoded` columns instead) |
 | `type_string` | `VARCHAR` | Event type string (`"contract"` for Soroban events) |
-| `transaction_hash` | `VARBINARY` | Transaction hash — wrap with `to_hex()` for a readable string |
+| `transaction_hash` | `VARBINARY` | Transaction hash; wrap with `to_hex()` for a readable string |
 | `successful` | `BOOLEAN` | Whether the transaction succeeded |
 
 **Decoding, correctly (verified against live `stellar.history_contract_events`):**
 
-1. **Event name** is *not* `$[0]` — that element is an object. Use:
+1. **Event name** is *not* `$[0]`; that element is an object. Use:
    `JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol')`.
-2. **Fields** are *not* flat `$.field` — they live inside a positional `map`,
+2. **Fields** are *not* flat `$.field`; they live inside a positional `map`,
    each value wrapped by its ScVal type. Rebuild the map into
    `MAP(field_name → ScVal JSON)`, then read each field by type:
 
@@ -75,7 +75,7 @@ map_from_entries(
 
 The canonical, Dune-tested queries live in [`docs/dune-queries/`](./dune-queries);
 start with `10_event_created_decode_test.sql`. The snippets in §4 below illustrate
-intent — treat the `.sql` files as the source of truth.
+intent; treat the `.sql` files as the source of truth.
 
 ---
 
@@ -100,7 +100,7 @@ Emitted by `create_event` for every pillar.
 | `title` | `String` | Human label; omit from aggregates |
 
 **TVL note.** For all pillars except Crowdfunding, the **full** `total_budget`
-is escrowed at create time — the protocol fee is charged *on top* (the owner
+is escrowed at create time. The protocol fee is charged *on top* (the owner
 pays `budget + fee`; the fee is forwarded to the fee account, and escrow is
 credited the full `total_budget`). So `total_budget` is exactly the escrow
 inflow; use it directly. For Crowdfunding, escrow starts at 0 and grows via
@@ -108,10 +108,12 @@ inflow; use it directly. For Crowdfunding, escrow starts at 0 and grows via
 (non-Crowdfunding) + `FundsAdded.amount`, debiting `WinnerPaid` +
 `MilestoneClaimed` + `ContributorRefunded` + `OwnerResidualRefunded`.
 
-> **Fee revenue is not derivable from these events.** The fee is transferred to
-> the fee account with no dedicated event and is not embedded in any event
-> `amount`. For protocol-fee analytics, read `stellar.history_transactions` /
-> effects for transfers to the fee account, not `history_contract_events`.
+> **Deposit fees are not derivable from these events.** The fee charged on top
+> of a deposit is transferred to the fee account with no dedicated event and is
+> not embedded in any event `amount`. For protocol-fee analytics, read
+> `stellar.history_transactions` / effects for transfers to the fee account,
+> not `history_contract_events`. The one exception is the fee withheld from a
+> crowdfunding release, which `MilestoneFeeCharged` reports from 2.0.0.
 
 #### `EventCancelled`
 Emitted at the end of the cancel flow (`start_cancel` fast-path or
@@ -134,14 +136,39 @@ fee-free, with the fee taken later at `claim_milestone`).
 | `amount` | `I128` | Amount credited to escrow |
 | `new_remaining` | `I128` | `remaining_escrow` after this deposit |
 
+#### `CancellationStarted`
+From 2.0.0. Emitted by `start_cancel`, before any refund moves, with the
+arithmetic the refunds will follow.
+
+| Field | ScVal type | Notes |
+|-------|-----------|-------|
+| `event_id` | `U64` | |
+| `branch` | enum string (`"OwnerOnly"`, `"FullPartnerThenResidual"`, `"ProRataPartners"`) | How the pool is split |
+| `remaining` | `I128` | `remaining_escrow` when cancellation began |
+| `non_owner_total` | `I128` | Sum of partner contributions still refundable |
+
 #### `ContributorRefunded`
-Emitted once per contributor per batch during paged cancel.
+Emitted once per contributor per batch during paged cancel, and again when a
+held refund is collected with `claim_refund`. From 2.0.0 a contributor whose
+pro-rata share rounds down to nothing gets one with `amount = 0`.
 
 | Field | ScVal type | Notes |
 |-------|-----------|-------|
 | `event_id` | `U64` | |
 | `contributor` | `Address` | |
-| `amount` | `I128` | Refunded amount |
+| `amount` | `I128` | Refunded amount; may be 0 |
+
+#### `RefundDeferred`
+From 2.0.0. The contributor's account could not take its refund (frozen, or no
+trustline), so the amount stays in the contract for them to collect later with
+`claim_refund`, which emits `ContributorRefunded`. No tokens move with this
+event: count the outflow at the later `ContributorRefunded`, not here.
+
+| Field | ScVal type | Notes |
+|-------|-----------|-------|
+| `event_id` | `U64` | |
+| `contributor` | `Address` | |
+| `amount` | `I128` | Held for the contributor |
 
 #### `OwnerResidualRefunded`
 Emitted when the event owner receives their escrow residual at cancel time.
@@ -155,6 +182,9 @@ Emitted when the event owner receives their escrow residual at cancel time.
 ---
 
 ### 2.2 Participation events
+
+**Removed in 2.0.0.** Applying and submitting moved off chain, so these events
+stop at the 2.0.0 upgrade and appear only in history from earlier versions.
 
 #### `Applied`
 Emitted when a builder applies to a Bounty or Grant.
@@ -174,7 +204,7 @@ Emitted when a builder withdraws their application before submitting.
 
 #### `Submitted`
 Emitted on every `submit` call (first submit and re-submits). Hackathon, Bounty,
-Grant only — Crowdfunding has no submission step.
+Grant only; Crowdfunding has no submission step.
 
 | Field | ScVal type | Notes |
 |-------|-----------|-------|
@@ -202,17 +232,32 @@ Emitted once at the end of `select_winners`, regardless of pillar.
 | `event_id` | `U64` | |
 | `count` | `U32` | Number of winners chosen |
 
+#### `WinnerAwarded`
+From 2.0.0. One per award in a `select_winners` call, emitted just before
+`WinnersSelected`. Nothing is paid yet: prizes are paid at `WinnerPaid`, grant
+awards milestone by milestone at `MilestoneClaimed`.
+
+| Field | ScVal type | Notes |
+|-------|-----------|-------|
+| `event_id` | `U64` | |
+| `recipient` | `Address` | |
+| `position` | `U32` | |
+| `amount` | `I128` | The whole award |
+
 #### `WinnerPaid`
-**Single-release pillars only** (Hackathon, Bounty). One event per winner.
-Grant and Crowdfunding winners receive funds via `MilestoneClaimed`.
+Emitted by `claim_prize` when a winner collects a prize, so **single-release
+pillars only** (Hackathon, Bounty), one event per award. It is not emitted by
+`select_winners`, which only records awards (`WinnerAwarded`); contracts before
+1.3.0 paid at selection and emitted it from there, so older history mixes both.
+Grant and Crowdfunding recipients are paid through `MilestoneClaimed`.
 
 | Field | ScVal type | Notes |
 |-------|-----------|-------|
 | `event_id` | `U64` | |
 | `recipient` | `Address` | Winner wallet |
-| `position` | `U32` | 1st, 2nd, … |
+| `position` | `U32` | 1st, 2nd, and so on |
 | `amount` | `I128` | Amount transferred (stroops) |
-| `milestone` | `U32` or `NULL` | Always `NULL` when emitted by `select_winners` |
+| `milestone` | `U32` or `NULL` | Always `NULL` from `claim_prize` |
 
 #### `MilestoneClaimed`
 Grant and Crowdfunding payouts. One event per (recipient, milestone).
@@ -222,7 +267,31 @@ Grant and Crowdfunding payouts. One event per (recipient, milestone).
 | `event_id` | `U64` | |
 | `recipient` | `Address` | |
 | `milestone` | `U32` | 0-based milestone index |
-| `amount` | `I128` | Payout amount |
+| `amount` | `I128` | Gross amount that left escrow. For Crowdfunding the creator received `amount - fee`; see `MilestoneFeeCharged` |
+
+#### `MilestoneFeeCharged`
+From 2.0.0. Crowdfunding only, emitted right after `MilestoneClaimed` when the
+release withheld a fee.
+
+| Field | ScVal type | Notes |
+|-------|-----------|-------|
+| `event_id` | `U64` | |
+| `recipient` | `Address` | |
+| `milestone` | `U32` | |
+| `fee` | `I128` | Sent to the fee account |
+
+#### `MilestoneForfeited`
+From 2.0.0. Grants only. The owner closed a milestone without paying it. No
+tokens move: the share stays in escrow, no longer owed to anyone, and leaves
+with the rest of the pool at cancellation (`OwnerResidualRefunded` /
+`ContributorRefunded`).
+
+| Field | ScVal type | Notes |
+|-------|-----------|-------|
+| `event_id` | `U64` | |
+| `recipient` | `Address` | |
+| `milestone` | `U32` | |
+| `amount` | `I128` | The share released from the award |
 
 ---
 
@@ -241,7 +310,11 @@ These are useful for governance dashboards but not for TVL/payout metrics.
 | `TokenDeregistered` | `token: Address` | Token removed from whitelist |
 | `ManagerProposed` | `event_id: U64`, `target: Address`, `expires_at_ledger: U32` | Two-step manager delegation proposed for an event |
 | `ManagerChanged` | `event_id: U64`, `new_manager: Address` | Manager delegation accepted (authority transferred) |
-| `PendingManagerCancelled` | `event_id: U64` | Pending manager proposal vetoed |
+| `PendingManagerCancelled` | `event_id: U64` | Pending manager proposal withdrawn, or replaced by a new one (from 2.0.0) |
+| `ManagementReclaimed` | `event_id: U64`, `owner: Address` | From 2.0.0. The owner took management back before the first award |
+| `ReleaseValidatorProposed` | `target: Address`, `expires_at_ledger: U32` | From 2.0.0. A crowdfunding release co-signer proposed; inactive until it accepts |
+| `ValidatorProposalCancelled` | _(no fields)_ | From 2.0.0. A pending co-signer proposal withdrawn, replaced or cleared |
+| `ReleaseValidatorUpdated` | `validator: Address` or `NULL` | From 2.0.0. Co-signer accepted, or cleared (back to the admin) |
 | `Paused` | _(no fields)_ | Contract paused |
 | `Unpaused` | _(no fields)_ | Contract unpaused |
 
@@ -251,7 +324,7 @@ These are useful for governance dashboards but not for TVL/payout metrics.
 
 | Event name | Key fields | Notes |
 |-----------|-----------|-------|
-| `PendingUpgradeProposed` | `wasm_hash, new_version, available_at_ledger, expires_at_ledger` | Upgrade queued (timelocked ~1 day) |
+| `PendingUpgradeProposed` | `wasm_hash, new_version, available_at_ledger, expires_at_ledger` | Upgrade queued; it can apply from `available_at_ledger` |
 | `PendingUpgradeCancelled` | `cancelled_at_ledger: U32` | Upgrade cancelled before apply |
 | `UpgradeApplied` | `wasm_hash, new_version: String` | Preferred event; new wasm is live |
 | `Upgraded` | `new_wasm_hash` | Legacy alias for `UpgradeApplied`; indexers should prefer `UpgradeApplied` |
@@ -264,18 +337,18 @@ These are useful for governance dashboards but not for TVL/payout metrics.
 TVL (Total Value Locked) = escrow currently held by the contract.
 
 **Inflows (+)**
-- `EventCreated.total_budget` — for Hackathon, Bounty, Grant (Crowdfunding starts at 0)
-- `FundsAdded.amount` — every partner / community top-up
+- `EventCreated.total_budget`: for Hackathon, Bounty, Grant (Crowdfunding starts at 0)
+- `FundsAdded.amount`: every partner / community top-up
 
 **Outflows (−)**
-- `WinnerPaid.amount` — immediate payout at `select_winners` (Single pillars)
-- `MilestoneClaimed.amount` — milestone payout (Grant + Crowdfunding)
-- `ContributorRefunded.amount` — partner refund during cancel
-- `OwnerResidualRefunded.amount` — owner residual refund during cancel
+- `WinnerPaid.amount`: a prize collected with `claim_prize` (Single pillars)
+- `MilestoneClaimed.amount`: milestone payout (Grant + Crowdfunding)
+- `ContributorRefunded.amount`: partner refund during cancel, or a held refund collected with `claim_refund`
+- `OwnerResidualRefunded.amount`: owner residual refund during cancel
 
 **Protocol fee** is charged on top of the deposited amount (the payer sends
 `amount + fee`; the fee is forwarded to the fee account). Every event `amount`
-therefore equals exactly what escrow was credited or released — use them
+therefore equals exactly what escrow was credited or released; use them
 directly, no fee adjustment in SQL. The fee itself is *not* in any event; see
 the fee-revenue note in §2.1.
 
@@ -302,7 +375,7 @@ Amounts are in stroops (7 decimal places); divide by `1e7` for human units.
 
 > Canonical, Dune-tested query: [`docs/dune-queries/04_total_payouts.sql`](./dune-queries/04_total_payouts.sql)
 
-### 4.5 Unique participants (applicants + recipients)
+### 4.5 Unique participants (recipients, plus applicants before 2.0.0)
 
 > Canonical, Dune-tested query: [`docs/dune-queries/05_unique_participants.sql`](./dune-queries/05_unique_participants.sql)
 
@@ -335,17 +408,17 @@ dashboard:
 
 | Row | Panel | Query |
 |-----|-------|-------|
-| 1 | **TVL (current)** — single number | §4.1 |
-| 1 | **Total paid out** — single number | §4.4 (sum only) |
-| 1 | **Events created** — single number | §4.3 (count only) |
-| 1 | **Unique builders** — single number | §4.5 |
-| 2 | **TVL over time** — area chart | §4.2 |
-| 2 | **Monthly payouts** — bar chart | §4.4 |
-| 3 | **Events by pillar** — donut chart | §4.3 (count, no time) |
-| 3 | **Funded vs completed vs cancelled** — bar | §4.7 |
-| 4 | **Average budget & time-to-payout** — table | §4.8 |
-| 4 | **Payout volume by token** — table | §4.9 |
-| 5 | **Crowdfunding daily contributions** — line chart | §4.10 |
+| 1 | **TVL (current)**, single number | §4.1 |
+| 1 | **Total paid out**, single number | §4.4 (sum only) |
+| 1 | **Events created**, single number | §4.3 (count only) |
+| 1 | **Unique builders**, single number | §4.5 |
+| 2 | **TVL over time**, area chart | §4.2 |
+| 2 | **Monthly payouts**, bar chart | §4.4 |
+| 3 | **Events by pillar**, donut chart | §4.3 (count, no time) |
+| 3 | **Funded vs completed vs cancelled**, bar | §4.7 |
+| 4 | **Average budget & time-to-payout**, table | §4.8 |
+| 4 | **Payout volume by token**, table | §4.9 |
+| 5 | **Crowdfunding daily contributions**, line chart | §4.10 |
 
 ---
 
@@ -364,7 +437,7 @@ dashboard:
 
 ## 7. Maintenance notes
 
-- **Contract upgrades.** After `apply_upgrade` + `migrate`, verify the new
+- **Contract upgrades.** After `apply_upgrade`, `migrate_events` and `migrate`, verify the new
   version's events still decode correctly. The `Migrated` event in Dune
   confirms the on-chain migration ran; cross-check with `UpgradeApplied`.
 - **New tokens.** When `TokenRegistered` appears for a new address, add it
@@ -372,7 +445,7 @@ dashboard:
 - **Fee changes.** The protocol fee is charged on top of the deposited amount,
   so event `amount` fields already equal the escrow credit/release. No SQL
   adjustment is needed if the fee rate changes. (Fee revenue itself is not in
-  these events — see §2.1.)
+  these events; see §2.1.)
 - **Crowdfunding vs other pillars.** `EventCreated.total_budget` is a
   *funding goal* for Crowdfunding, not an escrow deposit. Exclude
   `pillar = 'Crowdfunding'` from inflow sums based on `EventCreated` and

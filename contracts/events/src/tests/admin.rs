@@ -2,11 +2,13 @@
 
 use soroban_sdk::{
     testutils::{Address as _, BytesN as _, Ledger},
-    Address, BytesN, String,
+    Address, BytesN, Map, String,
 };
 
 use super::common::setup;
 use crate::errors::Error;
+use crate::storage;
+use crate::types::{DataKey, EventStatus, Pillar, ReleaseKind};
 
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
@@ -18,8 +20,8 @@ fn initializes_with_expected_config() {
     assert_eq!(ctx.client.get_fee_account(), ctx.fee_account);
     assert_eq!(ctx.client.get_fee_bps(), 250);
     assert_eq!(ctx.client.get_profile_contract(), ctx.profile_contract);
-    assert_eq!(ctx.client.is_paused(), false);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.6.0"));
+    assert!(!ctx.client.is_paused());
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "2.0.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
@@ -28,9 +30,9 @@ fn initializes_with_expected_config() {
 fn pause_and_unpause_round_trip() {
     let ctx = setup(250);
     ctx.client.pause();
-    assert_eq!(ctx.client.is_paused(), true);
+    assert!(ctx.client.is_paused());
     ctx.client.unpause();
-    assert_eq!(ctx.client.is_paused(), false);
+    assert!(!ctx.client.is_paused());
 }
 
 #[test]
@@ -76,27 +78,34 @@ fn propose_upgrade_rejects_empty_version() {
     let err = ctx
         .client
         .try_propose_upgrade(&new_hash, &empty)
-        .err()
-        .expect("empty version rejected")
+        .expect_err("empty version rejected")
         .unwrap();
     assert_eq!(err, Error::InvalidPillar);
 }
 
 #[test]
-fn apply_upgrade_before_timelock_reverts() {
+fn apply_upgrade_waits_out_the_timelock() {
     let ctx = setup(250);
     let new_hash: BytesN<32> = BytesN::random(&ctx.env);
     let new_version = String::from_str(&ctx.env, "0.3.0");
     ctx.client.propose_upgrade(&new_hash, &new_version);
 
-    let err = ctx
-        .client
-        .try_apply_upgrade()
-        .err()
-        .expect("timelock blocks")
-        .unwrap();
-    assert_eq!(err, Error::UpgradeTimelockNotElapsed);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.6.0"));
+    let pending = ctx.client.get_pending_upgrade().expect("proposal");
+    assert_eq!(
+        pending.available_at_ledger,
+        pending.proposed_at_ledger + UPGRADE_TIMELOCK_LEDGERS
+    );
+    assert_eq!(
+        ctx.client.try_apply_upgrade().err().unwrap().unwrap(),
+        Error::UpgradeTimelockNotElapsed
+    );
+    ctx.env.ledger().with_mut(|li| {
+        li.sequence_number = pending.available_at_ledger - 1;
+    });
+    assert_eq!(
+        ctx.client.try_apply_upgrade().err().unwrap().unwrap(),
+        Error::UpgradeTimelockNotElapsed
+    );
 }
 
 #[test]
@@ -114,8 +123,7 @@ fn apply_upgrade_after_expiry_reverts() {
     let err = ctx
         .client
         .try_apply_upgrade()
-        .err()
-        .expect("expiry blocks")
+        .expect_err("expiry blocks")
         .unwrap();
     assert_eq!(err, Error::UpgradeProposalExpired);
 }
@@ -130,7 +138,7 @@ fn cancel_pending_upgrade_clears_proposal() {
 
     ctx.client.cancel_pending_upgrade();
     assert_eq!(ctx.client.get_pending_upgrade(), None);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.6.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "2.0.0"));
 }
 
 #[test]
@@ -139,27 +147,259 @@ fn cancel_with_no_pending_reverts() {
     let err = ctx
         .client
         .try_cancel_pending_upgrade()
-        .err()
-        .expect("nothing to cancel")
+        .expect_err("nothing to cancel")
         .unwrap();
     assert_eq!(err, Error::UpgradeNotProposed);
+}
+
+/// The pre-1.7.0 record layout, written directly into storage so migrate has a
+/// legacy row to convert. Mirrors what the two mainnet events look like.
+#[soroban_sdk::contracttype]
+#[derive(Clone)]
+struct LegacyEventRecord {
+    pub id: u64,
+    pub pillar: Pillar,
+    pub owner: Address,
+    pub token: Address,
+    pub total_budget: i128,
+    pub remaining_escrow: i128,
+    pub release_kind: ReleaseKind,
+    pub status: EventStatus,
+    pub content_uri: String,
+    pub title: String,
+    pub created_at: u64,
+    pub deadline: Option<u64>,
+    pub winner_distribution: Map<u32, u32>,
+    pub fee_bps_override: Option<u32>,
+}
+
+#[test]
+fn migrate_rewrites_legacy_percentages_as_prize_floors() {
+    let ctx = setup(250);
+    let budget = 1_000_0000000_i128;
+
+    // Stand in for mainnet event ...610: a 60/40 split, already settled.
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 60_u32);
+    dist.set(2, 40_u32);
+
+    let id_base = ctx.client.id_base();
+    let event_id = id_base + 1;
+    let legacy = LegacyEventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: budget,
+        remaining_escrow: 0,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Completed,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/legacy"),
+        title: String::from_str(&ctx.env, "Muwa Creator Bounty"),
+        created_at: 1,
+        deadline: None,
+        winner_distribution: dist,
+        fee_bps_override: None,
+    };
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &legacy);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+    });
+
+    ctx.client.migrate_events(&8_u32);
+    ctx.client.migrate();
+
+    // Readable again through the current struct, which could not decode it
+    // before, and the percentages have become the amounts they always meant.
+    let migrated = ctx.client.get_event(&event_id);
+    assert_eq!(migrated.prize_floors.get(1), Some(budget * 60 / 100));
+    assert_eq!(migrated.prize_floors.get(2), Some(budget * 40 / 100));
+    assert_eq!(migrated.total_budget, budget);
+    assert_eq!(migrated.status, EventStatus::Completed);
+    assert_eq!(
+        migrated.title,
+        String::from_str(&ctx.env, "Muwa Creator Bounty")
+    );
+}
+
+#[test]
+fn migrate_refuses_to_stamp_while_events_remain_unconverted() {
+    // One invocation may touch only 100 ledger entries, so a deployment with
+    // history is converted in slices. Stamping before the cursor reaches the
+    // end would strand the remainder in a layout nothing can decode, and
+    // migrate is one-shot.
+    let ctx = setup(250);
+    let base = ctx.client.id_base();
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(base + 20));
+    });
+
+    assert_eq!(
+        ctx.client.try_migrate().unwrap_err().unwrap(),
+        Error::MigrationIncomplete,
+        "must not stamp while events are unconverted"
+    );
+    assert_eq!(ctx.client.get_migrated_to_version(), None);
+
+    // Page through: 8 per call, so 19 events need three calls.
+    assert_eq!(ctx.client.migrate_events(&8_u32), 11);
+    assert_eq!(ctx.client.migrate_events(&8_u32), 3);
+    assert_eq!(
+        ctx.client.try_migrate().unwrap_err().unwrap(),
+        Error::MigrationIncomplete,
+        "still incomplete after two of three pages"
+    );
+    assert_eq!(ctx.client.migrate_events(&8_u32), 0);
+
+    ctx.client.migrate();
+    assert_eq!(
+        ctx.client.get_migrated_to_version(),
+        Some(String::from_str(&ctx.env, "2.0.0"))
+    );
+}
+
+#[test]
+fn migrate_events_caps_each_call_regardless_of_the_argument() {
+    let ctx = setup(250);
+    let base = ctx.client.id_base();
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(base + 30));
+    });
+
+    // Asking for more than the per-call ceiling must not blow the footprint.
+    assert_eq!(ctx.client.migrate_events(&1_000_u32), 21);
+    // 0 means "use the ceiling" rather than "do nothing".
+    assert_eq!(ctx.client.migrate_events(&0_u32), 13);
+}
+
+#[test]
+fn migrate_skips_rows_already_in_the_current_layout() {
+    // A fresh 2.0.0 deployment writes new-layout events, and the runbook still
+    // calls migrate() after apply. Decoding those as the legacy shape used to
+    // abort the whole invocation.
+    let ctx = setup(250);
+    let event_id = ctx.client.id_base() + 1;
+    let mut floors = Map::new(&ctx.env);
+    floors.set(1, 500_i128);
+    let current = crate::types::EventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: 1_000_i128,
+        remaining_escrow: 1_000_i128,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Active,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/new"),
+        title: String::from_str(&ctx.env, "Already Migrated"),
+        created_at: 1,
+        deadline: None,
+        prize_floors: floors,
+        fee_bps_override: None,
+    };
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &current);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+    });
+
+    ctx.client.migrate_events(&8_u32);
+    ctx.client.migrate();
+
+    let after = ctx.client.get_event(&event_id);
+    assert_eq!(after.prize_floors.get(1), Some(500_i128));
+    assert_eq!(after.title, String::from_str(&ctx.env, "Already Migrated"));
+}
+
+#[test]
+fn migrate_runs_regardless_of_how_the_version_was_spelled() {
+    // propose_upgrade accepts any non-empty string. Gating the rewrite on an
+    // exact match would silently skip it and still stamp the marker.
+    let ctx = setup(250);
+    let event_id = ctx.client.id_base() + 1;
+    let budget = 1_000_0000000_i128;
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 100_u32);
+    let legacy = LegacyEventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: Address::generate(&ctx.env),
+        token: Address::generate(&ctx.env),
+        total_budget: budget,
+        remaining_escrow: 0,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Completed,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/legacy"),
+        title: String::from_str(&ctx.env, "Oddly Versioned"),
+        created_at: 1,
+        deadline: None,
+        winner_distribution: dist,
+        fee_bps_override: None,
+    };
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &legacy);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+        // The operator proposed the upgrade as "v2.0.0" rather than "2.0.0".
+        storage::set_version(&ctx.env, &String::from_str(&ctx.env, "v2.0.0"));
+    });
+
+    ctx.client.migrate_events(&8_u32);
+    ctx.client.migrate();
+
+    let migrated = ctx.client.get_event(&event_id);
+    assert_eq!(migrated.prize_floors.get(1), Some(budget));
+}
+
+#[test]
+fn migrate_is_a_no_op_on_a_fresh_deployment() {
+    let ctx = setup(250);
+    ctx.client.migrate_events(&8_u32);
+    ctx.client.migrate();
+    assert_eq!(
+        ctx.client.get_migrated_to_version(),
+        Some(String::from_str(&ctx.env, "2.0.0"))
+    );
 }
 
 #[test]
 fn migrate_marks_current_version_and_blocks_replay() {
     let ctx = setup(250);
 
+    ctx.client.migrate_events(&8_u32);
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "1.6.0"))
+        Some(String::from_str(&ctx.env, "2.0.0"))
     );
 
     let err = ctx
         .client
         .try_migrate()
-        .err()
-        .expect("second migrate rejected")
+        .expect_err("second migrate rejected")
         .unwrap();
     assert_eq!(err, Error::MigrationAlreadyApplied);
 }
@@ -167,7 +407,7 @@ fn migrate_marks_current_version_and_blocks_replay() {
 // AUTH REGRESSION GUARDS (#73)
 //
 // setup() mocks all auths for every address, so a call succeeding is not
-// proof that require_admin() ran — it succeeds identically whether the
+// proof that require_admin() ran: it succeeds identically whether the
 // check is present or was deleted. These tests replace the mock with an
 // empty auth set so the call can only succeed if the contract explicitly
 // requests and receives the admin's authorization. If require_admin() is
@@ -277,7 +517,7 @@ fn migrate_reverts_without_admin_auth() {
 }
 
 // ============================================================
-// ACCEPT_ADMIN — target-auth guard
+// ACCEPT_ADMIN: target-auth guard
 //
 // accept_admin does not call require_admin(); it authorizes against the
 // pending target address instead (pending.target.require_auth()). These

@@ -5,7 +5,6 @@ use soroban_sdk::{testutils::Address as _, Address, Env};
 use crate::{ProfileContract, ProfileContractClient};
 
 pub struct TestCtx<'a> {
-    #[allow(dead_code)]
     pub env: Env,
     pub admin: Address,
     pub client: ProfileContractClient<'a>,

@@ -1,90 +1,142 @@
-# Boundless contract operations runbook (testnet drill + multisig ops)
+# Contract operations runbook
 
-**For:** the contracts engineer and the multisig signers.
-**Companion docs:** `multisig-guide.md` (plain-English signer setup), `admin-custody-policy.md` (policy), `mainnet-deploy-runbook.md` (mainnet cold deploy).
-**Why this exists:** the mainnet runbook tells you *what* to run. This runbook tells you *how it actually behaves* — the silent-failure modes we hit during the testnet dress rehearsal and the exact fixes. Read Section 1 before you touch any multisig op.
+For the contracts engineer and the multisig signers. This is the canonical
+description of how an admin transaction is built, simulated, signed and
+submitted, written from the testnet dress rehearsal and the mainnet upgrades.
+What to run for a deploy is in `docs/DEPLOYMENT.md`, for an upgrade in
+`docs/upgrade-runbook.md`; signer setup is in `docs/multisig-guide.md` and
+the policy in `docs/admin-custody-policy.md`. Read Section 1 before you touch
+any multisig operation.
 
 ---
 
-## 1. Hard-won rules (read this first)
+## 1. Rules learned the hard way
 
-These are the things that cost us hours on testnet. Every one of them fails **silently or confusingly** if you get it wrong.
+Each of these fails silently or confusingly when you get it wrong.
 
-1. **A Soroban contract call must be SIMULATED before it can be signed.**
-   `--build-only` produces a transaction with **no footprint and no resource fee** (`ext = 0`, fee = base only). Submitting it gives `TxMalformed`. You MUST pipe it through `stellar tx simulate` to attach the Soroban data:
+1. **A Soroban contract call must be simulated before it can be signed.**
+   `--build-only` produces a transaction with no footprint and no resource fee
+   (`ext = 0`, base fee only). Submitting it gives `TxMalformed`. Pipe it
+   through `stellar tx simulate` to attach the Soroban data:
    ```bash
    stellar contract invoke --id <C> --source-account <SRC> --network testnet --build-only -- <fn> \
      | stellar tx simulate --source-account <SRC> --network testnet
    ```
-   The output of `tx simulate` is what you sign. This applies to **every** contract call signed offline/multisig (`accept_admin`, `pause`, `set_fee_bps`, `register_supported_token`, `propose_upgrade`, …).
+   The output of `tx simulate` is what you sign. This applies to every
+   contract call signed offline or by the multisig: `accept_admin`, `pause`,
+   `set_fee_bps`, `register_supported_token`, `propose_release_validator`,
+   `propose_upgrade`, `apply_upgrade`, `migrate_events`, `migrate`, and the
+   rest. The `prepare-*` commands in `deploy_mainnet.sh` do this for you.
 
-2. **Native account operations do NOT need simulate.** Building the multisig itself (`stellar tx new set-options` to add signers / set thresholds) is classic Stellar — the CLI signs and submits it directly. Only **Soroban contract invokes** need the simulate step.
+2. **Native account operations do not need simulate.** Building the multisig
+   itself (`stellar tx new set-options` to add signers or set thresholds) is
+   classic Stellar: the CLI signs and submits it directly. Only Soroban
+   contract invokes need the simulate step.
 
-3. **Multisig signing is sequential: each signer signs the PREVIOUS signer's output.**
-   Signer 1 signs the prepared XDR → gets XDR-A. Signer 2 signs **XDR-A** (not the original) → gets XDR-B with both signatures. Two separate one-signature XDRs **do not combine** — you'll get `tx_bad_auth` / below threshold.
+3. **Multisig signing is sequential: each signer signs the previous signer's
+   output.** Signer 1 signs the prepared XDR and gets XDR-A. Signer 2 signs
+   XDR-A, not the original, and gets XDR-B with both signatures. Two separate
+   one-signature XDRs do not combine; you get `tx_bad_auth` or below
+   threshold.
 
-4. **Submit with the CLI, not Stellar Lab, while operating.**
-   `stellar tx send "<final-xdr>" --network <net>` prints `SUCCESS` or the **exact** error. Lab's "Submit" can report success-looking states while the tx never lands. Use Lab only for *signing* (it talks to Freighter); submit from the CLI so failures are loud.
+4. **Submit with the CLI, not Stellar Lab.**
+   `stellar tx send "<final-xdr>" --network <net>` prints `SUCCESS` or the
+   exact error. Lab's Submit can report a success-looking state while the
+   transaction never lands. Use Lab only for signing (it talks to Freighter).
 
 5. **Never mix `--network <name>` with `--network-passphrase`.**
-   Doing both makes the CLI stop resolving the RPC URL → `error: network passphrase is used but rpc-url is missing`. Pick ONE:
-   - `--network testnet` (carries passphrase + RPC), **or**
-   - `--rpc-url https://soroban-testnet.stellar.org --network-passphrase "Test SDF Network ; September 2015"` (no `--network`).
+   Doing both makes the CLI stop resolving the RPC URL:
+   `error: network passphrase is used but rpc-url is missing`. Pick one:
+   - `--network testnet` (carries passphrase and RPC), or
+   - `--rpc-url https://soroban-testnet.stellar.org --network-passphrase "Test SDF Network ; September 2015"` with no `--network`.
 
-6. **`--source-account` accepts a public key (G-address) when `--build-only` is set.**
-   That's how you build a transaction sourced from the multisig (which has no secret key locally). Without `--build-only`, the CLI tries to sign with that key and fails.
+   On mainnet use one named network (`docs/DEPLOYMENT.md`, 4.2);
+   `deploy_mainnet.sh` refuses to run while `STELLAR_RPC_URL` or
+   `STELLAR_NETWORK_PASSPHRASE` is set.
 
-7. **Don't run `set_admin` and `accept_admin` instantly back-to-back.**
-   `accept_admin` simulates against the latest closed ledger. If the `set_admin` nomination isn't in a closed ledger yet, you get `Error(Contract, #6)` = `PendingAdminMismatch`. Wait a few seconds (or run them as separate steps). On mainnet this never happens — the two halves are done by different people at different times.
+6. **`--source-account` accepts a public key (G-address) with `--build-only`.**
+   That is how you build a transaction sourced from the multisig, which has no
+   secret key locally. Without `--build-only` the CLI tries to sign with that
+   key and fails.
 
-8. **Simulate → sign → send promptly.** The prepared XDR has time bounds. If you sit on it, `tx send` returns `txTooLate`. Just regenerate (re-run the build-only | simulate) and sign again.
+7. **Do not run `set_admin` and `accept_admin` back to back.**
+   `accept_admin` simulates against the latest closed ledger. If the
+   `set_admin` nomination is not in a closed ledger yet, simulation fails with
+   no pending rotation (events `#12`, profile `#6`). Wait a few seconds. On
+   mainnet the two halves are done by different people at different times.
 
-9. **The explorer defaults to mainnet.** Testnet accounts/contracts only show under the `/testnet/` path: `https://stellar.expert/explorer/testnet/account/<G...>` or `/contract/<C...>`. "Account not found" on the default explorer almost always means you're on the wrong network, not that the tx failed.
+8. **Simulate, sign and send promptly.** The prepared XDR has time bounds. If
+   you sit on it, `tx send` returns `txTooLate`. Rebuild and sign again.
 
-10. **Key/contract-id drift is real.** A keystore alias (e.g. `boundless-deployer`) can resolve to a different address than you remember if the local `.stellar` config was replaced by the global config. Always `stellar keys address <alias>` to confirm *which* key you're about to sign with, and keep deployed contract IDs written down (shell vars don't survive a new terminal).
+9. **Build the next envelope only after the previous one lands.** Every
+   envelope uses the multisig account's current sequence number, so two
+   envelopes prepared together carry the same sequence and the second fails
+   with `tx_bad_seq`.
+
+10. **The explorer defaults to mainnet.** Testnet accounts and contracts only
+    show under `/testnet/`: `https://stellar.expert/explorer/testnet/account/<G...>`
+    or `/contract/<C...>`. "Account not found" usually means the wrong
+    network, not a failed transaction.
+
+11. **Know which key you are about to sign with.** CLI 28 reads identities and
+    networks only from its global config (`~/.config/stellar`, or
+    `--config-dir`); a `.stellar` directory in the repo is ignored. An alias
+    such as `boundless-deployer` can therefore resolve to a different key on
+    another machine. Run `stellar keys address <alias>` before every signing
+    session, and keep contract ids in the local deployment record rather than
+    in shell variables.
 
 ---
 
 ## 2. Prerequisites
 
-- `stellar` CLI ≥ 23.x (`stellar --version`). The `.stellar config migrate` / "new release" warnings are harmless noise.
+- Stellar CLI 28.1.0 (`stellar --version`), the version CI and
+  `deploy_mainnet.sh` require.
 - `jq` and `curl`.
-- Each signer has Freighter set up on their own machine in a dedicated browser profile, set to the right network, and has sent you their G-address (see `multisig-guide.md` Part D).
+- Each signer has Freighter set up in a dedicated browser profile on their own
+  machine, on the right network, and has sent you their G-address
+  (`docs/multisig-guide.md`, Part D).
 
 ---
 
 ## 3. The two transaction shapes
 
-| Shape | Examples | How you build + sign |
+| Shape | Examples | Build and sign |
 |---|---|---|
-| **Native account op** | `set-options` (add signer, set thresholds), payment | `stellar tx new <op> --source-account <key> --network <net>` — CLI signs + submits if the source key is local. For multisig: `--build-only`, then sign in Lab, then `stellar tx send`. **No simulate.** |
-| **Soroban contract call** | `accept_admin`, `pause`, `set_fee_bps`, `register_supported_token`, `propose_upgrade`, `apply_upgrade`, `migrate` | `stellar contract invoke … --build-only -- <fn>` **then `| stellar tx simulate …`**, then sign in Lab, then `stellar tx send`. **Simulate is mandatory.** |
+| Native account operation | `set-options` (add signer, set thresholds), payment | `stellar tx new <op> --source-account <key> --network <net>`; the CLI signs and submits if the key is local. For the multisig: `--build-only`, sign in Lab, `stellar tx send`. No simulate. |
+| Soroban contract call | `accept_admin`, `pause`, `set_fee_bps`, `register_supported_token`, `propose_upgrade`, `apply_upgrade`, `migrate_events`, `migrate` | `stellar contract invoke ... --build-only -- <fn>`, piped through `stellar tx simulate`, signed in Lab, sent with `stellar tx send`. Simulate is mandatory. |
+
+`accept_release_validator` is the one admin-flow call the multisig does not
+sign: the proposed validator key authorizes it. Build it with
+`--source-account <validator G-address>` and have whoever holds that key sign
+it.
 
 ---
 
-## 4. Full testnet dress rehearsal
+## 4. Testnet dress rehearsal
 
-This mirrors the mainnet sequence end to end on throwaway testnet contracts. Worked reference values from our drill are shown in `‹comments›`.
+This mirrors the mainnet sequence on throwaway testnet contracts. Reference
+values from our drill are in `‹comments›`.
 
 ### 4.1 Build
 ```bash
 cd boundless-contract
-stellar contract build --locked
-# → target/wasm32v1-none/release/boundless_{events,profile}.wasm
+./scripts/build-release.sh --package boundless-events
+./scripts/build-release.sh --package boundless-profile
+# target/wasm32v1-none/release/boundless_{events,profile}.wasm
 ```
 
 ### 4.2 Deploy the profile contract (events depends on it)
 ```bash
-DEPLOYER=$(stellar keys address boundless-deployer)   # confirm WHICH key this is
+DEPLOYER=$(stellar keys address boundless-deployer)   # confirm which key this is
 
 PROFILE_ID=$(stellar contract deploy \
   --wasm target/wasm32v1-none/release/boundless_profile.wasm \
   --source boundless-deployer --network testnet \
   -- \
   --admin "$DEPLOYER")
-echo "PROFILE_ID=$PROFILE_ID"   # WRITE THIS DOWN  ‹drill: CA63ATN2…›
+echo "PROFILE_ID=$PROFILE_ID"   # write this down  ‹drill: CA63ATN2…›
 ```
-> Since the 1.1.0 credit-removal upgrade (2026-06) the profile constructor takes only `--admin`. Contract 1.0.0 additionally required `--default_bootstrap_credits`; credits now live in an off-chain ledger in boundless-nestjs. See Section 7.
 
 ### 4.3 Deploy the events contract
 ```bash
@@ -98,10 +150,10 @@ EVENTS_ID=$(stellar contract deploy \
   --fee_account "$FEE_ACCOUNT" \
   --fee_bps 250 \
   --profile_contract "$PROFILE_ID")
-echo "EVENTS_ID=$EVENTS_ID"   # WRITE THIS DOWN  ‹drill: CDP55GFH…›
+echo "EVENTS_ID=$EVENTS_ID"   # write this down  ‹drill: CDP55GFH…›
 ```
 
-### 4.4 Wire profile → events (first-set-only)
+### 4.4 Wire profile to events (first set only)
 ```bash
 stellar contract invoke --id "$PROFILE_ID" --source boundless-deployer --network testnet \
   -- set_events_contract --new_addr "$EVENTS_ID"
@@ -116,137 +168,160 @@ stellar contract invoke --id "$EVENTS_ID" --source boundless-deployer --network 
 
 ### 4.6 Verify the deploy (reads, no signing)
 ```bash
-for fn in version get_admin get_fee_bps get_fee_account get_profile_contract is_paused supported_token_count ; do
+for fn in version get_admin get_fee_bps get_fee_account get_profile_contract is_paused supported_token_count get_release_validator; do
   echo -n "$fn: "; stellar contract invoke --id "$EVENTS_ID" --source-account "$DEPLOYER" --network testnet --send no -- $fn
 done
 stellar contract invoke --id "$EVENTS_ID" --source-account "$DEPLOYER" --network testnet --send no \
   -- is_supported_token --token "$USDC"
 ```
-Expect `get_admin` = deployer, `is_supported_token` = `true`, `supported_token_count` = `1`, `is_paused` = `false`.
+Expect `get_admin` = deployer, `is_supported_token` = `true`,
+`supported_token_count` = `1`, `is_paused` = `false`,
+`get_release_validator` = `null`.
 
 ### 4.7 Build the 2-of-3 multisig
-(Signers are: you, your co-founder, and a **cold recovery key** held offline. Thresholds 0/2/2, master disabled.)
+Signers are you, your co-founder, and a cold recovery key held offline.
+Thresholds 0/2/2, master disabled.
 ```bash
 stellar keys generate boundless-multisig-bootstrap --network testnet
 BOOT=$(stellar keys address boundless-multisig-bootstrap)   # ‹drill: GDLEW45L…›
 curl "https://friendbot.stellar.org/?addr=$BOOT"
 
-# Add the 3 signers (NATIVE op, no simulate) — one tx each
+# Add the three signers (native op, no simulate), one transaction each
 for G in G_YOU... G_COFOUNDER... G_COLD... ; do
   stellar tx new set-options --source-account boundless-multisig-bootstrap \
     --signer "$G" --signer-weight 1 --network testnet
 done
 
-# Lock it: 2-of-3 + disable the bootstrap master key (the critical flag)
+# Lock it: 2-of-3 and disable the bootstrap master key (the critical flag)
 stellar tx new set-options --source-account boundless-multisig-bootstrap \
   --low-threshold 0 --med-threshold 2 --high-threshold 2 --master-weight 0 \
   --network testnet
 
-./scripts/admin/verify-multisig.sh "$BOOT" testnet   # must print: PASS: all 6 checks passed
+./scripts/admin/verify-multisig.sh "$BOOT" testnet   # must print: PASS: all 8 checks passed
 ```
-Read the 3 signer addresses the script prints and confirm them by eye.
+Read the three signer addresses the script prints and confirm them by eye.
+With `EXPECTED_SIGNERS=<G1>,<G2>,<G3>` set, the script also pins the roster
+and runs a ninth check.
 
-### 4.8 Rotate admin: deployer → multisig (the heart of it)
-Do this for **both** `$EVENTS_ID` and `$PROFILE_ID`.
+### 4.8 Rotate admin: deployer to multisig
+Do this for both `$EVENTS_ID` and `$PROFILE_ID`.
 
 ```bash
-# Step A — current admin (deployer) nominates the multisig. CLI signs + submits.
+# Step A: the current admin (deployer) nominates the multisig. CLI signs and submits.
 stellar contract invoke --id "$EVENTS_ID" --source boundless-deployer --network testnet \
   -- set_admin --new_admin "$BOOT"
 ```
-**Wait ~10 seconds** (Rule 7), then:
+Wait about ten seconds (Rule 7), then:
 ```bash
-# Step B — build + SIMULATE the accept_admin (multisig as source)
+# Step B: build and simulate accept_admin with the multisig as source
 stellar contract invoke --id "$EVENTS_ID" --source-account "$BOOT" --network testnet --build-only -- accept_admin \
   | stellar tx simulate --source-account "$BOOT" --network testnet
 ```
-Take that prepared XDR → **Lab sign (you → co-founder)** → submit:
+Sign the prepared XDR in Lab (you, then co-founder) and submit:
 ```bash
 stellar tx send "<XDR-with-both-signatures>" --network testnet
 ```
 Verify:
 ```bash
 stellar contract invoke --id "$EVENTS_ID" --source-account "$BOOT" --network testnet --send no -- get_admin
-# → $BOOT
+# $BOOT
 ```
-Repeat A→B for `$PROFILE_ID`.
+Repeat A and B for `$PROFILE_ID`.
 
-### 4.9 Operate as the multisig (and see the failure mode)
-The deployer now has zero admin power. Prove the multisig can run ops:
+### 4.9 Operate as the multisig, and see the failure mode
+The deployer now has no admin power. Prove the multisig can run operations:
 ```bash
-# pause (simulate is mandatory)
 stellar contract invoke --id "$EVENTS_ID" --source-account "$BOOT" --network testnet --build-only -- pause \
   | stellar tx simulate --source-account "$BOOT" --network testnet
 ```
-→ Lab 2-of-3 → `stellar tx send` → `is_paused` should be `true`. Then `unpause` the same way.
+Sign 2-of-3 in Lab, `stellar tx send`, and `is_paused` reads `true`. Then
+`unpause` the same way.
 
-**The "1-of-3 must fail" drill:** build a `pause`, submit with **only one** signature → `tx send` rejects it (`tx_bad_auth`). Seeing this on purpose is the point.
+The 1-of-3 drill: build a `pause`, submit it with one signature, and
+`tx send` rejects it (`tx_bad_auth`). Seeing this on purpose is the point.
 
 ---
 
-## 5. Day-to-day multisig operation (the canonical flow)
+## 5. Day-to-day multisig operation
 
-Any time the multisig needs to do a contract op (`set_fee_bps`, `pause`, `register_supported_token`, an upgrade step, …):
+Any time the multisig makes a contract call (`set_fee_bps`, `pause`,
+`register_supported_token`, a release-validator change, an upgrade step):
 
 ```bash
-# 1. BUILD + SIMULATE  → prepared, unsigned XDR
+# 0. Confirm the admin account is still the multisig on file
+EXPECTED_SIGNERS=<G1>,<G2>,<G3> ./scripts/admin/verify-multisig.sh "$BOOT" <testnet|mainnet>
+
+# 1. Build and simulate: a prepared, unsigned XDR
 stellar contract invoke --id <CONTRACT_ID> --source-account "$BOOT" --network <net> --build-only -- <fn> [--arg val ...] \
-  | stellar tx simulate --source-account "$BOOT" --network <net>
+  | stellar tx simulate --source-account "$BOOT" --network <net> > op.xdr
 
-# 2. SIGN (Lab, in order)
-#    signer 1 signs the prepared XDR  → XDR-A
-#    signer 2 signs XDR-A             → XDR-B   (2 of 3 — pull the cold key only for set_fee_account)
+# 2. Every signer decodes it and checks source, contract, function and arguments
+stellar tx decode --output json-formatted < op.xdr
 
-# 3. SUBMIT (CLI, so errors are visible)
+# 3. Sign in Lab, in order
+#    signer 1 signs the prepared XDR -> XDR-A
+#    signer 2 signs XDR-A            -> XDR-B
+
+# 4. Submit from the CLI, so errors are visible
 stellar tx send "<XDR-B>" --network <net>
 
-# 4. VERIFY with a read
+# 5. Verify with a read
 stellar contract invoke --id <CONTRACT_ID> --source-account "$BOOT" --network <net> --send no -- <getter>
 ```
 
-`set_fee_account` is the only op the policy keeps at **3-of-3** — and that's a *process* rule (collect all three signatures, including the cold key), not enforced on-chain. See `admin-custody-policy.md` §4.
+For upgrades, pause and unpause on mainnet, `deploy_mainnet.sh prepare-*`
+replaces step 1 and adds the state checks in `docs/upgrade-runbook.md`.
+
+An emergency `pause` is the one operation that may go ahead before the paper
+trail. Pause first, then write the incident record in `#ops-admin-requests`:
+what was seen, who signed, the transaction hash, and what has to be true
+before anyone prepares the `unpause`.
+
+The policy keeps `set_fee_account`, `set_admin` and
+`propose_release_validator` at 3-of-3 (`docs/admin-custody-policy.md`,
+Section 4). That is a process rule: collect all three signatures, including
+the cold key. The chain only enforces 2-of-3.
 
 ---
 
-## 6. Troubleshooting (error → cause → fix)
+## 6. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `network passphrase is used but rpc-url is missing` | Mixed `--network <name>` with `--network-passphrase` | Use `--network testnet` alone, or go fully explicit with `--rpc-url … --network-passphrase …` (Rule 5) |
-| `TxMalformed` on submit of a contract call | The XDR was `--build-only` and never simulated (no footprint/resource fee) | Pipe through `stellar tx simulate` and sign that output (Rule 1) |
-| `tx_bad_auth` / `op_low_threshold` | Not enough signatures combined — usually the 2nd signer signed the original, not the 1st signer's output | Re-sign in order: each signer signs the previous XDR (Rule 3) |
-| `Error(Contract, #6)` (`PendingAdminMismatch`) on `accept_admin` | `set_admin` not yet in a closed ledger | Wait a few seconds and re-run the simulate (Rule 7). If still failing, re-run `set_admin` |
-| `Error(Contract, #5)` (`NotAdmin`) | The source isn't the current admin (e.g. already rotated to the multisig) | Check `get_admin`; act as the real admin |
-| `Error(Contract, #7)` (`PendingAdminExpired`) | The nomination window lapsed | Re-run `set_admin`, then accept promptly |
-| `txTooLate` | Time bound elapsed between simulate and submit | Regenerate the prepared XDR and sign quickly (Rule 8) |
-| "Account/contract not found" in explorer | Looking at mainnet | Use the `/testnet/` URL (Rule 9) |
-| Lab says submitted but admin unchanged / no tx on the account | Submit silently failed in Lab | Submit from the CLI with `stellar tx send` to see the real error (Rule 4) |
+| `network passphrase is used but rpc-url is missing` | Mixed `--network <name>` with `--network-passphrase` | Use the named network alone, or go fully explicit with `--rpc-url ... --network-passphrase ...` (Rule 5) |
+| `TxMalformed` when submitting a contract call | The XDR was `--build-only` and never simulated | Pipe through `stellar tx simulate` and sign that output (Rule 1) |
+| `tx_bad_auth` / `op_low_threshold` | Not enough signatures combined, usually because the second signer signed the original instead of the first signer's output | Re-sign in order (Rule 3) |
+| `tx_bad_seq` | Two envelopes were prepared against the same sequence | Rebuild the second after the first lands (Rule 9) |
+| `Error(Contract, #12)` on events or `#6` on profile from `accept_admin` | No pending rotation yet: `set_admin` is not in a closed ledger | Wait a few seconds and simulate again (Rule 7); if it persists, re-run `set_admin` |
+| `Error(Contract, #13)` on events or `#7` on profile | The nomination expired (120,960 ledgers) | Re-run `set_admin`, then accept promptly |
+| Submit fails with an auth error although simulation passed | The source is not the current admin, so the recorded authorization belongs to an address nobody signed for | Check `get_admin` and build as the real admin |
+| `txTooLate` | Time bounds passed between simulate and submit | Rebuild and sign quickly (Rule 8) |
+| "Account/contract not found" in the explorer | Looking at mainnet | Use the `/testnet/` URL (Rule 10) |
+| Lab says submitted but nothing changed | Lab's submit failed silently | Submit with `stellar tx send` to see the real error (Rule 4) |
 
-**Diagnosis tools (read-only):**
+Upgrade-specific errors are listed in `docs/upgrade-runbook.md`, Section 6.
+
+Read-only diagnosis:
 ```bash
-# Did a tx actually land on an account?
+# Did a transaction land on an account?
 curl -s "https://horizon-testnet.stellar.org/accounts/<G>/transactions?order=desc&limit=5" \
   | jq -r '._embedded.records[] | "\(.created_at) successful=\(.successful) \(.hash)"'
-# Multisig config sanity
+# Multisig configuration
 curl -s "https://horizon-testnet.stellar.org/accounts/<BOOT>" | jq '{signers,thresholds}'
 ```
 
 ---
 
-## 7. Pre-mainnet code fixes (found during the drill)
+## 7. Mainnet differences
 
-1. ~~**`deploy_mainnet.sh` deploy-profile uses `--bootstrap_credits`**, but the profile constructor arg is **`--default_bootstrap_credits`**.~~ Overtaken by the 1.1.0 credit-removal upgrade (2026-06): the profile constructor no longer takes any credits argument (credits are an off-chain ledger in boundless-nestjs). Deploy scripts must pass only `--admin` when deploying profile from current source.
-2. **`INITIAL_VERSION` is still `0.2.0`** while the code now includes the supported-token enumeration. A fresh mainnet deploy would stamp `0.2.0` for a contract that differs from the audited `0.2.0` surface. Bump it (e.g. `1.0.0`) and update the upgrade-test fixtures + the runbook's expected-version checks.
-3. **Re-audit the supported-token enumeration** — it's new contract code added after the last audit; the mainnet pre-flight gate ("all critical/high resolved") must cover it.
-
----
-
-## 8. Mainnet deltas
-
-Everything in Section 4–5 is identical on mainnet except:
-- Build **without** `--features testnet` (full upgrade timelock). `deploy_mainnet.sh` already does this.
-- `--network mainnet` (or explicit `--rpc-url <mainnet> --network-passphrase "Public Global Stellar Network ; September 2015"`).
-- The bootstrap is funded with **real XLM** (≥5), not friendbot.
-- The cold recovery key actually lives in a safe; the daily signers are you + co-founder.
-- After rotation, **destroy the initial deploy key** (`shred -u`); it has no power post-rotation but leave nothing lying around.
-- The enumerable token index is complete **from genesis** — register USDC at deploy time and state enumeration is authoritative forever (no import-by-address needed, unlike the in-place-upgraded testnet contract).
+Sections 4 and 5 hold on mainnet except:
+- Build without `--features testnet`, so the 17,280-ledger upgrade timelock is
+  compiled in. `deploy_mainnet.sh` does this.
+- Use the named mainnet network from `docs/DEPLOYMENT.md` 4.2.
+- Fund the bootstrap with real XLM (at least 5), not friendbot.
+- The cold recovery key lives in a safe; the daily signers are you and your
+  co-founder.
+- After the rotation, destroy the deployer key (`stellar keys rm`); it has no
+  power left, but leave nothing lying around.
+- Register USDC at deploy time. The token index is then complete from genesis,
+  so `supported_token_count` and `supported_token_at` are authoritative.

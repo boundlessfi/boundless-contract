@@ -1,0 +1,12 @@
+{
+  "name": "boundless-testnet-scenarios",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "grants": "tsx grant-scenarios.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^17.2.1",
+    "tsx": "^4.20.0"
+  }
+}

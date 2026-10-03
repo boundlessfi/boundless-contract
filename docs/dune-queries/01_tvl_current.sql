@@ -7,7 +7,7 @@
 --   fields      -> rebuild data_decoded '$.map' into MAP(name -> ScVal JSON),
 --                  then read each field by its ScVal type ($.i128, $.u64, ...).
 --
--- Inflows:  EventCreated.total_budget (non-Crowdfunding — escrowed at creation)
+-- Inflows:  EventCreated.total_budget (non-Crowdfunding, escrowed at creation)
 --           FundsAdded.amount         (partner top-ups + crowdfunding contributions)
 -- Outflows: WinnerPaid.amount, MilestoneClaimed.amount,
 --           ContributorRefunded.amount, OwnerResidualRefunded.amount

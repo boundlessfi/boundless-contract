@@ -6,6 +6,11 @@ use crate::events as evt;
 use crate::idempotency;
 use crate::storage;
 
+// Matches the events contract's per-award cap, so a defect or a compromised
+// binding on that side still cannot move a score far in one call. The admin
+// slash stays uncapped: it is how a farmed score gets corrected.
+pub const MAX_DELTA_PER_CALL: u32 = 100;
+
 pub fn bump(
     env: &Env,
     user: Address,
@@ -15,6 +20,9 @@ pub fn bump(
 ) -> Result<(), Error> {
     admin::require_events_contract(env)?;
     admin::require_not_paused(env)?;
+    if delta > MAX_DELTA_PER_CALL {
+        return Err(Error::DeltaTooLarge);
+    }
     let domain = idempotency::events_domain(env)?;
     idempotency::require_unseen(env, &domain, &op_id)?;
 
@@ -23,32 +31,6 @@ pub fn bump(
     storage::set_profile(env, &user, &profile);
 
     evt::ReputationBumped {
-        user,
-        delta,
-        reason,
-    }
-    .publish(env);
-    idempotency::mark_seen(env, &domain, &op_id);
-    Ok(())
-}
-
-pub fn slash(
-    env: &Env,
-    user: Address,
-    delta: u32,
-    reason: Symbol,
-    op_id: BytesN<32>,
-) -> Result<(), Error> {
-    admin::require_events_contract(env)?;
-    admin::require_not_paused(env)?;
-    let domain = idempotency::events_domain(env)?;
-    idempotency::require_unseen(env, &domain, &op_id)?;
-
-    let mut profile = storage::get_profile(env, &user).ok_or(Error::ProfileNotFound)?;
-    profile.reputation = profile.reputation.saturating_sub(delta as u64);
-    storage::set_profile(env, &user, &profile);
-
-    evt::ReputationSlashed {
         user,
         delta,
         reason,

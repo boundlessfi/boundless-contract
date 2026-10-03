@@ -19,7 +19,7 @@ mod tests;
 use crate::errors::Error;
 use crate::types::{PendingEventsContract, PendingUpgrade, Profile};
 
-contractmeta!(key = "version", val = "1.2.0");
+contractmeta!(key = "version", val = "1.2.1");
 contractmeta!(
     key = "description",
     val = "Boundless profile contract: reputation + earnings"
@@ -115,16 +115,6 @@ impl ProfileContract {
         op_id: BytesN<32>,
     ) -> Result<(), Error> {
         reputation::bump(&env, user, delta, reason, op_id)
-    }
-
-    pub fn slash_reputation(
-        env: Env,
-        user: Address,
-        delta: u32,
-        reason: Symbol,
-        op_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        reputation::slash(&env, user, delta, reason, op_id)
     }
 
     // ============================================================

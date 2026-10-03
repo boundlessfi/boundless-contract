@@ -19,7 +19,9 @@ WITH ev AS (
       AND JSON_EXTRACT_SCALAR(topics_decoded, '$[0].symbol')
           IN ('Applied', 'WinnerPaid', 'MilestoneClaimed', 'EventCreated')
 )
--- Builders: applied to or received a payout from any event
+-- Builders: applied to or received a payout from any event. `Applied` covers
+-- only history from before 2.0.0, when applying moved off chain; from 2.0.0 a
+-- builder is counted here once paid.
 SELECT
     'builders' AS role,
     COUNT(DISTINCT addr) AS unique_wallets

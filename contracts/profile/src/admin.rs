@@ -1,4 +1,4 @@
-use soroban_sdk::{panic_with_error, Address, BytesN, Env, String};
+use soroban_sdk::{panic_with_error, Address, BytesN, ContractExecutable, Env, String};
 
 use crate::errors::Error;
 use crate::events as evt;
@@ -7,13 +7,17 @@ use crate::types::{PendingAdmin, PendingEventsContract, PendingUpgrade};
 
 const PENDING_TTL_LEDGERS: u32 = 120_960;
 
+// About a day on mainnet: without a window a compromised admin quorum can
+// propose and apply a wasm swap in one session, before anyone watching can
+// react or cancel_pending_upgrade can fire. Testnet builds skip it so
+// upgrades can iterate.
 #[cfg(not(feature = "testnet"))]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 #[cfg(feature = "testnet")]
 const UPGRADE_TIMELOCK_LEDGERS: u32 = 0;
 const PENDING_UPGRADE_TTL_LEDGERS: u32 = 518_400;
 
-pub const INITIAL_VERSION: &str = "1.2.0";
+pub const INITIAL_VERSION: &str = "1.2.1";
 
 const EVENTS_CONTRACT_TIMELOCK_LEDGERS: u32 = 17_280;
 
@@ -26,7 +30,6 @@ pub fn initialize(env: &Env, admin: Address) {
 
     storage::set_admin(env, &admin);
     storage::set_paused(env, false);
-    storage::set_deployment_seq(env, env.ledger().sequence());
     storage::set_version(env, &String::from_str(env, INITIAL_VERSION));
     storage::touch_instance(env);
 
@@ -163,7 +166,7 @@ pub fn unpause(env: &Env) -> Result<(), Error> {
 }
 
 // ============================================================
-// UPGRADE (timelocked; H6)
+// UPGRADE (timelocked)
 // ============================================================
 pub fn propose_upgrade(
     env: &Env,
@@ -208,7 +211,7 @@ pub fn apply_upgrade(env: &Env) -> Result<(), Error> {
     }
     storage::touch_instance(env);
     env.deployer()
-        .update_current_contract_wasm(pending.wasm_hash.clone());
+        .update_current_contract(ContractExecutable::Wasm(pending.wasm_hash.clone()));
     storage::set_version(env, &pending.new_version);
     storage::clear_pending_upgrade(env);
     evt::UpgradeApplied {
@@ -238,7 +241,7 @@ pub fn cancel_pending_upgrade(env: &Env) -> Result<(), Error> {
 }
 
 // ============================================================
-// MIGRATE (post-upgrade one-shot; H6)
+// MIGRATE (post-upgrade one-shot)
 // ============================================================
 pub fn migrate(env: &Env) -> Result<(), Error> {
     require_admin(env)?;

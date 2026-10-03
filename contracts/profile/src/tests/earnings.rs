@@ -99,8 +99,7 @@ fn register_earnings_rejects_zero() {
     let err = ctx
         .client
         .try_register_earnings(&u, &t, &0_i128, &BytesN::random(&ctx.env))
-        .err()
-        .expect("call should fail")
+        .expect_err("call should fail")
         .unwrap();
     assert_eq!(err, Error::InvalidAmount);
 }
@@ -116,8 +115,7 @@ fn register_earnings_rejects_negative() {
     let err = ctx
         .client
         .try_register_earnings(&u, &t, &(-100_i128), &BytesN::random(&ctx.env))
-        .err()
-        .expect("call should fail")
+        .expect_err("call should fail")
         .unwrap();
     assert_eq!(err, Error::InvalidAmount);
 }
@@ -131,8 +129,7 @@ fn register_earnings_reverts_no_events_contract() {
     let err = ctx
         .client
         .try_register_earnings(&u, &t, &100_i128, &BytesN::random(&ctx.env))
-        .err()
-        .expect("call should fail")
+        .expect_err("call should fail")
         .unwrap();
     assert_eq!(err, Error::EventsContractNotConfigured);
 }
@@ -149,8 +146,7 @@ fn register_earnings_reverts_when_paused() {
     let err = ctx
         .client
         .try_register_earnings(&u, &t, &100_i128, &BytesN::random(&ctx.env))
-        .err()
-        .expect("call should fail")
+        .expect_err("call should fail")
         .unwrap();
     assert_eq!(err, Error::Paused);
 }
@@ -170,8 +166,7 @@ fn register_earnings_rejects_duplicate_op_id() {
     let err = ctx
         .client
         .try_register_earnings(&u, &t, &200_i128, &op_id)
-        .err()
-        .expect("call should fail")
+        .expect_err("call should fail")
         .unwrap();
     assert_eq!(err, Error::OpAlreadySeen);
 
@@ -193,8 +188,7 @@ fn register_earnings_overflow_reverts() {
     let err = ctx
         .client
         .try_register_earnings(&u, &t, &1_i128, &BytesN::random(&ctx.env))
-        .err()
-        .expect("overflow should revert")
+        .expect_err("overflow should revert")
         .unwrap();
     assert_eq!(err, Error::EarningsOverflow);
     assert_eq!(ctx.client.get_earnings(&u, &t), i128::MAX);

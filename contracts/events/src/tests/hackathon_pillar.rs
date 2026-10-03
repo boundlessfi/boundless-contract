@@ -5,10 +5,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Map, String,
 };
 
-use crate::errors::Error;
-use crate::event_ops::MAX_CONTENT_URI_LEN;
-use crate::storage;
-use crate::types::{CreateEventParams, DataKey, EventStatus, Pillar, ReleaseKind, WinnerSpec};
+use crate::types::{CreateEventParams, EventStatus, Pillar, ReleaseKind, WinnerSpec};
 use crate::{EventsContract, EventsContractClient};
 
 use boundless_profile::{ProfileContract, ProfileContractClient};
@@ -21,7 +18,6 @@ const FEE_AMOUNT: i128 = (TOTAL_BUDGET * FEE_BPS as i128) / 10_000_i128;
 struct Ctx<'a> {
     env: Env,
     events: EventsContractClient<'a>,
-    events_id: Address,
     profile: ProfileContractClient<'a>,
     owner: Address,
     applicant: Address,
@@ -68,7 +64,6 @@ fn setup<'a>() -> Ctx<'a> {
     Ctx {
         env,
         events,
-        events_id,
         profile,
         owner,
         applicant,
@@ -78,30 +73,21 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn expect_op_err<T, E>(
-    result: Result<Result<T, E>, Result<Error, soroban_sdk::InvokeError>>,
-) -> Error {
-    match result {
-        Err(Ok(e)) => e,
-        _ => panic!("expected contract error"),
-    }
-}
-
-fn single_winner_dist(env: &Env) -> Map<u32, u32> {
+fn single_winner_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 100000000000_i128);
     m
 }
 
-fn three_way_dist(env: &Env) -> Map<u32, u32> {
+fn three_way_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 50);
-    m.set(2, 30);
-    m.set(3, 20);
+    m.set(1, 50000000000_i128);
+    m.set(2, 30000000000_i128);
+    m.set(3, 20000000000_i128);
     m
 }
 
-fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, u32>, deadline: Option<u64>) -> u64 {
+fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, i128>, deadline: Option<u64>) -> u64 {
     let params = CreateEventParams {
         pillar: Pillar::Hackathon,
         owner: ctx.owner.clone(),
@@ -111,7 +97,7 @@ fn create_hackathon_with(ctx: &Ctx, dist: Map<u32, u32>, deadline: Option<u64>) 
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/hackathon"),
         title: String::from_str(&ctx.env, "Test Hackathon"),
         deadline,
-        winner_distribution: dist,
+        prize_floors: dist,
         fee_bps_override: None,
         manager: None,
     };
@@ -163,7 +149,7 @@ fn create_rejects_multi_release_kind() {
         content_uri: String::from_str(&ctx.env, "uri"),
         title: String::from_str(&ctx.env, "Bad Hackathon"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_winner_dist(&ctx.env),
+        prize_floors: single_winner_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -174,217 +160,6 @@ fn create_rejects_multi_release_kind() {
 
 // ============================================================
 // submit (open submission model)
-// ============================================================
-
-#[test]
-fn submit_open_without_prior_apply_creates_anchor() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../project.json");
-    let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op);
-
-    let sub = ctx.events.get_submission(&id, &ctx.applicant);
-    assert_eq!(sub.applicant, ctx.applicant);
-    assert_eq!(sub.content_uri, uri);
-    assert_eq!(sub.submitted_at, ctx.env.ledger().timestamp());
-}
-
-#[test]
-fn resubmit_keeps_original_timestamp_and_updates_uri() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op_a = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri_a, &op_a);
-    let first_time = ctx.events.get_submission(&id, &ctx.applicant).submitted_at;
-
-    let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
-    let op_b = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri_b, &op_b);
-
-    let second = ctx.events.get_submission(&id, &ctx.applicant);
-    assert_eq!(second.content_uri, uri_b);
-    assert_eq!(second.submitted_at, first_time);
-}
-
-#[test]
-fn submit_replayed_op_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op);
-
-    let res = ctx.events.try_submit(&id, &ctx.applicant, &uri, &op);
-    assert!(res.is_err(), "replayed submit op_id must revert");
-}
-
-#[test]
-fn withdraw_submission_removes_anchor() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    let op_s = BytesN::random(&ctx.env);
-    ctx.events.submit(&id, &ctx.applicant, &uri, &op_s);
-
-    let op_w = BytesN::random(&ctx.env);
-    ctx.events.withdraw_submission(&id, &ctx.applicant, &op_w);
-
-    let res = ctx.events.try_get_submission(&id, &ctx.applicant);
-    assert!(res.is_err(), "withdrawn submission is no longer readable");
-}
-
-#[test]
-fn remove_submission_on_nonexistent_entry_does_not_corrupt_counter() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let submitter = Address::generate(&ctx.env);
-    ctx.events.submit(
-        &id,
-        &submitter,
-        &String::from_str(&ctx.env, "ipfs://Qm.../v1.json"),
-        &BytesN::random(&ctx.env),
-    );
-
-    // ctx.applicant never submitted — calling the low-level storage helper
-    // directly for it must be a no-op, not decrement the counter that
-    // `submitter`'s real submission incremented.
-    ctx.env.as_contract(&ctx.events_id, || {
-        storage::remove_submission(&ctx.env, id, &ctx.applicant);
-    });
-
-    let count = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count, 1,
-        "removing a nonexistent submission must not corrupt the counter"
-    );
-}
-
-#[test]
-fn withdraw_submission_frees_the_slot_for_future_submitters() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
-    ctx.events
-        .withdraw_submission(&id, &ctx.applicant, &BytesN::random(&ctx.env));
-
-    let count = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count, 0,
-        "withdrawing a submission must decrement the submission count"
-    );
-}
-
-#[test]
-fn submit_beyond_former_cap_succeeds() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    // Fast-forward the per-event counter past the former 5,000 cap instead
-    // of performing that many real submissions from distinct addresses.
-    ctx.env.as_contract(&ctx.events_id, || {
-        ctx.env
-            .storage()
-            .persistent()
-            .set(&DataKey::EventSubmissionCount(id), &5_000_u32);
-    });
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../v5001.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &uri, &BytesN::random(&ctx.env));
-
-    let count = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count, 5_001,
-        "submissions are unbounded; the counter must keep advancing past the former cap"
-    );
-}
-
-#[test]
-fn submit_at_counter_overflow_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    ctx.env.as_contract(&ctx.events_id, || {
-        ctx.env
-            .storage()
-            .persistent()
-            .set(&DataKey::EventSubmissionCount(id), &u32::MAX);
-    });
-
-    let uri = String::from_str(&ctx.env, "ipfs://Qm.../overflow.json");
-    let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_submit(&id, &ctx.applicant, &uri, &op));
-    assert_eq!(
-        err,
-        Error::TooManyContributors,
-        "a submission that would overflow the u32 counter must revert"
-    );
-}
-
-#[test]
-fn submit_oversized_content_uri_reverts() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let too_long = "x".repeat((MAX_CONTENT_URI_LEN + 1) as usize);
-    let uri = String::from_str(&ctx.env, &too_long);
-    let op = BytesN::random(&ctx.env);
-    let err = expect_op_err(ctx.events.try_submit(&id, &ctx.applicant, &uri, &op));
-    // Reused rather than a new variant — stays inside the contracterror
-    // 50-variant cap (see BACKLOG.md L7 for precedent).
-    assert_eq!(
-        err,
-        Error::TitleTooLong,
-        "content_uri beyond MAX_CONTENT_URI_LEN must revert"
-    );
-}
-
-#[test]
-fn resubmit_by_existing_applicant_does_not_increment_submission_count() {
-    let ctx = setup();
-    let id = create_hackathon(&ctx);
-
-    let uri_a = String::from_str(&ctx.env, "ipfs://Qm.../v1.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &uri_a, &BytesN::random(&ctx.env));
-
-    let count_after_first = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(count_after_first, 1);
-
-    let uri_b = String::from_str(&ctx.env, "ipfs://Qm.../v2.json");
-    ctx.events
-        .submit(&id, &ctx.applicant, &uri_b, &BytesN::random(&ctx.env));
-
-    let count_after_second = ctx
-        .env
-        .as_contract(&ctx.events_id, || storage::submission_count(&ctx.env, id));
-    assert_eq!(
-        count_after_second, 1,
-        "re-submission by an existing applicant updates in place and must not \
-         recount against the cap"
-    );
-}
-
-// ============================================================
-// select_winners — distribution (happy paths)
 // ============================================================
 
 #[test]
@@ -401,6 +176,7 @@ fn select_winners_single_recipient_sweeps_escrow() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 50,
         },
     ];
@@ -454,16 +230,19 @@ fn select_winners_multi_position_splits_by_distribution() {
         WinnerSpec {
             recipient: first.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 60,
         },
         WinnerSpec {
             recipient: second.clone(),
             position: 2,
+            amount: TOTAL_BUDGET * 30 / 100,
             reputation_bump: 40,
         },
         WinnerSpec {
             recipient: third.clone(),
             position: 3,
+            amount: TOTAL_BUDGET * 20 / 100,
             reputation_bump: 20,
         },
     ];
@@ -501,7 +280,7 @@ fn select_winners_multi_position_splits_by_distribution() {
 }
 
 // ============================================================
-// select_winners — rejections / edges
+// select_winners: rejections and edges
 // ============================================================
 
 #[test]
@@ -516,21 +295,25 @@ fn select_winners_empty_set_reverts() {
 }
 
 #[test]
-fn select_winners_position_not_in_distribution_reverts() {
+fn select_winners_allows_a_position_with_no_floor() {
     let ctx = setup();
-    let id = create_hackathon(&ctx); // distribution only has position 1
+    let id = create_hackathon(&ctx); // floors cover position 1 only
 
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 2,
+            amount: 1_0000000_i128,
             reputation_bump: 0,
         },
     ];
     let op = BytesN::random(&ctx.env);
-    let res = ctx.events.try_select_winners(&id, &winners, &op);
-    assert!(res.is_err(), "position outside distribution must revert");
+    ctx.events.select_winners(&id, &winners, &op);
+
+    let rows = ctx.events.get_winners(&id);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.get(0).unwrap().position, 2);
 }
 
 #[test]
@@ -545,11 +328,13 @@ fn select_winners_duplicate_position_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
         WinnerSpec {
             recipient: other,
             position: 1, // duplicate
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
     ];
@@ -569,6 +354,7 @@ fn select_winners_batches_append_and_position_replay_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
     ];
@@ -584,6 +370,7 @@ fn select_winners_batches_append_and_position_replay_reverts() {
         WinnerSpec {
             recipient: usurper,
             position: 1,
+            amount: TOTAL_BUDGET * 50 / 100,
             reputation_bump: 0,
         },
     ];
@@ -601,11 +388,13 @@ fn select_winners_batches_append_and_position_replay_reverts() {
         WinnerSpec {
             recipient: second.clone(),
             position: 2,
+            amount: TOTAL_BUDGET * 30 / 100,
             reputation_bump: 0,
         },
         WinnerSpec {
             recipient: third.clone(),
             position: 3,
+            amount: TOTAL_BUDGET * 20 / 100,
             reputation_bump: 0,
         },
     ];
@@ -636,6 +425,7 @@ fn select_winners_replayed_op_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -654,6 +444,7 @@ fn select_winners_on_missing_event_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -672,6 +463,7 @@ fn select_winners_on_completed_event_reverts() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -689,6 +481,7 @@ fn select_winners_on_completed_event_reverts() {
         WinnerSpec {
             recipient: again,
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];
@@ -710,6 +503,7 @@ fn select_winners_demands_owner_auth() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: TOTAL_BUDGET,
             reputation_bump: 0,
         },
     ];

@@ -7,6 +7,7 @@ use soroban_sdk::{
 
 use super::common::{setup, TestCtx};
 use crate::errors::Error;
+use crate::reputation::MAX_DELTA_PER_CALL;
 
 // ============================================================
 // Helpers
@@ -65,13 +66,33 @@ fn bump_accumulates_across_calls() {
 }
 
 #[test]
-fn bump_accepts_u32_max_delta_without_overflow() {
+fn bump_over_the_per_call_cap_is_refused() {
     let (ctx, user) = setup_with_user();
+    for delta in [MAX_DELTA_PER_CALL + 1, u32::MAX] {
+        let err = ctx
+            .client
+            .try_bump_reputation(&user, &delta, &reason(&ctx), &op_id(&ctx))
+            .expect_err("over-cap bump rejected")
+            .unwrap();
+        assert_eq!(err, Error::DeltaTooLarge);
+    }
+    assert_eq!(reputation_of(&ctx, &user), 0);
 
     ctx.client
-        .bump_reputation(&user, &u32::MAX, &reason(&ctx), &op_id(&ctx));
+        .bump_reputation(&user, &MAX_DELTA_PER_CALL, &reason(&ctx), &op_id(&ctx));
+    assert_eq!(reputation_of(&ctx, &user), MAX_DELTA_PER_CALL as u64);
+}
 
-    assert_eq!(reputation_of(&ctx, &user), u32::MAX as u64);
+#[test]
+fn a_refused_bump_leaves_its_op_id_unspent() {
+    let (ctx, user) = setup_with_user();
+    let op = op_id(&ctx);
+    assert!(ctx
+        .client
+        .try_bump_reputation(&user, &(MAX_DELTA_PER_CALL + 1), &reason(&ctx), &op)
+        .is_err());
+    ctx.client.bump_reputation(&user, &1, &reason(&ctx), &op);
+    assert_eq!(reputation_of(&ctx, &user), 1);
 }
 
 #[test]
@@ -85,8 +106,7 @@ fn bump_zero_delta_is_noop_but_marks_seen() {
     let err = ctx
         .client
         .try_bump_reputation(&user, &0, &reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
+        .expect_err("replay rejected")
         .unwrap();
     assert_eq!(err, Error::OpAlreadySeen);
 }
@@ -99,8 +119,7 @@ fn bump_reverts_when_events_contract_not_configured() {
     let err = ctx
         .client
         .try_bump_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected guard to reject")
+        .expect_err("expected guard to reject")
         .unwrap();
     assert_eq!(err, Error::EventsContractNotConfigured);
 }
@@ -113,8 +132,7 @@ fn bump_reverts_when_paused() {
     let err = ctx
         .client
         .try_bump_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected pause to block")
+        .expect_err("expected pause to block")
         .unwrap();
     assert_eq!(err, Error::Paused);
 }
@@ -129,8 +147,7 @@ fn bump_reverts_when_profile_not_found() {
     let err = ctx
         .client
         .try_bump_reputation(&ghost, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected missing profile")
+        .expect_err("expected missing profile")
         .unwrap();
     assert_eq!(err, Error::ProfileNotFound);
 }
@@ -146,8 +163,7 @@ fn bump_is_idempotent_on_replay() {
     let err = ctx
         .client
         .try_bump_reputation(&user, &5, &reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
+        .expect_err("replay rejected")
         .unwrap();
     assert_eq!(err, Error::OpAlreadySeen);
     assert_eq!(reputation_of(&ctx, &user), 5);
@@ -169,114 +185,19 @@ fn bump_rejects_caller_without_events_contract_auth() {
 // ============================================================
 
 #[test]
-fn slash_happy_path_decrements_reputation() {
+fn admin_slash_is_not_capped() {
     let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .slash_reputation(&user, &4, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 6);
-}
-
-#[test]
-fn slash_saturates_at_zero() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &5, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .slash_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-
+    for _ in 0..3 {
+        ctx.client
+            .bump_reputation(&user, &MAX_DELTA_PER_CALL, &reason(&ctx), &op_id(&ctx));
+    }
+    ctx.client.admin_slash_reputation(
+        &user,
+        &u32::MAX,
+        &String::from_str(&ctx.env, "farmed reputation"),
+        &op_id(&ctx),
+    );
     assert_eq!(reputation_of(&ctx, &user), 0);
-}
-
-#[test]
-fn slash_zero_delta_is_noop() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &3, &reason(&ctx), &op_id(&ctx));
-
-    ctx.client
-        .slash_reputation(&user, &0, &reason(&ctx), &op_id(&ctx));
-
-    assert_eq!(reputation_of(&ctx, &user), 3);
-}
-
-#[test]
-fn slash_reverts_when_events_contract_not_configured() {
-    let ctx = setup();
-    let user = Address::generate(&ctx.env);
-
-    let err = ctx
-        .client
-        .try_slash_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected guard to reject")
-        .unwrap();
-    assert_eq!(err, Error::EventsContractNotConfigured);
-}
-
-#[test]
-fn slash_reverts_when_paused() {
-    let (ctx, user) = setup_with_user();
-    ctx.client.pause();
-
-    let err = ctx
-        .client
-        .try_slash_reputation(&user, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected pause to block")
-        .unwrap();
-    assert_eq!(err, Error::Paused);
-}
-
-#[test]
-fn slash_reverts_when_profile_not_found() {
-    let ctx = setup();
-    let events = Address::generate(&ctx.env);
-    ctx.client.set_events_contract(&events);
-
-    let ghost = Address::generate(&ctx.env);
-    let err = ctx
-        .client
-        .try_slash_reputation(&ghost, &1, &reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected missing profile")
-        .unwrap();
-    assert_eq!(err, Error::ProfileNotFound);
-}
-
-#[test]
-fn slash_is_idempotent_on_replay() {
-    let (ctx, user) = setup_with_user();
-    ctx.client
-        .bump_reputation(&user, &10, &reason(&ctx), &op_id(&ctx));
-    let op = op_id(&ctx);
-
-    ctx.client.slash_reputation(&user, &4, &reason(&ctx), &op);
-    assert_eq!(reputation_of(&ctx, &user), 6);
-
-    let err = ctx
-        .client
-        .try_slash_reputation(&user, &4, &reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
-        .unwrap();
-    assert_eq!(err, Error::OpAlreadySeen);
-    assert_eq!(reputation_of(&ctx, &user), 6);
-}
-
-#[test]
-fn slash_rejects_caller_without_events_contract_auth() {
-    let (ctx, user) = setup_with_user();
-
-    ctx.env.mock_auths(&[]);
-    let res = ctx
-        .client
-        .try_slash_reputation(&user, &1, &reason(&ctx), &op_id(&ctx));
-    assert!(res.is_err(), "unauthorized slash must be rejected");
 }
 
 // ============================================================
@@ -319,8 +240,7 @@ fn admin_slash_reverts_on_empty_reason() {
     let err = ctx
         .client
         .try_admin_slash_reputation(&user, &1, &empty, &op_id(&ctx))
-        .err()
-        .expect("expected empty reason to reject")
+        .expect_err("expected empty reason to reject")
         .unwrap();
     assert_eq!(err, Error::ReasonRequired);
 }
@@ -333,8 +253,7 @@ fn admin_slash_reverts_when_paused() {
     let err = ctx
         .client
         .try_admin_slash_reputation(&user, &1, &admin_reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected pause to block")
+        .expect_err("expected pause to block")
         .unwrap();
     assert_eq!(err, Error::Paused);
 }
@@ -347,8 +266,7 @@ fn admin_slash_reverts_when_profile_not_found() {
     let err = ctx
         .client
         .try_admin_slash_reputation(&ghost, &1, &admin_reason(&ctx), &op_id(&ctx))
-        .err()
-        .expect("expected missing profile")
+        .expect_err("expected missing profile")
         .unwrap();
     assert_eq!(err, Error::ProfileNotFound);
 }
@@ -367,8 +285,7 @@ fn admin_slash_is_idempotent_on_replay() {
     let err = ctx
         .client
         .try_admin_slash_reputation(&user, &3, &admin_reason(&ctx), &op)
-        .err()
-        .expect("replay rejected")
+        .expect_err("replay rejected")
         .unwrap();
     assert_eq!(err, Error::OpAlreadySeen);
     assert_eq!(reputation_of(&ctx, &user), 7);

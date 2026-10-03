@@ -1,13 +1,9 @@
-#![allow(dead_code)]
-
-use soroban_sdk::{contracttype, Address, BytesN, Env, Vec};
-
-use soroban_sdk::String;
+use soroban_sdk::{Address, BytesN, Env, Map, String, Vec};
 
 use crate::errors::Error;
 use crate::types::{
-    CancellationState, DataKey, EventRecord, PendingAdmin, PendingManager, PendingUpgrade,
-    PrizeAward, Submission, Winner,
+    CancellationState, DataKey, EventRecord, GrantAward, GrantProgress, PendingAdmin,
+    PendingManager, PendingUpgrade, PendingValidator, PrizeAward, Winner,
 };
 
 // ============================================================
@@ -18,11 +14,6 @@ const INSTANCE_TTL_BUMP: u32 = 518_400;
 
 const EVENT_TTL_THRESHOLD: u32 = 86_400;
 const EVENT_TTL_BUMP: u32 = 1_555_200;
-
-#[contracttype(export = false)]
-enum LegacyDataKey {
-    OpSeen(BytesN<32>),
-}
 
 pub fn touch_instance(env: &Env) {
     env.storage()
@@ -110,6 +101,59 @@ pub fn set_paused(env: &Env, paused: bool) {
     env.storage().instance().set(&DataKey::Paused, &paused);
 }
 
+pub fn get_release_validator(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::ReleaseValidator)
+}
+
+pub fn set_release_validator(env: &Env, validator: &Option<Address>) {
+    match validator {
+        Some(v) => env.storage().instance().set(&DataKey::ReleaseValidator, v),
+        None => env.storage().instance().remove(&DataKey::ReleaseValidator),
+    }
+}
+
+pub fn get_pending_release_validator(env: &Env) -> Option<PendingValidator> {
+    env.storage()
+        .instance()
+        .get(&DataKey::PendingReleaseValidator)
+}
+
+pub fn set_pending_release_validator(env: &Env, pending: &PendingValidator) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingReleaseValidator, pending);
+}
+
+pub fn clear_pending_release_validator(env: &Env) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::PendingReleaseValidator);
+}
+
+pub fn get_paused_at(env: &Env) -> Option<u64> {
+    env.storage().instance().get(&DataKey::PausedAt)
+}
+
+pub fn set_paused_at(env: &Env, at: Option<u64>) {
+    match at {
+        Some(at) => env.storage().instance().set(&DataKey::PausedAt, &at),
+        None => env.storage().instance().remove(&DataKey::PausedAt),
+    }
+}
+
+pub fn get_paused_seconds(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::PausedSeconds)
+        .unwrap_or(0)
+}
+
+pub fn set_paused_seconds(env: &Env, seconds: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PausedSeconds, &seconds);
+}
+
 pub fn get_deployment_seq(env: &Env) -> u32 {
     env.storage()
         .instance()
@@ -122,7 +166,7 @@ pub fn set_deployment_seq(env: &Env, seq: u32) {
 }
 
 // ============================================================
-// VERSION / UPGRADE / MIGRATION (instance; H6)
+// VERSION / UPGRADE / MIGRATION (instance)
 // ============================================================
 pub fn get_version(env: &Env) -> Option<String> {
     env.storage().instance().get(&DataKey::Version)
@@ -144,6 +188,14 @@ pub fn set_pending_upgrade(env: &Env, pending: &PendingUpgrade) {
 
 pub fn clear_pending_upgrade(env: &Env) {
     env.storage().instance().remove(&DataKey::PendingUpgrade);
+}
+
+pub fn get_migration_cursor(env: &Env) -> Option<u64> {
+    env.storage().instance().get(&DataKey::MigrationCursor)
+}
+
+pub fn set_migration_cursor(env: &Env, id: u64) {
+    env.storage().instance().set(&DataKey::MigrationCursor, &id);
 }
 
 pub fn get_migrated_to_version(env: &Env) -> Option<String> {
@@ -292,6 +344,12 @@ pub fn set_event_manager(env: &Env, id: u64, manager: &Address) {
     touch_event_persistent(env, &key);
 }
 
+pub fn clear_event_manager(env: &Env, id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventManager(id));
+}
+
 pub fn get_pending_manager(env: &Env, id: u64) -> Option<PendingManager> {
     let key = DataKey::PendingManager(id);
     let p: Option<PendingManager> = env.storage().persistent().get(&key);
@@ -311,178 +369,6 @@ pub fn clear_pending_manager(env: &Env, id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::PendingManager(id));
-}
-
-// ============================================================
-// APPLICANTS (paged, persistent)
-// ============================================================
-pub fn applicant_count(env: &Env, id: u64) -> u32 {
-    let key = DataKey::EventApplicantCount(id);
-    let n: Option<u32> = env.storage().persistent().get(&key);
-    if n.is_some() {
-        touch_event_persistent(env, &key);
-    }
-    n.unwrap_or(0)
-}
-
-pub fn applicant_at(env: &Env, id: u64, idx: u32) -> Option<Address> {
-    let key = DataKey::EventApplicantAt(id, idx);
-    let addr: Option<Address> = env.storage().persistent().get(&key);
-    if addr.is_some() {
-        touch_event_persistent(env, &key);
-    }
-    addr
-}
-
-pub fn applicant_slot(env: &Env, id: u64, addr: &Address) -> u32 {
-    let key = DataKey::EventApplicantSlot(id, addr.clone());
-    let slot: Option<u32> = env.storage().persistent().get(&key);
-    if slot.is_some() {
-        touch_event_persistent(env, &key);
-    }
-    slot.unwrap_or(0)
-}
-
-pub fn append_applicant(env: &Env, id: u64, addr: &Address) -> Result<u32, Error> {
-    if applicant_slot(env, id, addr) != 0 {
-        return Err(Error::ApplicantAlreadyApplied);
-    }
-    let cur = applicant_count(env, id);
-    // No product cap: each applicant is its own ledger entry paid for by the
-    // applicant's own transaction, so growth is O(1) per append. Only guard
-    // the u32 counter itself.
-    let slot = cur.checked_add(1).ok_or(Error::TooManyApplicants)?;
-    let at_key = DataKey::EventApplicantAt(id, cur);
-    env.storage().persistent().set(&at_key, addr);
-    touch_event_persistent(env, &at_key);
-
-    let slot_key = DataKey::EventApplicantSlot(id, addr.clone());
-    env.storage().persistent().set(&slot_key, &slot);
-    touch_event_persistent(env, &slot_key);
-
-    let count_key = DataKey::EventApplicantCount(id);
-    env.storage().persistent().set(&count_key, &slot);
-    touch_event_persistent(env, &count_key);
-    Ok(slot)
-}
-
-pub fn remove_applicant(env: &Env, id: u64, addr: &Address) -> Result<(), Error> {
-    let slot = applicant_slot(env, id, addr);
-    if slot == 0 {
-        return Err(Error::ApplicantNotApplied);
-    }
-    let idx = slot.checked_sub(1).ok_or(Error::ApplicantNotApplied)?;
-    let count = applicant_count(env, id);
-    let last_idx = count.checked_sub(1).ok_or(Error::EventNotFound)?;
-
-    if idx != last_idx {
-        let last_addr = applicant_at(env, id, last_idx).ok_or(Error::EventNotFound)?;
-        let at_key = DataKey::EventApplicantAt(id, idx);
-        env.storage().persistent().set(&at_key, &last_addr);
-        touch_event_persistent(env, &at_key);
-
-        let last_slot_key = DataKey::EventApplicantSlot(id, last_addr.clone());
-        env.storage().persistent().set(&last_slot_key, &slot);
-        touch_event_persistent(env, &last_slot_key);
-    }
-
-    env.storage()
-        .persistent()
-        .remove(&DataKey::EventApplicantAt(id, last_idx));
-    env.storage()
-        .persistent()
-        .remove(&DataKey::EventApplicantSlot(id, addr.clone()));
-
-    let count_key = DataKey::EventApplicantCount(id);
-    let new_count = count.checked_sub(1).ok_or(Error::EventNotFound)?;
-    if new_count == 0 {
-        env.storage().persistent().remove(&count_key);
-    } else {
-        env.storage().persistent().set(&count_key, &new_count);
-        touch_event_persistent(env, &count_key);
-    }
-    Ok(())
-}
-
-pub fn applicants_snapshot(env: &Env, id: u64, start: u32, limit: u32) -> Vec<Address> {
-    let count = applicant_count(env, id);
-    let end = start.saturating_add(limit).min(count);
-    let mut out: Vec<Address> = Vec::new(env);
-    for idx in start..end {
-        if let Some(addr) = applicant_at(env, id, idx) {
-            out.push_back(addr);
-        }
-    }
-    out
-}
-
-// ============================================================
-// SUBMISSIONS (per-entry, persistent)
-// ============================================================
-pub fn get_submission(env: &Env, id: u64, applicant: &Address) -> Option<Submission> {
-    let key = DataKey::EventSubmission(id, applicant.clone());
-    let s: Option<Submission> = env.storage().persistent().get(&key);
-    if s.is_some() {
-        touch_event_persistent(env, &key);
-    }
-    s
-}
-
-pub fn set_submission(env: &Env, id: u64, applicant: &Address, submission: &Submission) {
-    let key = DataKey::EventSubmission(id, applicant.clone());
-    env.storage().persistent().set(&key, submission);
-    touch_event_persistent(env, &key);
-}
-
-pub fn remove_submission(env: &Env, id: u64, applicant: &Address) {
-    // Idempotent: a no-op when there is nothing to remove, symmetrically
-    // with append_submission, so a caller that skips its own existence
-    // check can't silently corrupt the counter by decrementing for an
-    // applicant that never had a submission.
-    if get_submission(env, id, applicant).is_none() {
-        return;
-    }
-
-    let key = DataKey::EventSubmission(id, applicant.clone());
-    env.storage().persistent().remove(&key);
-
-    let count_key = DataKey::EventSubmissionCount(id);
-    let next = submission_count(env, id).saturating_sub(1);
-    if next == 0 {
-        env.storage().persistent().remove(&count_key);
-    } else {
-        env.storage().persistent().set(&count_key, &next);
-        touch_event_persistent(env, &count_key);
-    }
-}
-
-pub fn submission_count(env: &Env, id: u64) -> u32 {
-    let key = DataKey::EventSubmissionCount(id);
-    let n: Option<u32> = env.storage().persistent().get(&key);
-    if n.is_some() {
-        touch_event_persistent(env, &key);
-    }
-    n.unwrap_or(0)
-}
-
-/// Count a new submission before writing the entry (mirrors
-/// `append_contributor`/`append_applicant`). A no-op when the applicant
-/// already has a submission — re-submission updates the existing entry in
-/// place and must not recount.
-///
-/// Returns `Error::TooManyContributors` only on u32 counter overflow —
-/// reused rather than a new variant since the errors enum is at the
-/// 50-case XDR cap.
-pub fn append_submission(env: &Env, id: u64, addr: &Address) -> Result<(), Error> {
-    if get_submission(env, id, addr).is_some() {
-        return Ok(());
-    }
-    let cur = submission_count(env, id);
-    let next = cur.checked_add(1).ok_or(Error::TooManyContributors)?;
-    let count_key = DataKey::EventSubmissionCount(id);
-    env.storage().persistent().set(&count_key, &next);
-    touch_event_persistent(env, &count_key);
-    Ok(())
 }
 
 // ============================================================
@@ -557,18 +443,18 @@ pub fn set_unclaimed_prize_count(env: &Env, id: u64, count: u32) {
     touch_event_persistent(env, &key);
 }
 
-pub fn get_prize_base_escrow(env: &Env, id: u64) -> Option<i128> {
-    let key = DataKey::EventPrizeBaseEscrow(id);
-    let b: Option<i128> = env.storage().persistent().get(&key);
-    if b.is_some() {
+pub fn owed_total(env: &Env, id: u64) -> i128 {
+    let key = DataKey::EventOwedTotal(id);
+    let t: Option<i128> = env.storage().persistent().get(&key);
+    if t.is_some() {
         touch_event_persistent(env, &key);
     }
-    b
+    t.unwrap_or(0)
 }
 
-pub fn set_prize_base_escrow(env: &Env, id: u64, base: i128) {
-    let key = DataKey::EventPrizeBaseEscrow(id);
-    env.storage().persistent().set(&key, &base);
+pub fn set_owed_total(env: &Env, id: u64, owed: i128) {
+    let key = DataKey::EventOwedTotal(id);
+    env.storage().persistent().set(&key, &owed);
     touch_event_persistent(env, &key);
 }
 
@@ -710,6 +596,55 @@ pub fn mark_milestone_claimed(env: &Env, id: u64, recipient: &Address, milestone
     touch_event_persistent(env, &key);
 }
 
+pub fn get_grant_roster(env: &Env, id: u64) -> Option<Map<Address, GrantAward>> {
+    let key = DataKey::GrantRoster(id);
+    let roster: Option<Map<Address, GrantAward>> = env.storage().persistent().get(&key);
+    if roster.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    roster
+}
+
+pub fn set_grant_roster(env: &Env, id: u64, roster: &Map<Address, GrantAward>) {
+    let key = DataKey::GrantRoster(id);
+    env.storage().persistent().set(&key, roster);
+    touch_event_persistent(env, &key);
+}
+
+pub fn get_grant_progress(env: &Env, id: u64, recipient: &Address) -> GrantProgress {
+    let key = DataKey::GrantProgress(id, recipient.clone());
+    let progress: Option<GrantProgress> = env.storage().persistent().get(&key);
+    if progress.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    progress.unwrap_or_default()
+}
+
+pub fn set_grant_progress(env: &Env, id: u64, recipient: &Address, progress: &GrantProgress) {
+    let key = DataKey::GrantProgress(id, recipient.clone());
+    env.storage().persistent().set(&key, progress);
+    touch_event_persistent(env, &key);
+}
+
+pub fn unclaimed_refund(env: &Env, id: u64, contributor: &Address) -> i128 {
+    let key = DataKey::UnclaimedRefund(id, contributor.clone());
+    let amount: Option<i128> = env.storage().persistent().get(&key);
+    if amount.is_some() {
+        touch_event_persistent(env, &key);
+    }
+    amount.unwrap_or(0)
+}
+
+pub fn set_unclaimed_refund(env: &Env, id: u64, contributor: &Address, amount: i128) {
+    let key = DataKey::UnclaimedRefund(id, contributor.clone());
+    if amount > 0 {
+        env.storage().persistent().set(&key, &amount);
+        touch_event_persistent(env, &key);
+    } else {
+        env.storage().persistent().remove(&key);
+    }
+}
+
 // ============================================================
 // CROWDFUNDING MILESTONES CLAIMED (persistent)
 // ============================================================
@@ -756,17 +691,10 @@ pub fn clear_cancellation_state(env: &Env, id: u64) {
 // IDEMPOTENCY (temporary; auto-TTL)
 // ============================================================
 pub fn is_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) -> bool {
-    let scoped_seen = env
-        .storage()
+    env.storage()
         .temporary()
         .get(&DataKey::OpSeen(domain.clone(), op_id.clone()))
-        .unwrap_or(false);
-    scoped_seen
-        || env
-            .storage()
-            .temporary()
-            .get(&LegacyDataKey::OpSeen(op_id.clone()))
-            .unwrap_or(false)
+        .unwrap_or(false)
 }
 
 pub fn mark_op_seen(env: &Env, domain: &Address, op_id: &BytesN<32>) {

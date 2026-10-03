@@ -37,9 +37,9 @@ fn new_token(env: &Env) -> Address {
     env.register_stellar_asset_contract_v2(issuer).address()
 }
 
-fn single_dist(env: &Env) -> Map<u32, u32> {
+fn single_dist(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 10000000000_i128);
     m
 }
 
@@ -122,7 +122,7 @@ fn create_event_with_unsupported_token_reverts() {
         content_uri: String::from_str(&ctx.env, "https://example.com"),
         title: String::from_str(&ctx.env, "Bad Token Hack"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -151,7 +151,7 @@ fn create_event_with_deregistered_token_reverts() {
         content_uri: String::from_str(&ctx.env, "https://example.com"),
         title: String::from_str(&ctx.env, "Deregistered Token Hack"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: single_dist(&ctx.env),
+        prize_floors: single_dist(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };

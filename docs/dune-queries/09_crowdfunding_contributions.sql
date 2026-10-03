@@ -1,4 +1,4 @@
--- Boundless On-chain: Contribution inflows — daily volume
+-- Boundless On-chain: Contribution inflows, daily volume
 -- Panel type: line chart  x=day  y=total_contributed_display
 --
 -- FundsAdded fires for every add_funds call (crowdfunding contributions AND

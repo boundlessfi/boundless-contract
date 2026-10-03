@@ -76,9 +76,9 @@ fn setup<'a>() -> Ctx<'a> {
     }
 }
 
-fn dist_100(env: &Env) -> Map<u32, u32> {
+fn dist_100(env: &Env) -> Map<u32, i128> {
     let mut m = Map::new(env);
-    m.set(1, 100);
+    m.set(1, 100000000000_i128);
     m
 }
 
@@ -92,7 +92,7 @@ fn create_bounty(ctx: &Ctx) -> u64 {
         content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/events/op-id-sec"),
         title: String::from_str(&ctx.env, "OpId Security"),
         deadline: Some(ctx.env.ledger().timestamp() + 86_400),
-        winner_distribution: dist_100(&ctx.env),
+        prize_floors: dist_100(&ctx.env),
         fee_bps_override: None,
         manager: None,
     };
@@ -118,13 +118,15 @@ fn sha256_child_ids_differ_for_xor_colliding_parents() {
     let parent_b = BytesN::from_array(env, &b);
     assert_ne!(parent_a, parent_b);
 
-    // derive_child reads profile contract storage — must run as the events contract.
+    // derive_child reads profile contract storage, so it must run as the events contract.
     let (child_a, child_b, child_rep, child_i0, child_i1) = env.as_contract(&ctx.events_id, || {
-        let child_a = idempotency::derive_child(env, &parent_a, tag::BOOTSTRAP);
-        let child_b = idempotency::derive_child(env, &parent_b, tag::BOOTSTRAP);
-        let child_rep = idempotency::derive_child(env, &parent_a, tag::BUMP_REP);
-        let child_i0 = idempotency::derive_child_indexed(env, &parent_a, tag::BOOTSTRAP, 0);
-        let child_i1 = idempotency::derive_child_indexed(env, &parent_a, tag::BOOTSTRAP, 1);
+        let child_a = idempotency::derive_child(env, &ctx.owner, &parent_a, tag::BOOTSTRAP);
+        let child_b = idempotency::derive_child(env, &ctx.owner, &parent_b, tag::BOOTSTRAP);
+        let child_rep = idempotency::derive_child(env, &ctx.owner, &parent_a, tag::BUMP_REP);
+        let child_i0 =
+            idempotency::derive_child_indexed(env, &ctx.owner, &parent_a, tag::BOOTSTRAP, 0);
+        let child_i1 =
+            idempotency::derive_child_indexed(env, &ctx.owner, &parent_a, tag::BOOTSTRAP, 1);
         (child_a, child_b, child_rep, child_i0, child_i1)
     });
 
@@ -136,6 +138,14 @@ fn sha256_child_ids_differ_for_xor_colliding_parents() {
     assert_eq!(child_a, child_i0);
     assert_ne!(child_i0, child_i1);
     assert_ne!(child_a, parent_a);
+
+    let child_other_caller = env.as_contract(&ctx.events_id, || {
+        idempotency::derive_child(env, &ctx.applicant, &parent_a, tag::BOOTSTRAP)
+    });
+    assert_ne!(
+        child_a, child_other_caller,
+        "the same parent under another authorizer must not share children"
+    );
 }
 
 /// Attacker squats derived child ids via bootstrap_self; legitimate claim_prize still pays.
@@ -144,29 +154,26 @@ fn bootstrap_self_cannot_front_run_events_child_op_ids() {
     let ctx = setup();
     let bounty_id = create_bounty(&ctx);
 
-    let op_apply = BytesN::random(&ctx.env);
-    ctx.events
-        .apply_to_bounty(&bounty_id, &ctx.applicant, &op_apply);
-
     let winners = soroban_sdk::vec![
         &ctx.env,
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: 10_000_0000000_i128,
             reputation_bump: 50,
         },
     ];
     let op_select = BytesN::random(&ctx.env);
     ctx.events.select_winners(&bounty_id, &winners, &op_select);
 
-    // Parent op_id the winner will use for claim_prize — attacker observes it and
+    // Parent op_id the winner will use for claim_prize; the attacker observes it and
     // pre-marks the derived profile child ids via unprivileged bootstrap_self.
     let claim_op = BytesN::random(&ctx.env);
     let (bootstrap_child, rep_child, earnings_child) = ctx.env.as_contract(&ctx.events_id, || {
         (
-            idempotency::derive_child(&ctx.env, &claim_op, tag::BOOTSTRAP),
-            idempotency::derive_child(&ctx.env, &claim_op, tag::BUMP_REP),
-            idempotency::derive_child(&ctx.env, &claim_op, tag::REGISTER_EARNINGS),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::BOOTSTRAP),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::BUMP_REP),
+            idempotency::derive_child(&ctx.env, &ctx.applicant, &claim_op, tag::REGISTER_EARNINGS),
         )
     });
 
@@ -200,7 +207,7 @@ fn events_domain_child_op_id_replay_still_rejected() {
     // Bootstrap via events path twice with the same child id.
     let parent = BytesN::random(env);
     let child = env.as_contract(&ctx.events_id, || {
-        idempotency::derive_child(env, &parent, tag::BOOTSTRAP)
+        idempotency::derive_child(env, &ctx.owner, &parent, tag::BOOTSTRAP)
     });
     let user = Address::generate(env);
 
@@ -236,7 +243,7 @@ fn event_id_overflow_reverts() {
         content_uri: String::from_str(env, "https://api.boundless.fi/events/overflow"),
         title: String::from_str(env, "Overflow"),
         deadline: Some(env.ledger().timestamp() + 86_400),
-        winner_distribution: dist_100(env),
+        prize_floors: dist_100(env),
         fee_bps_override: None,
         manager: None,
     };
@@ -244,8 +251,7 @@ fn event_id_overflow_reverts() {
     let err = ctx
         .events
         .try_create_event(&params, &BytesN::random(env))
-        .err()
-        .expect("event creation should fail when next_event_id overflows")
+        .expect_err("event creation should fail when next_event_id overflows")
         .unwrap();
     assert_eq!(err, crate::errors::Error::EventIdOverflow);
 
@@ -275,19 +281,20 @@ fn event_id_overflow_reverts() {
 /// (select_winners) that reuses it. Before namespacing, the shared global
 /// OpSeen made the manager's payout revert with OpAlreadySeen.
 #[test]
-fn permissionless_apply_cannot_squat_select_winners_op_id() {
+fn permissionless_add_funds_cannot_squat_select_winners_op_id() {
     let ctx = setup();
     let id = create_bounty(&ctx);
-
-    ctx.events
-        .apply_to_bounty(&id, &ctx.applicant, &BytesN::random(&ctx.env));
 
     // The op_id the owner will use to select winners.
     let victim_op = BytesN::random(&ctx.env);
 
-    // Attacker front-runs by burning that op_id in their own (apply) domain.
+    // Attacker front-runs by burning that op_id in their own (add_funds)
+    // domain. Contributing is the one entrypoint anyone may still call.
     let attacker = Address::generate(&ctx.env);
-    ctx.events.apply_to_bounty(&id, &attacker, &victim_op);
+    // add_funds debits the contribution plus the platform fee on top.
+    token::StellarAssetClient::new(&ctx.env, &ctx.token_addr).mint(&attacker, &1_000_0000000_i128);
+    ctx.events
+        .add_funds(&id, &attacker, &100_0000000_i128, &victim_op);
 
     // Owner's select_winners with the same op_id still succeeds (owner domain).
     let winners = soroban_sdk::vec![
@@ -295,6 +302,7 @@ fn permissionless_apply_cannot_squat_select_winners_op_id() {
         WinnerSpec {
             recipient: ctx.applicant.clone(),
             position: 1,
+            amount: 10_000_0000000_i128,
             reputation_bump: 0,
         },
     ];

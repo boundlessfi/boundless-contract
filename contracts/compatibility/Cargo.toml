@@ -9,3 +9,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[dev-dependencies]
+boundless-events = { path = "../events" }
+boundless-profile = { path = "../profile" }
