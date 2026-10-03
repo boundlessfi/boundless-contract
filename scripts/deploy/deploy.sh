@@ -1,41 +1,34 @@
 #!/usr/bin/env bash
-# deploy.sh — deploy boundless-events + boundless-profile to a Stellar network.
+# deploy.sh: deploy boundless-profile and boundless-events to testnet or
+# futurenet, wire them together, and write deployments/<network>.json.
 #
 # Usage:
-#   ./scripts/deploy/deploy.sh <network>
+#   ./scripts/deploy/deploy.sh <testnet|futurenet>
 #
-# where <network> is one of: testnet, futurenet, mainnet.
-#
-# Required env (loaded from .env.deploy or shell):
-#   ADMIN_IDENTITY            stellar CLI identity name with admin authority
+# Required env (loaded from .env.deploy or the shell):
+#   ADMIN_IDENTITY            stellar CLI identity that deploys and holds admin
 #   FEE_ACCOUNT               Stellar G-address that receives fees
 #   FEE_BPS                   platform fee in basis points (e.g. 250 = 2.5%)
 #
-# Contract 1.0.0 also required BOOTSTRAP_CREDITS; the 1.1.0 credit-removal
-# upgrade (2026-06) moved credits off-chain and the profile constructor now
-# takes only --admin.
-#
-# Spec: boundless-platform-contract-prd.md Section 12.2.
+# Mainnet deploys use ./deploy_mainnet.sh instead (docs/DEPLOYMENT.md).
 
 set -euo pipefail
 
 NETWORK="${1:-}"
 if [[ -z "$NETWORK" ]]; then
-  echo "usage: $0 <testnet|futurenet|mainnet>" >&2
+  echo "usage: $0 <testnet|futurenet>" >&2
   exit 1
 fi
-if [[ "$NETWORK" != "testnet" && "$NETWORK" != "futurenet" && "$NETWORK" != "mainnet" ]]; then
-  echo "error: network must be one of testnet, futurenet, mainnet (got: $NETWORK)" >&2
+if [[ "$NETWORK" == "mainnet" ]]; then
+  echo "error: mainnet deploys go through ./deploy_mainnet.sh deploy-profile and deploy-events (docs/DEPLOYMENT.md)" >&2
   exit 1
 fi
-
-# Load .env.deploy if present (and not already exported).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-if [[ -f "$REPO_ROOT/.env.deploy" ]]; then
-  # shellcheck disable=SC1091
-  set -a; source "$REPO_ROOT/.env.deploy"; set +a
-fi
+# shellcheck source=../lib/deploy-env.sh
+source "$SCRIPT_DIR/../lib/deploy-env.sh"
+load_env_deploy "$REPO_ROOT/.env.deploy"
+require_network "$NETWORK"
 
 require() {
   local name="$1"
@@ -47,12 +40,15 @@ require() {
 require ADMIN_IDENTITY
 require FEE_ACCOUNT
 require FEE_BPS
+require_g_address FEE_ACCOUNT "$FEE_ACCOUNT"
+if [[ ! "$FEE_BPS" =~ ^[0-9]+$ ]]; then
+  echo "error: FEE_BPS must be a whole number of basis points (got: $FEE_BPS)" >&2
+  exit 1
+fi
 
-# Soroban host on Stellar testnet accepts WebAssembly emitted with the
-# reference-types extension; stellar-cli's local simulator only validates that
-# extension from 26.0.0 onward. Earlier CLIs reject Rust 1.90.0 wasm32v1-none
-# output at simulation time with a "reference-types not enabled" error.
-MIN_CLI_MAJOR=26
+# CI builds with stellar CLI 28.1.0 against soroban-sdk 28; older CLIs are
+# untested with these contracts.
+MIN_CLI_MAJOR=28
 CLI_VERSION_LINE="$(stellar --version 2>/dev/null | head -1)"
 CLI_MAJOR="$(printf '%s' "$CLI_VERSION_LINE" | grep -oE '[0-9]+' | head -1)"
 if [[ -z "${CLI_MAJOR:-}" ]]; then
@@ -60,24 +56,14 @@ if [[ -z "${CLI_MAJOR:-}" ]]; then
   exit 1
 fi
 if (( CLI_MAJOR < MIN_CLI_MAJOR )); then
-  cat >&2 <<EOF
-error: stellar CLI $CLI_VERSION_LINE is too old.
-       Need >= $MIN_CLI_MAJOR.0.0 so the local simulator can validate
-       reference-types wasm emitted by Rust 1.90.0.
-
-Upgrade:
-  brew upgrade stellar/tap/stellar-cli
-  # or
-  cargo install --locked stellar-cli@26.1.0
-EOF
+  echo "error: stellar CLI $CLI_VERSION_LINE is too old; CI uses 28.1.0 (cargo install --locked stellar-cli@28.1.0)" >&2
   exit 1
 fi
 
-# Sanity check fee_bps. Contract enforces MAX_FEE_BPS = 1000 (10%) per
-# 2026-06 Stellar-skill audit L4; values above this will deploy fine and
-# then revert at the first create_event call.
+# The constructor accepts any value, but every create_event reverts above the
+# contract's MAX_FEE_BPS of 1000 (10%).
 if (( FEE_BPS < 0 || FEE_BPS > 1000 )); then
-  echo "error: FEE_BPS must be in [0, 1000] (contract caps at 1000 = 10% per audit L4); got $FEE_BPS" >&2
+  echo "error: FEE_BPS must be in [0, 1000] (the contract caps fees at 10%); got $FEE_BPS" >&2
   exit 1
 fi
 
@@ -90,18 +76,11 @@ echo "    fee account:       $FEE_ACCOUNT"
 echo "    fee bps:           $FEE_BPS"
 echo
 
-# 1. Build both contracts. Testnet/futurenet enable the `testnet` feature →
-#    zero upgrade timelock for fast iteration. Mainnet MUST build WITHOUT it
-#    (default = full audit-mandated timelock; fail-safe).
-echo "==> building contracts"
-BUILD_FEATURES=""
-if [[ "$NETWORK" == "testnet" || "$NETWORK" == "futurenet" ]]; then
-  BUILD_FEATURES="--features testnet"
-fi
-# shellcheck disable=SC2086
-( cd "$REPO_ROOT/contracts/events"  && stellar contract build --locked $BUILD_FEATURES )
-# shellcheck disable=SC2086
-( cd "$REPO_ROOT/contracts/profile" && stellar contract build --locked $BUILD_FEATURES )
+# The testnet feature zeroes the upgrade timelock so test upgrades can apply at
+# once; mainnet builds (deploy_mainnet.sh) leave it off.
+echo "==> building contracts with --features testnet"
+( cd "$REPO_ROOT" && stellar contract build --locked --package boundless-events --features testnet )
+( cd "$REPO_ROOT" && stellar contract build --locked --package boundless-profile --features testnet )
 
 EVENTS_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_events.wasm"
 PROFILE_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_profile.wasm"
@@ -110,7 +89,7 @@ for f in "$EVENTS_WASM" "$PROFILE_WASM"; do
   [[ -f "$f" ]] || { echo "error: wasm not found at $f" >&2; exit 1; }
 done
 
-# 2. Deploy boundless-profile first (events constructor needs its address).
+# Profile first: the events constructor takes its address.
 echo
 echo "==> deploying boundless-profile"
 PROFILE_ID=$(stellar contract deploy \
@@ -121,7 +100,6 @@ PROFILE_ID=$(stellar contract deploy \
   --admin "$ADMIN_ADDR")
 echo "    profile contract id: $PROFILE_ID"
 
-# 3. Deploy boundless-events pointing at the profile contract.
 echo
 echo "==> deploying boundless-events"
 EVENTS_ID=$(stellar contract deploy \
@@ -135,7 +113,6 @@ EVENTS_ID=$(stellar contract deploy \
   --profile_contract "$PROFILE_ID")
 echo "    events contract id:  $EVENTS_ID"
 
-# 4. Wire profile to recognize the events contract.
 echo
 echo "==> wiring profile.set_events_contract"
 stellar contract invoke \
@@ -146,7 +123,6 @@ stellar contract invoke \
   set_events_contract \
   --new_addr "$EVENTS_ID"
 
-# 5. Persist deployment record.
 DEPLOY_RECORD="$REPO_ROOT/deployments/$NETWORK.json"
 mkdir -p "$(dirname "$DEPLOY_RECORD")"
 cat > "$DEPLOY_RECORD" <<EOF
@@ -157,15 +133,16 @@ cat > "$DEPLOY_RECORD" <<EOF
   "fee_account": "$FEE_ACCOUNT",
   "fee_bps": $FEE_BPS,
   "events_contract": "$EVENTS_ID",
-  "profile_contract": "$PROFILE_ID"
+  "profile_contract": "$PROFILE_ID",
+  "deployer_identity": "$ADMIN_IDENTITY"
 }
 EOF
 
 echo
-echo "==> done. summary written to $DEPLOY_RECORD"
+echo "==> done. local record written to $DEPLOY_RECORD"
 echo
-echo "set these in the nestjs deployment env:"
+echo "set these in the boundless-nestjs deployment env:"
 echo "  BOUNDLESS_EVENTS_CONTRACT_ADDRESS=$EVENTS_ID"
 echo "  BOUNDLESS_PROFILE_CONTRACT_ADDRESS=$PROFILE_ID"
 echo
-echo "next: ./scripts/deploy/register_token.sh $NETWORK <token-address>"
+echo "next: ./scripts/deploy/register_token.sh $NETWORK <token-address> <CODE:ISSUER|native>"

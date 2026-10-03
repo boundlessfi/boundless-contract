@@ -1,0 +1,16 @@
+{
+  "id": "GVFZ5ZFKKIBJ5J6WJIBAGI3MNBQNSPUQ2IDW52IJB4LAJLJ6HDU6GDPM",
+  "balances": [
+    {
+      "asset_type": "credit_alphanum4",
+      "asset_code": "USDC",
+      "asset_issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+      "balance": "0.0000000",
+      "is_authorized": false
+    },
+    {
+      "asset_type": "native",
+      "balance": "10.0000000"
+    }
+  ]
+}

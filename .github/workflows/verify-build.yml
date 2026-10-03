@@ -12,9 +12,11 @@ on:
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - 'deploy_mainnet.sh'
+      - 'deploy_and_upgrade.sh'
       - 'scripts/**'
       - '.github/actions/setup-rust-stellar/**'
       - '.github/workflows/verify-build.yml'
+      - '.github/workflows/rustfmt.yml'
   # Use pull_request (not pull_request_target): the check must run the workflow
   # from the PR head so branch-filter changes take effect on the PR itself, and
   # the build/test job needs no secrets, so the pull_request_target foot-gun
@@ -31,6 +33,7 @@ on:
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - 'deploy_mainnet.sh'
+      - 'deploy_and_upgrade.sh'
       - 'scripts/**'
       - '.github/actions/setup-rust-stellar/**'
       - '.github/workflows/verify-build.yml'
@@ -56,10 +59,25 @@ jobs:
       - name: Check release script syntax
         run: |
           bash -n deploy_mainnet.sh
+          bash -n deploy_and_upgrade.sh
           bash -n scripts/capture-mainnet-compat-snapshot.sh
-          bash -n scripts/test-sdk27-compat.sh
+          bash -n scripts/test-storage-compat.sh
           bash -n scripts/test-mainnet-upgrade-guards.sh
           bash -n scripts/testdata/mock-stellar
+          bash -n scripts/lib/deploy-env.sh
+          bash -n scripts/deploy/deploy.sh
+          bash -n scripts/deploy/register_token.sh
+          bash -n scripts/deploy/verify.sh
+          bash -n scripts/admin/verify-multisig.sh
+          bash -n scripts/admin/verify-fee-trustline.sh
+          bash -n scripts/check-versions.sh
+          bash -n scripts/test-admin-scripts.sh
+
+      - name: Check contract versions agree
+        run: ./scripts/check-versions.sh
+
+      - name: Verify admin pre-flight checks
+        run: ./scripts/test-admin-scripts.sh
 
       - name: Verify mainnet upgrade guards
         run: ./scripts/test-mainnet-upgrade-guards.sh
@@ -79,10 +97,11 @@ jobs:
             fi
           done
 
-      - name: Verify SDK 23 to SDK 27 storage compatibility
-        env:
-          VERIFY_SDK27_BUILD: "1"
-        run: ./scripts/test-sdk27-compat.sh
+      - name: Replay the mainnet upgrade against this build
+        run: ./scripts/test-storage-compat.sh
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Run tests
         run: cargo test --release

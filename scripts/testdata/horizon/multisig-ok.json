@@ -1,0 +1,30 @@
+{
+  "id": "GUJZDEGXDNCF32EPF3DHODZDOCIS2JHTLGMXGEDN73U55XTPLPFT7V4S",
+  "thresholds": {
+    "low_threshold": 0,
+    "med_threshold": 2,
+    "high_threshold": 2
+  },
+  "signers": [
+    {
+      "key": "GEH2KVJ72CEUVW75EFR6EDT4SYWB5WKH7DNSIPZZ7FK4ZRI3R2WYOJFL",
+      "weight": 1,
+      "type": "ed25519_public_key"
+    },
+    {
+      "key": "GJOOA7LQSAJ2XUID5ZZZZG6ZDMEN4KHVDGAJGXBENYJQWX6HH7566TFJ",
+      "weight": 1,
+      "type": "ed25519_public_key"
+    },
+    {
+      "key": "GGVQ6KBNXJBTFQXKWOVOMPZOM7WBBR6QMW4WXFOGO6MVN6A6WFHYM6L3",
+      "weight": 1,
+      "type": "ed25519_public_key"
+    },
+    {
+      "key": "GUJZDEGXDNCF32EPF3DHODZDOCIS2JHTLGMXGEDN73U55XTPLPFT7V4S",
+      "weight": 0,
+      "type": "ed25519_public_key"
+    }
+  ]
+}
