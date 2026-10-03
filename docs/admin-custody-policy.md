@@ -10,8 +10,8 @@ The admin key controls the most sensitive operations on the Boundless contracts:
 
 Two phases. Both are 2-of-3 multi-sig; they differ in how the per-signer keys are stored.
 
-- **Launch baseline (current):** software signers — each signer runs Freighter (or an equivalent Stellar wallet) on their own machine, with a strong unique passphrase and a paper-only backup. This ships now.
-- **Target state:** hardware-isolated signers per the original policy text below — Yubikey, Ledger, or air-gapped machine. **Hardware upgrade trigger:** when total escrow TVL crosses the threshold set in section 10 below.
+- **Launch baseline (current):** software signers. Each signer runs Freighter (or an equivalent Stellar wallet) on their own machine, with a strong unique passphrase and a paper-only backup. This ships now.
+- **Target state:** hardware-isolated signers per the original policy text below: Yubikey, Ledger, or air-gapped machine. **Hardware upgrade trigger:** when total escrow TVL crosses the threshold set in section 10 below.
 
 Everything else in this document (thresholds, rotation, drills, operational hygiene) applies to **both phases identically.** The verify-multisig script does not care whether keys are hardware or software; it only checks the on-chain signer config.
 
@@ -21,16 +21,19 @@ Section 3 describes the target-state hardware procedure. Section 3-bis describes
 
 ## 1. What the admin can do
 
-The admin authority on `boundless-events` (and equivalently on `boundless-profile`) gates:
+The admin authority on `boundless-events` gates:
 
-- `set_fee_bps(new_bps)` — change the global default fee rate.
-- `set_fee_account(new_account)` — change the address that receives fee revenue.
-- `set_profile_contract(new_addr)` — change which profile contract events writes to.
-- `set_admin(new_admin)` — rotate the admin authority (two-step with `accept_admin`).
-- `pause()` — emergency stop on all write ops.
-- `unpause()` — resume write ops.
-- `upgrade(new_wasm_hash)` — replace contract logic.
-- `register_supported_token(token)` / `deregister_supported_token(token)` — token whitelist.
+- `set_fee_bps(new_bps)`: change the global default fee rate.
+- `set_fee_account(new_account)`: change the address that receives fee revenue.
+- `set_profile_contract(new_addr)`: change which profile contract events writes to.
+- `set_admin(new_admin)`: rotate the admin authority (two-step with `accept_admin`).
+- `pause()`: emergency stop on every event-lifecycle call. Admin calls keep working.
+- `unpause()`: resume them.
+- `propose_upgrade(wasm_hash, version)`, `apply_upgrade()`, `cancel_pending_upgrade()`: replace contract logic. Mainnet builds from events 2.0.0 and profile 1.2.1 make `apply_upgrade` wait 17,280 ledgers (about a day) after the proposal. `migrate_events(max_events)` and `migrate()` finish an upgrade (`docs/upgrade-runbook.md`).
+- `register_supported_token(token)` / `deregister_supported_token(token)`: token whitelist.
+- `propose_release_validator(target)`, `cancel_pending_release_validator()`, `clear_release_validator()`: appoint, withdraw a proposal for, or remove the co-signer for crowdfunding milestone releases (from events 2.0.0; see §4.1). The proposed key must accept with its own signature. While none is appointed, the admin co-signs those releases itself.
+
+The same multisig is admin of `boundless-profile`, where it holds `set_admin`, `pause` / `unpause`, the same upgrade calls, the timelocked rotation of the profile's events-contract binding (`propose_events_contract`, `accept_events_contract`, `cancel_pending_events_contract`), and `admin_slash_reputation(user, delta, reason)`.
 
 There is no other authority. The admin cannot move funds out of escrow directly; the contract enforces that. The admin can only change the rules of future operations and pause current ones.
 
@@ -64,7 +67,7 @@ Three is the smallest set that supports 2-of-N. As the team grows, expand to 5 (
 
 ---
 
-## 3. Key generation and storage (target state — hardware)
+## 3. Key generation and storage (target state: hardware)
 
 Each signer generates their own key. We do not let any single person see another signer's key. The procedure per signer:
 
@@ -75,9 +78,9 @@ Each signer generates their own key. We do not let any single person see another
 
 We do not have a "platform-held" backup. Loss of a signer's key without their personal recovery is a real operational risk; that is why the threshold is 2 of 3 (we can lose one and still recover).
 
-## 3-bis. Key generation and storage (launch baseline — Freighter)
+## 3-bis. Key generation and storage (launch baseline: Freighter)
 
-Per signer, in isolation. **The threat model here is "compromised machine" — software keys are extractable from any machine that gets owned.** The hygiene below is what makes this safe-enough to ship and is required, not optional.
+Per signer, in isolation. **The threat model here is "compromised machine": software keys are extractable from any machine that gets owned.** The hygiene below is what makes this safe-enough to ship and is required, not optional.
 
 1. **Dedicated browser profile** on a personal machine (not a shared workstation, not a CI runner). No other browser extensions installed in that profile beyond Freighter. No untrusted tabs while signing.
 2. **Generate the keypair in Freighter** with a strong, unique passphrase. Recommended: 6-word [Diceware](https://en.wikipedia.org/wiki/Diceware) or equivalent, never reused for any other purpose. Not your 1Password master, not your email password.
@@ -115,16 +118,54 @@ The standard threshold is 2 of 3. The following operations have different requir
 |---|---|---|
 | `pause()` | **2 of 3 (lower bar)** | Emergency. Cap damage first; recover later. |
 | `unpause()` | 2 of 3 | Resume after fix is in place. |
-| `upgrade(new_wasm_hash)` | 2 of 3 | Standard. Requires both pre-deploy review + audit refresh. |
+| `propose_upgrade`, `apply_upgrade`, `cancel_pending_upgrade`, `migrate_events`, `migrate` | 2 of 3 | Standard. A proposal requires pre-deploy review and an audit refresh. |
 | `set_fee_bps(new_bps)` | 2 of 3 | Standard. |
 | `set_fee_account(new_account)` | **3 of 3 (higher bar)** | Most-sensitive op. Wrong address sends fees somewhere we cannot retrieve. |
 | `set_admin(new_admin)` | **3 of 3** | Rotating the admin itself. Highest-stakes change. |
 | `set_profile_contract` | 2 of 3 | Standard. |
 | `register_supported_token` / `deregister_supported_token` | 2 of 3 | Routine policy. |
+| `propose_release_validator` | **3 of 3 (higher bar)** | Hands a routine co-signing role to a key outside this multi-sig (§4.1). |
+| `clear_release_validator`, `cancel_pending_release_validator` | 2 of 3 | Removing or withdrawing returns co-signing to this multi-sig; it must be quick when a validator key is suspect. |
 
 The Stellar multi-sig itself does not support per-operation thresholds directly; we enforce these by signer convention with logged sign-off. Tools we build (admin signing portal) will enforce them programmatically.
 
 ---
+
+### 4.1 Crowdfunding release validator
+
+Every crowdfunding milestone release needs the campaign owner's signature and a
+co-signature. Before events 2.0.0 the co-signer was this multi-sig, which put
+the keys that can upgrade the contract into a routine payout flow. From 2.0.0
+the admin can appoint a release validator to co-sign instead.
+
+- **What it can do.** Co-sign a release the campaign owner has also signed. The
+  contract computes the amount and always pays the owner, so the validator
+  decides when a release happens, never where the money goes or how much.
+- **What it cannot do.** Anything else: it holds no admin power and cannot
+  move escrow on its own.
+- **Custody.** A key held by none of the three admin signers. It may be its own
+  multi-sig (for example the operations team) or a backend-held key under the
+  same envelope encryption as managed wallets. A backend-held validator means a
+  backend compromise can approve releases early for campaigns whose owner is
+  also a managed wallet; choose accordingly.
+- **Rotation.** Two steps, like the admin itself. The multi-sig calls
+  `propose_release_validator(target)` (`ReleaseValidatorProposed`), and the new
+  key calls `accept_release_validator` with its own signature within 120,960
+  ledgers, about 7 days (`ReleaseValidatorUpdated`). Until it accepts, the
+  current validator, or the admin, keeps co-signing, so a typo or a key nobody
+  holds can never take over. A new proposal replaces a pending one, and
+  `cancel_pending_release_validator` withdraws it (`ValidatorProposalCancelled`
+  in both cases).
+- **Removal.** `clear_release_validator` takes effect at once and returns
+  co-signing to the admin. That is the response to a validator key that is
+  lost or suspect; do not wait for a replacement to accept first.
+- **Backend key.** When the validator key is held by the backend
+  (`RELEASE_VALIDATOR_SECRET_KEY`, or `_FILE`), the admin portal releases an
+  approved milestone in one call; otherwise whoever holds the key signs the
+  built release at the Lab. Accept the appointment with the same key the
+  backend is configured with.
+- **Monitoring.** Alert on every `ReleaseValidatorProposed`,
+  `ReleaseValidatorUpdated` and `ValidatorProposalCancelled`.
 
 ## 5. Signer rotation
 
@@ -137,7 +178,7 @@ The Stellar multi-sig itself does not support per-operation thresholds directly;
 5. New multi-sig accepts via `accept_admin`.
 6. Verify on-chain via `get_admin`.
 7. Outgoing signer destroys their key copy.
-8. Document the rotation in `deployments/admin-rotations.jsonl`.
+8. Document the rotation in the operator's local log, `deployments/admin-rotations.jsonl` (`deployments/` is gitignored; keep a copy with the team's ops notes).
 
 ### 5.2 Emergency rotation (signer key compromised or lost)
 
@@ -183,9 +224,9 @@ For every admin operation:
 
 - [ ] Written request in `#ops-admin-requests` Slack channel with the proposed operation and reasoning.
 - [ ] Each signer confirms review in the same channel before signing.
-- [ ] Signers coordinate on a Soroban CLI invocation; or use an admin signing portal (when built).
+- [ ] The founder prepares a simulated transaction with the Stellar CLI (`docs/contract-ops-runbook.md`, Section 5) or the admin signing portal (when built), and every signer decodes it before signing.
 - [ ] On-chain operation is verified by the requester before the channel thread is closed.
-- [ ] Operation logged in `deployments/admin-operations.jsonl`.
+- [ ] Operation logged in the operator's local `deployments/admin-operations.jsonl`.
 
 This is not paranoia; it is a paper trail. Every fee change, every upgrade, every signer rotation has an auditable record.
 
@@ -230,7 +271,7 @@ When the trigger fires, the upgrade procedure is:
 3. Create a NEW multi-sig account with the three NEW hardware-backed addresses; verify with `./scripts/admin/verify-multisig.sh <new-multisig> mainnet`.
 4. Run the rotation per section 5.1 (`set_admin(new_multisig) → accept_admin`).
 5. Destroy the software keys on each signer machine. Burn the paper backups.
-6. Run the testnet drill on the new hardware multi-sig per `docs/multisig-preflight.md` §4.
+6. Run the testnet drill on the new hardware multi-sig per `docs/multisig-guide.md` §E.10.
 7. Log the rotation in `deployments/admin-rotations.jsonl` with both old and new multi-sig addresses + the threshold that triggered.
 
 The thresholds above are starting points. Review them at the same cadence as the annual policy review, or sooner if the team's risk tolerance changes.

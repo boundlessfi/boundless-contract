@@ -1,4 +1,13 @@
-# Mainnet upgrade runbook — events 1.7.0 + profile 1.2.0
+# Mainnet upgrade runbook: events 1.7.0 + profile 1.2.0
+
+> Historical record. Prepared on 2026-08-18 for the mainnet upgrade to events
+> 1.7.0 and profile 1.2.0, and only partly executed: both upgrades were
+> proposed and applied, but neither `migrate_events` nor `migrate` ever ran on
+> mainnet. Events still reports a 1.6.0 migration marker with its first two
+> records in the pre-1.7.0 layout, and profile has no marker. These builds
+> also zeroed the upgrade timelock. `docs/upgrade-runbook.md` supersedes this
+> file; its "Mainnet 1.7.0 to 2.0.0" section finishes that migration as part
+> of the 2.0.0 upgrade. Commands and paths below are as written then.
 
 Prepared 2026-08-18 from `feat/escrow-open-pool` @ `870e9a3`.
 
@@ -17,7 +26,7 @@ of the code.
 | Target | 1.7.0 | 1.2.0 |
 | Wasm sha256 | `b87365c16102f7242a8fc3e770f615991841741c40673bb241cb254130be4c26` | `6b4804920a4068dfdcaaa711fac6390850e0a92f4b5ed4e46259694b61cbae12` |
 | Size | 62,110 bytes (94% of the 64 KB ceiling) | 16,148 bytes |
-| Data migration | **Yes — rewrites every EventRecord** | No; `migrate()` is a version stamp with an empty dispatch |
+| Data migration | **Yes: rewrites every EventRecord** | No; `migrate()` is a version stamp with an empty dispatch |
 
 Reproduce both hashes before signing:
 
@@ -37,7 +46,7 @@ profile version, so the ordering below is convention, not a hard dependency.
 
 ---
 
-## 2. Pre-flight — re-run immediately before signing
+## 2. Pre-flight: re-run immediately before signing
 
 The events migration rewrites every `EventRecord`, because `winner_distribution`
 and `prize_floors` differ in field name *and* value type: a pre-1.7.0 row cannot
@@ -61,7 +70,7 @@ Expected, and true at preparation:
 Then confirm:
 
 - `…608`, `…611`, `…612`, `…613` all return `#30 EventNotFound` (check the error
-  code, not just the absence of output — a loose probe reports false positives).
+  code, not just the absence of output; a loose probe reports false positives).
 - `is_paused` is `false` on both contracts.
 - `get_pending_upgrade` is `null` on both. It was at preparation; a stale
   proposal must be cleared with `cancel_pending_upgrade` first.
@@ -93,14 +102,14 @@ account's current sequence, so they carry the *same* `seq_num`
 (`271536946373722128`). Only one can ever be submitted; the second fails with
 `tx_bad_seq`. **Build each envelope only after the previous transaction has
 confirmed.** The same applies to every `apply_upgrade`, `migrate_events` and
-`migrate` call below — each is a separate admin transaction consuming a
+`migrate` call below: each is a separate admin transaction consuming a
 sequence number.
 
 **The timelock is zero.** `UPGRADE_TIMELOCK_LEDGERS = 0` on both contracts, so
 `propose_upgrade` and `apply_upgrade` can land in consecutive ledgers and there
 is no window in which `cancel_pending_upgrade` can catch a mistake. The 1.1.0
 upgrade ran with roughly a day. Restoring it is issue #122 and a single-value
-edit in `admin.rs` — but it changes both wasm hashes and invalidates every
+edit in `admin.rs`, but it changes both wasm hashes and invalidates every
 envelope here.
 
 ---
@@ -140,7 +149,7 @@ stellar contract upload --wasm target/wasm32v1-none/release/boundless_events.was
 
 ### 5.2 Profile: 1.1.0 → 1.2.0
 
-1. **propose_upgrade** — prepared envelope:
+1. **propose_upgrade**, prepared envelope:
 
 ```
 AAAAAgAAAACqr+kenVNRznjlFU8yE+QTqegANttFtJQbOeXujoYHJwAE220DxLFqAAAAEAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAH2o/HE+cZznpgt904v7VoQtlwY8dnSkPqh/UC5V+HG0gAAAA9wcm9wb3NlX3VwZ3JhZGUAAAAAAgAAAA0AAAAga0gEkgpAaN/cqqcR+sY5CFDgqS9LXtTkYllpS2HLrhIAAAAOAAAABTEuMi4wAAAAAAAAAQAAAAAAAAAAAAAAAfaj8cT5xnOemC33Ti/tWhC2XBjx2dKQ+qH9QLlX4cbSAAAAD3Byb3Bvc2VfdXBncmFkZQAAAAACAAAADQAAACBrSASSCkBo39yqpxH6xjkIUOCpL0te1ORiWWlLYcuuEgAAAA4AAAAFMS4yLjAAAAAAAAAAAAAAAQAAAAAAAAABAAAAB7njUAz7VZeB5oNZZV83d1x4r//FqENtrKnR0fjjVpsCAAAAAQAAAAYAAAAB9qPxxPnGc56YLfdOL+1aELZcGPHZ0pD6of1AuVfhxtIAAAAUAAAAAQAT6jAAAAAAAAACrAAAAAAABNsJAAAAAA==
@@ -159,7 +168,7 @@ stellar contract invoke --id CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HD
   | stellar tx simulate --source-account boundless-mainnet-msig --network mainnet
 ```
 
-2. **apply_upgrade** — build fresh (sequence has moved):
+2. **apply_upgrade**: build fresh (sequence has moved):
 
 ```
 stellar contract invoke --id CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC \
@@ -167,7 +176,7 @@ stellar contract invoke --id CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HD
   | stellar tx simulate --source-account boundless-mainnet-msig --network mainnet
 ```
 
-3. **migrate** — version stamp only; the dispatch is empty, so nothing is
+3. **migrate**: version stamp only; the dispatch is empty, so nothing is
    rewritten. Build fresh, same pattern.
 
 4. **Verify (read-only):** `version()` reads `"1.2.0"`, `is_paused` still
@@ -176,7 +185,7 @@ stellar contract invoke --id CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HD
 
 ### 5.3 Events: 1.6.0 → 1.7.0
 
-1. **propose_upgrade** — build it after the profile steps have confirmed; the
+1. **propose_upgrade**: build it after the profile steps have confirmed; the
    sequence will have moved several times by then:
 
 ```
@@ -189,9 +198,9 @@ stellar contract invoke --id CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNM
 Verify it decodes to source `GCVK72I6…`, contract `CCFVEGOQ…`,
 `propose_upgrade`, args `b87365c1…` and `"1.7.0"`.
 
-2. **apply_upgrade** — build fresh.
+2. **apply_upgrade**: build fresh.
 
-3. **migrate_events(max_events)** — paged; **this is the point of no return**
+3. **migrate_events(max_events)**: paged; **this is the point of no return**
    (see §6). Two events, so one call with `--max_events 8` suffices, but drive
    it off the counter rather than the assumption:
 
@@ -201,7 +210,7 @@ stellar contract invoke --id CCFVEGOQ… --source <any> --network mainnet -- mig
 
 Repeat `migrate_events` until `migration_remaining` reads `0`.
 
-4. **migrate** — one-shot version stamp. It refuses while any event is still
+4. **migrate**: one-shot version stamp. It refuses while any event is still
    unconverted, so step 3 must be complete.
 
 5. **Verify (read-only):** `version()` reads `"1.7.0"`, and both events now
@@ -212,10 +221,10 @@ stellar contract invoke --id CCFVEGOQ… --source <any> --network mainnet -- get
 ```
 
 Expect `prize_floors: {"1": "100000000"}` on `…609` and
-`{"1": "600000000", "2": "400000000"}` on `…610` — the absolute amounts the old
+`{"1": "600000000", "2": "400000000"}` on `…610`, the absolute amounts the old
 percentages would have paid against each budget.
 
-### 5.4 Backend cutover — immediately after §5.3 step 4
+### 5.4 Backend cutover, immediately after §5.3 step 4
 
 `create_event`, `select_winners`, `submit`, `withdraw_submission` and
 `get_submission` all changed shape, and `Submitted` / `SubmissionWithdrawn` now
@@ -223,7 +232,7 @@ carry a slot. Deploy `boundless-nestjs` from the matching commit as soon as
 `migrate()` confirms.
 
 A lagging backend fails publishes loudly with no funds moved, which is the safe
-direction — but **do not publish a bounty in the gap**.
+direction, but **do not publish a bounty in the gap**.
 
 ### 5.5 Record the result
 
@@ -238,8 +247,8 @@ The window closes in stages:
 
 | Point | Recoverable? |
 |---|---|
-| After `propose_upgrade` | Yes — `cancel_pending_upgrade`. With a zero timelock this window is only as long as you leave it. |
-| After `apply_upgrade`, before `migrate_events` | Yes — propose and apply the previous wasm. Records are still in 1.6.0 shape and untouched. |
+| After `propose_upgrade` | Yes: `cancel_pending_upgrade`. With a zero timelock this window is only as long as you leave it. |
+| After `apply_upgrade`, before `migrate_events` | Yes: propose and apply the previous wasm. Records are still in 1.6.0 shape and untouched. |
 | After `migrate_events` | **No.** Records are rewritten to `prize_floors`; 1.6.0 code cannot decode them, so reverting the wasm bricks reads. |
 | After `migrate` | No, and `migrate()` cannot be re-run: it returns `#69 MigrationAlreadyApplied`. A defect found later cannot be fixed by re-migrating. |
 
@@ -249,7 +258,7 @@ Previous profile wasm:
 `b9e3500cfb559781e68359655f37775c78afffc5a8436daca9d1d1f8e3569b02`.
 
 If something looks wrong mid-sequence, `pause` is a 2-of-3 call and stops user
-operations while you decide. See `docs/mainnet-deploy-runbook.md` §329.
+operations while you decide. See the pause section of `docs/upgrade-runbook.md`.
 
 ---
 
@@ -260,7 +269,7 @@ operations while you decide. See `docs/mainnet-deploy-runbook.md` §329.
 - **The timelock is zero** on both contracts (§3).
 - **PR #120 is unmerged**, with 6 review comments still open beyond the owed-
   reservation fix that is already in this build.
-- **`deploy_and_upgrade.sh` has an argument-order bug** — `$5` is the source
+- **`deploy_and_upgrade.sh` has an argument-order bug**: `$5` is the source
   account and silently defaults to `alice`. Use explicit `stellar contract
   invoke` calls for mainnet, as written above.
 

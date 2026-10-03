@@ -53,13 +53,13 @@ should not defend a constraint we never intended.
 
 The same PR did two things at once:
 
-1. Made `select_winners` **batchable at 50 winners per call**, with each position
+1. Made `select_winners` **batchable, now at up to 20 winners per call**, with each position
    awardable exactly once and amounts anchored to the escrow baseline captured at
    the first batch.
 2. Moved the transfer out into `claim_prize`.
 
 **Batching alone solves the unbounded-winner problem.** Once selection is
-batched, an event with 500 winners is 10 calls instead of 1, and no single
+batched, an event with 500 winners is 25 calls instead of 1, and no single
 transaction has to carry them all. That is true whether or not the transfer
 happens inside the batch. Adding the transfer back makes each winner cost more
 resources, so the safe batch size falls, but it does not reintroduce the
@@ -234,11 +234,11 @@ the answers determine which option is even available.
 
 1. **Batch headroom with transfers included.** Simulate `select_winners` on
    testnet with the transfer in the loop and find the real per-winner cost in
-   instructions, entry reads and writes, and IO bytes. This is already an open
-   backlog item for the selection-only case, where the 50-per-call cap is
-   explicitly described as conservative and never measured. Do both at once. The
-   number we care about: does push drop the safe batch from 50 to roughly 25, or
-   to 5? The first is a non-issue. The second changes the answer.
+   instructions, entry reads and writes, and IO bytes. The selection-only case
+   was measured on 2026-10-02 at 19 + 4 ledger entries per award, which set the
+   cap at 20; measure the transfer on top of that. The number we care about:
+   does push drop the safe batch from 20 to roughly 10, or to 2? The first is a
+   non-issue. The second changes the answer.
 2. **Current WASM headroom at 1.6.0.** Determines whether Option C fits.
 3. **Payout-address population.** Confirm from production data that every winner
    address is a platform-held wallet with a live USDC trustline, and that there is

@@ -1,4 +1,4 @@
-# Boundless Contracts — Scout Security Scan Report
+# Boundless Contracts: Scout Security Scan Report
 
 **Tool:** [Scout by CoinFabrik](https://github.com/CoinFabrik/scout) (`cargo-scout-audit`)
 **Version:** 0.3.x (nightly-2025-08-07 toolchain)
@@ -9,8 +9,8 @@
 > **Historical note (post-scan):** this report describes the contracts as
 > scanned, at version 1.0.0, when per-user credit balances were still
 > on-chain (`profile/src/credits.rs`). The 1.0.0 → 1.1.0 upgrade (2026-06)
-> removed on-chain credits — they are now an off-chain ledger in
-> boundless-nestjs — so `credits.rs` and its findings (e.g. C-1 / C-6) no
+> removed on-chain credits (they are now an off-chain ledger in
+> boundless-nestjs), so `credits.rs` and its findings (e.g. C-1 / C-6) no
 > longer have an on-chain counterpart. The 1.7.0 → 2.0.0 upgrade removed
 > the on-chain participation records in the same way, so the findings that
 > touch `apply()`, `remove_applicant()`, `applicant_at()`,
@@ -28,7 +28,7 @@
 |---|---|---|---|
 | CRITICAL | 11 | 5 | 6 |
 | MEDIUM | 21 | 0 | 21 |
-| ENHANCEMENT | 50 | 0 (advisory) | — |
+| ENHANCEMENT | 50 | 0 (advisory) | n/a |
 
 **Post-remediation scan:**
 
@@ -36,7 +36,7 @@
 |---|---|---|---|
 | CRITICAL | 5 | 0 | 5 |
 | MEDIUM | 21 | 0 | 21 |
-| ENHANCEMENT | 50 | 0 (advisory) | — |
+| ENHANCEMENT | 50 | 0 (advisory) | n/a |
 
 All real CRITICAL findings have been remediated. The 5 remaining CRITICAL and all 21 MEDIUM are documented false positives. See sections below.
 
@@ -44,7 +44,7 @@ All real CRITICAL findings have been remediated. The 5 remaining CRITICAL and al
 
 ## CRITICAL Findings
 
-### C-1 — Subtraction underflow: `profile/src/credits.rs:81`
+### C-1: Subtraction underflow: `profile/src/credits.rs:81`
 
 ```rust
 profile.credits -= amount;
@@ -60,13 +60,13 @@ Scout does not trace the guard above the operation. Underflow is impossible at t
 
 ---
 
-### C-2 — `update_current_contract_wasm` without access control: `profile/src/admin.rs:262`
+### C-2: `update_current_contract_wasm` without access control: `profile/src/admin.rs:262`
 
 **Assessment: False positive.** This call is inside `apply_upgrade()`, which begins with `admin.require_auth()`. Scout does not trace access control through the calling function. The upgrade is fully admin-gated and also requires the timelocked proposal to have elapsed.
 
 ---
 
-### C-3 — Addition overflow: `idempotency.rs:35,36`
+### C-3: Addition overflow: `idempotency.rs:35,36`
 
 ```rust
 let id = storage::get_next_event_id(env, base + 1);
@@ -77,7 +77,7 @@ storage::set_next_event_id(env, id + 1);
 
 ---
 
-### C-4 — Bitwise XOR `^` flagged as potential exponentiation error: `idempotency.rs:60,74,75`
+### C-4: Bitwise XOR `^` flagged as potential exponentiation error: `idempotency.rs:60,74,75`
 
 ```rust
 payload[0] ^= op_tag;
@@ -91,7 +91,7 @@ Rust has no `**` exponentiation operator; `^` is always XOR in Rust. No change t
 
 ---
 
-### C-5 — Subtraction underflow: `events/src/storage.rs:303,305,327`
+### C-5: Subtraction underflow: `events/src/storage.rs:303,305,327`
 
 ```rust
 let idx = slot - 1;          // line 303
@@ -109,7 +109,7 @@ So `slot >= 1` at line 303. `count >= 1` follows because a non-zero slot implies
 
 ## MEDIUM Findings
 
-### M-1 — Unsafe `.unwrap()` on Map: `event_ops.rs:693,707`
+### M-1: Unsafe `.unwrap()` on Map: `event_ops.rs:693,707`
 
 ```rust
 let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
@@ -119,7 +119,7 @@ let percent = event.winner_distribution.get(spec.position).unwrap() as i128;
 
 ---
 
-### M-2 — Unsafe `.expect()`: `storage.rs:309`
+### M-2: Unsafe `.expect()`: `storage.rs:309`
 
 ```rust
 let last_addr = applicant_at(env, id, last_idx).expect("count > 0 implies last present");
@@ -129,19 +129,19 @@ let last_addr = applicant_at(env, id, last_idx).expect("count > 0 implies last p
 
 ---
 
-### M-3 — Unsafe Map access: `crowdfunding.rs:51`, `event_ops.rs:670`, `grant.rs:155`
+### M-3: Unsafe Map access: `crowdfunding.rs:51`, `event_ops.rs:670`, `grant.rs:155`
 
-**Assessment: False positives.** All three use `ok_or(Error::...)` or `.is_none()` — the safe optional access pattern. Scout's multi-line expression parser tagged the method chain start rather than the terminal accessor. Example from `crowdfunding.rs`:
+**Assessment: False positives.** All three use `ok_or(Error::...)` or `.is_none()`, the safe optional access pattern. Scout's multi-line expression parser tagged the method chain start rather than the terminal accessor. Example from `crowdfunding.rs`:
 ```rust
 let percent = record
     .winner_distribution
     .get(1)
-    .ok_or(Error::InvalidDistribution)?;   // safe — ? propagates error
+    .ok_or(Error::InvalidDistribution)?;   // safe: ? propagates error
 ```
 
 ---
 
-### M-4 — Unbounded operations: `event_ops.rs:346,642`, `grant.rs:115`, `storage.rs:341,416`
+### M-4: Unbounded operations: `event_ops.rs:346,642`, `grant.rs:115`, `storage.rs:341,416`
 
 **Assessment: Confirmed for the original `start_cancel`; remediated in events 1.2.0.** The contributor cap of 5,000 did not make the old snapshot loop safe because every iteration read both the contributor address and amount. The transaction could exceed Soroban resource limits well before reaching the cap.
 
@@ -149,31 +149,31 @@ The 1.2.0 fix maintains `NonOwnerContributionTotal` in `add_funds`, so `start_ca
 
 ---
 
-### M-5 — Transfer amount not checked against minimum: `escrow.rs:34,84`
+### M-5: Transfer amount not checked against minimum: `escrow.rs:34,84`
 
-**Assessment: False positive for this context.** Scout suggests a minimum transfer amount check to prevent front-running. The amounts here are computed by the contract itself (fee math on `deposit_with_fee`, exact escrow amounts on `release`) — not user-supplied values. An organizer-set `total_budget` is validated at `create_event` time (must be > 0). No additional check is needed.
-
----
-
-### M-6 — Dynamic types in storage: `profile/storage.rs:140,162`, `events/storage.rs:145,167`
-
-**Assessment: Low risk, advisory.** The flagged calls store Soroban `String` values for the contract version (e.g., `"0.2.0"`). These are bounded semver strings written only by the admin-gated `apply_upgrade` / `migrate` paths — not unbounded user input. The theoretical growth risk is negligible. No change required for testnet; may convert to a fixed-size encoding before mainnet if auditors require it.
+**Assessment: False positive for this context.** Scout suggests a minimum transfer amount check to prevent front-running. The amounts here are computed by the contract itself (fee math on `deposit_with_fee`, exact escrow amounts on `release`), not user-supplied values. An organizer-set `total_budget` is validated at `create_event` time (must be > 0). No additional check is needed.
 
 ---
 
-### M-7 — Storage operation without access control: `storage.rs:343`
+### M-6: Dynamic types in storage: `profile/storage.rs:140,162`, `events/storage.rs:145,167`
+
+**Assessment: Low risk, advisory.** The flagged calls store Soroban `String` values for the contract version (e.g., `"0.2.0"`). These are bounded semver strings written only by the admin-gated `apply_upgrade` / `migrate` paths, not unbounded user input. The theoretical growth risk is negligible. No change required for testnet; may convert to a fixed-size encoding before mainnet if auditors require it.
+
+---
+
+### M-7: Storage operation without access control: `storage.rs:343`
 
 **Assessment: False positive.** The flagged storage operation is a helper function called exclusively by `apply()` (bounty application flow), which has `applicant.require_auth()` in its caller. Scout does not trace call hierarchy for access control. No change required.
 
 ---
 
-### M-8 — Vec/Map parameters without content validation: (events contract)
+### M-8: Vec/Map parameters without content validation: (events contract)
 
 **Assessment: Advisory.** The `winners: Vec<WinnerSpec>` parameter in `select_winners` is validated in the function body (position bounds check, total amount check, non-empty check). No unvalidated Vec is stored raw from user input. No change required.
 
 ---
 
-### M-9 — Storage push_back without access control: `storage.rs:343,418,498`
+### M-9: Storage push_back without access control: `storage.rs:343,418,498`
 
 **Assessment: False positive.** `out.push_back(addr)` and `out.push_back(w)` inside `applicants_snapshot`, `winners_snapshot`, and `contributors_snapshot` are building an in-memory `Vec` (a local variable, not a storage write). Scout flags `push_back` as a storage mutation but these are plain Soroban SDK Vec accumulations. The snapshot functions are read-only helpers -- they do not write to contract storage. No change required.
 
@@ -256,10 +256,10 @@ For audit panel reference -- these Scout warnings require no code change:
 | M-5 | `escrow.rs` | 34,84 | Amounts are contract-computed, not user-supplied |
 | M-6 | `profile/storage.rs`, `events/storage.rs` | various | Bounded semver strings written by admin-only paths |
 | M-7 | `storage.rs` | 343 | Called only from auth-gated `apply()` |
-| M-8 | `event_ops.rs` | — | Vec validated in function body |
+| M-8 | `event_ops.rs` | n/a | Vec validated in function body |
 | M-9 | `storage.rs` | 343,418,498 | In-memory Vec accumulation in read-only helpers; not a storage write |
-| ENHANCEMENT (soroban_version) | `Cargo.toml` | — | Resolved: bumped to soroban-sdk 27.0.0 / Rust 1.91.0 / wasm32v1-none target. |
-| ENHANCEMENT (storage_change_events, ~44 flags) | `lib.rs` dispatcher functions | — | No action: dispatcher wrappers delegate to impl modules that already emit events. Scout cannot trace through function calls. `ManagerChanged` is the only genuine gap; tracked in issue #3. |
+| ENHANCEMENT (soroban_version) | `Cargo.toml` | n/a | Resolved: bumped to soroban-sdk 27.0.0 / Rust 1.91.0 / wasm32v1-none target. |
+| ENHANCEMENT (storage_change_events, ~44 flags) | `lib.rs` dispatcher functions | n/a | No action: dispatcher wrappers delegate to impl modules that already emit events. Scout cannot trace through function calls. `ManagerChanged` is the only genuine gap; tracked in issue #3. |
 
 **Fixed findings (no longer in scan output):**
 
@@ -273,7 +273,7 @@ For audit panel reference -- these Scout warnings require no code change:
 
 ---
 
-## Re-scan — September 2026 (events 1.7.0, profile 1.2.0)
+## Re-scan, September 2026 (events 1.7.0, profile 1.2.0)
 
 **Date:** 2026-09-11
 **Source:** `feat/escrow-open-pool` @ `0943d26`
@@ -300,7 +300,7 @@ flags are an artifact of the pin.
 
 | ID | File | Finding | Assessment |
 |---|---|---|---|
-| S-1 | `events/src/event_ops.rs:745` | `let anchor_idx = existing_count + (idx as u32);` — bare `+` on `u32` in the Single-release branch of `select_winners`. | **Real, low.** Needs 2³² winner rows to overflow and `overflow-checks = true` would trap rather than wrap, but it breaks the checked-arithmetic rule the repo adopted for C-3. Change to `existing_count.saturating_add(idx as u32)` before audit fieldwork. |
+| S-1 | `events/src/event_ops.rs:745` | `let anchor_idx = existing_count + (idx as u32);`: bare `+` on `u32` in the Single-release branch of `select_winners`. | **Real, low.** Needs 2³² winner rows to overflow and `overflow-checks = true` would trap rather than wrap, but it breaks the checked-arithmetic rule the repo adopted for C-3. **Fixed in 2.0.0:** `checked_add` returning `InvalidWinnerPosition`. |
 
 ### False positives (same classes as June)
 
@@ -309,11 +309,63 @@ flags are an artifact of the pin.
 | `unprotected_update_current_contract_wasm` (CRITICAL ×2) | `events/admin.rs:236`, `profile/admin.rs:216` | Inside `apply_upgrade()`, which opens with `require_admin()`; Scout does not trace access control through the enclosing function (June C-2). |
 | `unsafe_map_get` (MEDIUM ×3) | `event_ops.rs:725,793`, `admin.rs:474` | `Map::get` returns `Option`; every site is `if let Some(floor) = …`. |
 | `dos_unexpected_revert_with_storage` (MEDIUM ×4) | `admin.rs:383`, `storage.rs:421,700,793` | `floors.set` runs inside admin-gated `migrate_events`; the three `storage.rs` sites are `push_back` on an in-memory `Vec` inside paged read helpers (June M-9). |
-| `dos_unbounded_operation` (MEDIUM ×7) | `admin.rs:425-440,464-488`, `event_ops.rs:675-681`, `grant.rs:63-81`, `storage.rs:419-423,698-702,791-795` | Read helpers are bounded by `limit.min(VIEW_PAGE_LIMIT)`. Migration loops walk one event's winner rows per call, admin-only, one-time. `select_winners` (Multi) and `claim_milestone` scan an event's winner rows, bounded by prior selections × milestones and gated by manager/owner auth. |
+| `dos_unbounded_operation` (MEDIUM ×7) | `admin.rs:425-440,464-488`, `event_ops.rs:675-681`, `grant.rs:63-81`, `storage.rs:419-423,698-702,791-795` | Read helpers are bounded by `limit.min(VIEW_PAGE_LIMIT)`. Migration loops walk one event's winner rows per call, admin-only, one-time. **Correction (October 2026): the `grant.rs:63-81` site was a real finding, not a false positive.** `claim_milestone` scanned every winner row, and every release adds one, so the bound "prior selections × milestones" was real but unenforced: eight recipients with ten milestones pass the 100-entry transaction footprint partway through. Recorded as DoS.16 in the threat model and fixed in 2.0.0 with a per-grant roster; the scan remains only for grants selected before the roster existed. The `select_winners` (Multi) scan stops at the first row. |
 | `front_running` (MEDIUM ×2) | `escrow.rs:34,72` | Amounts are validated at every call site (`InvalidBudget`, `BelowMinimumContribution`, floor checks); Soroban has no public mempool ordering game equivalent to the detector's model (June M-5). |
 | `dynamic_storage` (MEDIUM ×4) | `events/storage.rs:132,162`, `profile/storage.rs:113,135` | Bounded semver strings on admin-only paths (June M-6). |
-| `avoid_vec_map_input` (MEDIUM ×1) | `events/lib.rs:225` (`select_winners`) | Every element validated: dedupe, `amount > 0`, floor, ≤ 50 (June M-8). |
+| `avoid_vec_map_input` (MEDIUM ×1) | `events/lib.rs:225` (`select_winners`) | Every element validated: dedupe, `amount > 0`, floor, reputation bump at most 100, at most 20 per call (40 for a grant, one award per recipient) (June M-8). |
 | `storage_change_events` (ENHANCEMENT ×47) | `lib.rs` dispatchers, both crates | Dispatcher wrappers delegate to modules that emit events; `ManagerChanged` shipped with two-step delegation (#88), closing the one genuine gap noted in July. |
 | `soroban_version` (ENHANCEMENT ×2) | `Cargo.toml` | Artifact of the 23.5.2 pin used to run the tool; the workspace is on 27.0.0. |
 
-Net: one real low-severity finding (S-1), queued; zero real CRITICAL or MEDIUM.
+Net, as first triaged: one real low-severity finding (S-1); zero real CRITICAL or MEDIUM. Revised October 2026: one MEDIUM (`grant.rs:63-81`, DoS.16) was real. Both are fixed in 2.0.0, and the scan is re-run on the 2.0.0 source before fieldwork.
+
+---
+
+## Re-scan, October 2026 (events 2.0.0, profile 1.2.1)
+
+**Date:** 2026-10-03
+**Source:** `feat/grant-hardening` working tree over `7abbf5c` (grant hardening, release validator, soroban-sdk 28.0.0)
+**Tool:** `cargo-scout-audit` 0.3.17, detectors toolchain `nightly-2025-09-18`
+**Command:** `cargo scout-audit --output-format md -- --target=wasm32v1-none --no-default-features`, run per crate
+
+Scout 0.3.17 compiles the soroban-sdk 28 source as it stands, so the 23.5.2 pin the September scan needed is gone and the scan covers exactly the code under review.
+
+| Crate | Critical | Medium | Minor | Enhancement |
+|---|---|---|---|---|
+| `boundless_events` | 0 | 20 | 0 | 32 |
+| `boundless_profile` | 0 | 3 | 0 | 18 |
+
+S-1 no longer appears: the anchor index in `select_winners` uses `checked_add`. The `unprotected_update_current_contract_wasm` critical is also gone, but only because SDK 28 replaced `update_current_contract_wasm` with `update_current_contract(ContractExecutable::Wasm(..))` and the detector matches the old name. The access control it was asking about is unchanged: both `apply_upgrade` functions open with `require_admin()` and read only the timelocked stored hash.
+
+### Real findings
+
+| ID | File | Finding | Assessment |
+|---|---|---|---|
+| S-2 | `events/src/admin.rs:512-544` (`migrate_owed_total`) | Flagged as `dos_unbounded_operation`. The loop itself is bounded by one event's winner records, but following it showed that `migrate_one_event` rebuilt the owed total and award amounts for every event it walked, not only the records it converted. A forfeit lowers the owed total without writing a winner record, so the rebuild reserved the forfeited share again and the grant could never be cancelled once its milestones were settled. Every upgrade has to page `migrate_events` over the events created since the last stamp, so live grants are always in its path. | **Real, medium. Fixed:** both rebuilds now run only for a record converted from the pre-1.7.0 layout. Recorded as Tamp.19 in the threat model. Regression test: `a_migration_pass_after_a_forfeit_keeps_it_released`. |
+
+A read-only check of mainnet on the same day found eight events, two of them still in the pre-1.7.0 layout (both completed, zero escrow, one and two winner records). The mainnet conversion is therefore a single `migrate_events` call, and after the fix it walks winner records for those two events only.
+
+### False positives
+
+| Detector | Locations | Reason |
+|---|---|---|
+| `unsafe_map_get` (MEDIUM ×4) | `admin.rs:565`, `event_ops.rs:738,823`, `grant.rs:30` | `Map::get` returns `Option`. The first three are `if let Some(floor) = …`; `grant.rs:30` is `roster.get(..).ok_or(Error::NoSubmissions)?`. |
+| `dos_unbounded_operation` (MEDIUM ×6) | `admin.rs:516,555`, `event_ops.rs:679`, `grant.rs:48`, `storage.rs:504,597` | `admin.rs`: see S-2; after the fix these loops run only for converted pre-1.7.0 records. `event_ops.rs:679`: the guard against a second grant selection returns at the first award record, and a grant's first record is always its award. `grant.rs:48`: the winner-record walk kept for grants selected before the roster existed (DoS.16); none exist on mainnet. `storage.rs`: paged read helpers capped at `VIEW_PAGE_LIMIT` (90). |
+| `dos_unexpected_revert_with_storage` (MEDIUM ×3) | `admin.rs:474`, `storage.rs:506,599` | `floors.set` builds an in-memory `Map` inside admin-gated `migrate_events`; the `storage.rs` sites are `push_back` on an in-memory `Vec` in the paged read helpers (June M-9). |
+| `front_running` (MEDIUM ×2) | `escrow.rs:34,83` | Amounts are contract-computed or validated at every call site (June M-5). |
+| `avoid_vec_map_input` (MEDIUM ×1) | `lib.rs:218` (`select_winners`) | Every element is validated: duplicate positions and recipients, `amount > 0`, floor, award at least the milestone count, reputation bump at most 100, at most 20 per call or 40 per grant (June M-8). |
+| `constructor` (MEDIUM ×2) | `events/admin.rs:56`, `profile/admin.rs:26` | `initialize` is a private helper called only from `__constructor`, which runs atomically with deployment; nobody can call it afterwards. |
+| `dynamic_storage` (MEDIUM ×5) | `events/storage.rs:185,215,634`, `profile/storage.rs:113,135` | Bounded semver strings on admin-only paths (June M-6). `storage.rs:634` is the grant roster: written once at selection and capped at 40 entries by `MAX_GRANT_AWARDS`. |
+| `storage_change_events` (ENHANCEMENT ×50) | `lib.rs` dispatchers, both crates | Each flagged dispatcher was checked against its module: all emit an event except `migrate_events`, which pages the layout conversion; its completion is recorded by `Migrated` from `migrate`, and the threat model's monitoring row now says so. |
+
+The `soroban_version` enhancement is gone: the workspace is on the latest SDK.
+
+Net: one real medium (S-2, Tamp.19), fixed with a regression test; no critical findings; every other warning is a documented false positive. Tests after the fix: 401 passing (329 events, 69 profile, 3 storage-compatibility fixtures).
+
+The cleanup that followed this scan removed the code behind several of the warnings above: the owed-total and award-amount rebuilds in `migrate_events` (S-2's source; the migration now converts the record layout only), the winner-record walk for grants selected before the roster existed (`grant.rs:48`), the second-selection scan (`event_ops.rs:679`, now a count check), and the dead fee and storage helpers. A re-scan of the cleaned source the same day (same tool and command) confirms it:
+
+| Crate | Critical | Medium | Minor | Enhancement |
+|---|---|---|---|---|
+| `boundless_events` | 0 | 15 | 0 | 32 |
+| `boundless_profile` | 0 | 3 | 0 | 17 |
+
+The five events mediums that no longer appear are `admin.rs:516,555,565`, `event_ops.rs:679` and `grant.rs:48`; the profile enhancement that went is the removed `slash_reputation` dispatcher. Every remaining warning is one of the false-positive classes above, at shifted line numbers.

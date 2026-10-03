@@ -4,12 +4,12 @@
 -- Real stellar.history_contract_events shapes (verified against live data):
 --   topics_decoded : JSON array of ScVal objects. Event name is at $[0].symbol
 --                    (e.g. [{"symbol":"EventCreated"}]), NOT $[0].
---   data_decoded   : ScVal map — {"map":[{"key":{"symbol":"id"},"val":{"u64":"7"}}, ...]}.
+--   data_decoded   : ScVal map: {"map":[{"key":{"symbol":"id"},"val":{"u64":"7"}}, ...]}.
 --                    Each field's value is wrapped by its ScVal type; there is no
 --                    flat $.id. We rebuild it into a MAP(field_name -> ScVal JSON)
 --                    with map_from_entries(), then read each field by its type.
---   closed_at_date : PARTITION column — always filter it (avoids full scans).
---   transaction_hash : varbinary — to_hex() for a readable hash.
+--   closed_at_date : PARTITION column; always filter it (avoids full scans).
+--   transaction_hash : varbinary; to_hex() for a readable hash.
 
 WITH ev AS (
     SELECT

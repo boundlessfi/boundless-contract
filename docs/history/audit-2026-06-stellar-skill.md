@@ -1,4 +1,14 @@
-# Boundless contract audit — June 2026
+# Boundless contract audit, June 2026
+
+> Historical record. This is the in-house audit of the events and profile
+> contracts at version 1.0.0, run on 2026-06-04 against the SDF
+> `stellar-dev-skill`; its findings were fixed or accepted that month. It
+> describes code that no longer exists: on-chain credits went in 1.1.0,
+> applicant and submission records in 2.0.0, and upgrades now go through
+> `propose_upgrade`, `apply_upgrade` and `migrate`. The current security
+> analysis is `docs/threat-model.md` and the current upgrade procedure is
+> `docs/upgrade-runbook.md`. File paths and function names below are as
+> audited.
 
 Audit run against the freshly-installed Stellar Development Foundation
 `stellar-dev-skill` (https://github.com/stellar/stellar-dev-skill), specifically
@@ -7,15 +17,6 @@ Part 5 (Common Pitfalls).
 
 Scope: `contracts/events` and `contracts/profile` source. Tests, deploy
 scripts, and off-chain runbooks are out of scope here; they get their own pass.
-
-> **Historical note (post-audit):** this report describes the contracts as
-> audited, at version 1.0.0, when the profile contract still held per-user
-> credit balances on-chain (`profile/src/credits.rs`, the `credits` field on
-> `Profile`, `application_credit_cost` on events). The 1.0.0 → 1.1.0 upgrade
-> (2026-06) removed on-chain credits; they are now an off-chain ledger in
-> boundless-nestjs, and the profile contract holds only reputation scores and
-> per-token earnings. Credit-related references below are accurate for the
-> code as audited and are preserved unedited.
 
 ## TL;DR
 
@@ -43,10 +44,10 @@ hackathon scale. Everything else is moderate or below.
 
 ## Severity legend
 
-- **HIGH** — pre-mainnet blocker, or active footgun if missed.
-- **MEDIUM** — recoverable, but worth fixing this quarter.
-- **LOW** — polish, documentation, semantic cleanup.
-- **POSITIVE** — patterns the skill explicitly recommends and we got right.
+- **HIGH**: pre-mainnet blocker, or active footgun if missed.
+- **MEDIUM**: recoverable, but worth fixing this quarter.
+- **LOW**: polish, documentation, semantic cleanup.
+- **POSITIVE**: patterns the skill explicitly recommends and we got right.
 
 # HIGH
 
@@ -96,13 +97,13 @@ be proactively bumped or the entry archives and is unreadable.
 A grep over the repo turns up zero `extend_ttl` calls. Long-lived data at
 risk:
 
-- `Event(u64)` — escrow holdings for a multi-month hackathon
-- `Profile(Address)` — every user's credits + reputation
-- `EarningsByToken(user, token)` — per-user earnings record
-- `MilestoneClaimed(event, recipient, milestone)` — replay protection on
+- `Event(u64)`: escrow holdings for a multi-month hackathon
+- `Profile(Address)`: every user's credits + reputation
+- `EarningsByToken(user, token)`: per-user earnings record
+- `MilestoneClaimed(event, recipient, milestone)`: replay protection on
   grant payouts
-- `EventWinners(u64)` — anchor + payout audit trail
-- `CrowdfundingMilestonesClaimed(u64)` — divisor for dynamic-split math
+- `EventWinners(u64)`: anchor + payout audit trail
+- `CrowdfundingMilestonesClaimed(u64)`: divisor for dynamic-split math
 
 Archival of any of these silently breaks the corresponding flow. For
 crowdfunding specifically, archived `CrowdfundingMilestonesClaimed` resets
@@ -141,12 +142,12 @@ Two follow-on effects:
   invocation. Soroban resource limits will reject this even before the size
   cap hits.
 - `select_winners` walks `EventWinners` to check the replay anchor, but
-  caps at `MAX_WINNERS_PER_SELECT = 50` — that one's bounded.
+  caps at `MAX_WINNERS_PER_SELECT = 50`, so that one is bounded.
 
 Fix: split each list into per-element keys with an index counter.
 
 ```rust
-// proposal — index + per-entry storage
+// proposal: index + per-entry storage
 DataKey::EventApplicantCount(u64)
 DataKey::EventApplicant(u64, u32) -> Address
 DataKey::EventApplicantIndex(u64, Address) -> u32  // for O(1) lookup
@@ -206,7 +207,7 @@ A wrong or malicious address gets full control over the user-incentive
 ledger. The skill (Part 3, vulnerability category 1) lists
 authorization-via-trusted-caller as one of the top categories to harden.
 
-Fix: rotate this through the same two-step pattern as `set_admin` — write
+Fix: rotate this through the same two-step pattern as `set_admin`: write
 `PendingEventsContract`, require the new contract to call
 `accept_events_contract` from its own admin (or hold for N ledgers before
 auto-accepting). Keeps off-chain multisig as the first layer, on-chain
@@ -269,7 +270,7 @@ Two coherent fixes; either works but you need to pick:
 - (B) Grow `total_budget` inside `add_funds` so the percent math reflects
   the topped-up pool.
 
-Today is neither — top-ups grow the escrow but don't change anything else.
+Today is neither: top-ups grow the escrow but don't change anything else.
 This is a product decision more than a security one, but the contract
 should match the product policy explicitly.
 
@@ -300,7 +301,7 @@ Adding a trustline-existence read on token register is the cleanest spot
 ## M3. No on-chain version function
 
 See H6. Worth listing separately because the `version()` view is the lowest
-effort piece — it doesn't need timelock infrastructure.
+effort piece; it doesn't need timelock infrastructure.
 
 ## M4. Profile-side counters are dead fields
 
@@ -332,7 +333,7 @@ drop the fields and migrate the existing rows on the same upgrade.
 
 File: `contracts/events/src/grant.rs:64-211`. Comment says the off-chain
 layer admin-co-signs the builder's claim, but the contract requires only
-`event.owner.require_auth()` — and for crowdfunding the owner is the
+`event.owner.require_auth()`, and for crowdfunding the owner is the
 builder.
 
 Today this is fine because abstracted wallets hold the signing key on the
@@ -374,7 +375,7 @@ pub fn get_admin(env: &Env) -> Result<Address, Error> {
 ```
 
 Reversed semantic. Should be `Error::NotInitialized` (which doesn't exist
-yet — add to enum). Misleads operators reading logs.
+yet; add to enum). Misleads operators reading logs.
 
 ## L3. `admin::get_admin` uses `.expect("admin not configured")`
 
@@ -433,7 +434,7 @@ them in a refactor.
 - **P2.** Typed `DataKey` enum prevents storage key collisions
   (skill Part 3, "Storage Security").
 - **P3.** `OpSeen(BytesN<32>)` idempotency markers stored in `temporary()`
-  with auto-TTL — correct storage type per skill Part 5.
+  with auto-TTL, the correct storage type per skill Part 5.
 - **P4.** Two-step admin rotation with TTL on `PendingAdmin`, including
   the `expires_at_ledger` check inside `accept_admin` (skill Part 3,
   vulnerability category 1).
@@ -447,7 +448,7 @@ them in a refactor.
   7).
 - **P8.** Token whitelist with admin-gated `register` / `deregister`,
   plus per-event `require_supported` check (skill Part 3, "Cross-Contract
-  Calls" — restricting external token surface).
+  Calls", restricting external token surface).
 - **P9.** Child op_id derivation (`derive_child` / `derive_child_indexed`)
   gives every cross-contract call its own idempotency marker so the
   profile-side `OpSeen` set never collides with the events-side parent op.
@@ -455,24 +456,24 @@ them in a refactor.
   (release kind, deadline-required, distribution shape) co-located with the
   pillar logic. Refactor-friendly.
 - **P11.** `select_winners` does a two-pass total-owed check before any
-  transfers — `InsufficientEscrow` fires before money moves.
+  transfers, so `InsufficientEscrow` fires before money moves.
 - **P12.** `claim_milestone` last-milestone sweep math
   (`already_claimed + 1 == total_milestones ⇒ pay remainder`) avoids
   stranded dust on per-recipient grant payouts.
 - **P13.** All public functions return typed `Result<_, Error>`, never
   raw panics from user-facing paths (skill Part 3, "Error handling").
-- **P14.** `ProfileClient` defined via `#[contractclient]` typed trait —
+- **P14.** `ProfileClient` defined via `#[contractclient]` typed trait:
   no string-named cross-contract calls (skill Part 3, "Cross-Contract
   Calls").
 - **P15.** `saturating_*` arithmetic throughout. Skill Part 3 category 4
   (integer overflow) gets shut down structurally.
 - **P16.** Profile contract gates ALL credit / reputation / earnings
-  mutations on `require_events_contract` — single trusted-caller surface,
+  mutations on `require_events_contract`, a single trusted-caller surface,
   documented (skill Part 3, "Authorization").
 - **P17.** Partners-first refund priority on `cancel_event` with explicit
   case A / case B math, no rounding gives the owner contributor money.
 - **P18.** Per-event `fee_bps_override` snapshotted at create time and
-  reused by `add_funds` — fee model stays stable even if the contract
+  reused by `add_funds`, so the fee model stays stable even if the contract
   default changes mid-flight.
 - **P19.** `withdraw_application` blocks when a submission already exists,
   closing the "withdraw, refund credits, resubmit free" loop.
@@ -490,7 +491,7 @@ Pre-mainnet blockers:
    high-leverage on the profile contract's auth model. **Ship before
    mainnet.**
 3. H3 + H4. Storage layout change for the per-event lists and
-   submissions. Heavier — needs paged read/write helpers and a
+   submissions. Heavier: needs paged read/write helpers and a
    migration. **Ship before any hackathon > 500 participants.**
 
 Q3 polish:
@@ -521,7 +522,7 @@ Backlog:
 - Severity calibrated for a contract that holds production escrow at
   hackathon scale.
 - No off-chain claims taken at face value (e.g., "admin signs on behalf of
-  the builder") — every authorization invariant verified at the contract
+  the builder"); every authorization invariant verified at the contract
   layer first.
 
 Out of scope: tests under `contracts/*/src/tests/`, deploy scripts,

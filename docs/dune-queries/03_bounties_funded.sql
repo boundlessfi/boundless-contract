@@ -1,4 +1,4 @@
--- Boundless On-chain: Events created — count and budget by pillar and month
+-- Boundless On-chain: Events created: count and budget by pillar and month
 -- Panel type: grouped bar chart  x=month  y=events_created  color=pillar
 --
 -- Decoding: see 10_event_created_decode_test.sql.

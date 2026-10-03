@@ -1,275 +1,242 @@
-# Deployment runbook
+# Deploying the contracts
 
-Deploys the `boundless-events` and `boundless-profile` Soroban contracts to a
-Stellar network, wires them together, and emits the env values the nestjs
-orchestrator needs.
+This covers a fresh deployment of `boundless-profile` and `boundless-events`:
+build, deploy, wire the two together, register tokens, verify, and on mainnet
+hand admin to the multisig. Upgrading a live deployment is in
+`docs/upgrade-runbook.md`; how a multisig transaction is built, signed and
+submitted is in `docs/contract-ops-runbook.md`; who may sign what is in
+`docs/admin-custody-policy.md`.
 
-Scripts: `scripts/deploy/{deploy,register_token,verify}.sh`.
+Testnet and futurenet deploy with `scripts/deploy/*.sh`. Mainnet deploys with
+`./deploy_mainnet.sh`, which adds a typed confirmation, checks the CLI network
+config, and refuses to deploy over an existing record.
 
----
+## 1. What a deployment is made of
 
-## 0. Decisions to lock before deploying
+| Parameter | Where it goes |
+|---|---|
+| Admin | Constructor of both contracts. A single CLI identity on testnet. On mainnet a throwaway deployer key that hands admin to the 2-of-3 multisig straight after the deploy. |
+| Fee account | Events constructor (`fee_account`). Receives the platform fee on every deposit and crowdfunding release, so it needs an authorized trustline for every registered token. Keep it separate from the admin. |
+| Fee bps | Events constructor (`fee_bps`). 250 is 2.5%. The contract refuses fees above 1000 (10%). |
+| Profile binding | Events constructor (`profile_contract`), then `profile.set_events_contract(events)`. The second call works once; later changes go through the timelocked rotation in `docs/upgrade-runbook.md`. |
+| Tokens | `register_supported_token` on events, one call per token. |
 
-Each of these is a per-network parameter the contracts are constructed with.
-Pick once per environment and document.
+The profile constructor takes only `--admin`. The events constructor takes
+`--admin --fee_account --fee_bps --profile_contract`, so profile is always
+deployed first.
 
-| Parameter | Where it goes | What it does |
-|---|---|---|
-| **Network** | `stellar --network` | testnet / futurenet / mainnet. |
-| **Admin identity** | both contracts' `admin` | controls `set_admin`, `set_fee_bps`, `pause`, `upgrade`, `register_supported_token`. **Use a Stellar multisig account for mainnet.** Testnet can be a single key. |
-| **Fee account** | events `fee_account` | G-address that receives the platform fee on every deposit. Must hold a trustline for every registered token. **Should be a separately-keyed account from admin.** |
-| **Fee bps** | events `fee_bps` | Basis points. 100 = 1%, 250 = 2.5%. Contract caps at 1000 (10%) per audit L4. |
-| **USDC asset address** | events `register_supported_token` | Token contract (SAC) address. See Section 4. |
+Each deploy writes a local record to `deployments/<network>.json` (and
+mainnet upgrades append to `deployments/mainnet-upgrades.jsonl`). The
+`deployments/` directory is gitignored: the records live on the operator's
+machine, so keep a copy with the team's ops notes. Published contract ids are
+in the README.
 
-> Contract versions up to 1.0.0 also took a `default_bootstrap_credits` constructor parameter on the profile contract. The 1.1.0 upgrade (2026-06) removed on-chain credits — they are now an off-chain ledger in boundless-nestjs — so the profile constructor takes only `admin`.
+## 2. Toolchain
 
-Production values land in `deployments/<network>.json` after `deploy.sh` runs.
+- Rust 1.93.0 with the `wasm32v1-none` target (`rust-toolchain.toml` pins it).
+- soroban-sdk 28.0.0 (workspace `Cargo.toml`).
+- Stellar CLI 28.1.0, the version CI pins; `deploy_mainnet.sh` refuses any
+  other. `cargo install --locked stellar-cli@28.1.0`.
+- `jq`.
 
----
+Build with `stellar contract build --locked`. A plain
+`cargo build --target wasm32v1-none` is refused by SDK 28. Testnet and
+futurenet builds add `--features testnet`, which sets the upgrade timelock to
+0 ledgers; mainnet builds leave it off and carry the 17,280-ledger timelock.
+The scripts choose the right build for the network.
 
-## 1. Prerequisites (one-time per workstation)
+## 3. Testnet and futurenet
+
+### 3.1 Identities
 
 ```sh
-# stellar CLI — version 26.0.0 or newer required.
-# Older CLIs reject Rust 1.90.0 wasm32v1-none output with
-# "reference-types not enabled" at simulation time.
-brew install stellar/tap/stellar-cli   # or cargo install --locked stellar-cli@26.1.0
-stellar --version                      # confirm >= 26.0.0
-
-# rust toolchain
-rustup target add wasm32v1-none
-
-# verify build still passes locally
-cd contracts/events && stellar contract build --locked && cd ../..
-cd contracts/profile && stellar contract build --locked && cd ../..
-```
-
-### Create the admin identity (per network)
-
-```sh
-# Generates and funds a testnet admin identity via friendbot.
 stellar keys generate boundless-admin --network testnet --fund
-
-# Show its G-address.
-stellar keys address boundless-admin
-```
-
-For mainnet, generate without `--fund`, send XLM manually, and convert the
-account to a multisig before any contract deploy. See the wallet runbook in
-`boundless-infra/`.
-
-### Create or pick the fee account
-
-```sh
 stellar keys generate boundless-fee --network testnet --fund
-stellar keys address boundless-fee   # -> G... ; this goes into FEE_ACCOUNT
+stellar keys address boundless-fee      # this is FEE_ACCOUNT
 ```
 
-The fee account does NOT need to be a CLI identity (it never signs contract
-calls). Treat the value as data; what matters is that it has trustlines for
-every token before that token is registered.
+The fee account never signs a contract call. It only needs to exist and hold
+trustlines.
 
----
-
-## 2. Configure deployment parameters
+### 3.2 Parameters
 
 ```sh
 cp .env.deploy.example .env.deploy
-$EDITOR .env.deploy
+$EDITOR .env.deploy      # ADMIN_IDENTITY, FEE_ACCOUNT, FEE_BPS
 ```
 
-Required values:
+`.env.deploy` is gitignored and is parsed as plain `KEY=VALUE` lines, never
+executed.
 
-```
-ADMIN_IDENTITY=boundless-admin
-FEE_ACCOUNT=G...                  # output of `stellar keys address boundless-fee`
-FEE_BPS=250                       # 2.5%
-```
-
-`.env.deploy` is gitignored. Do not commit.
-
----
-
-## 3. Deploy + wire
+### 3.3 Deploy and wire
 
 ```sh
 ./scripts/deploy/deploy.sh testnet
 ```
 
-The script does, in order:
+The script builds both contracts with `--features testnet`, deploys profile,
+deploys events against it, calls `profile.set_events_contract`, and writes
+`deployments/testnet.json` (including `deployer_identity`, which
+`./deploy_and_upgrade.sh` uses as its default signer). It prints the two
+contract ids for the backend environment.
 
-1. `stellar contract build` on both contracts.
-2. Deploys `boundless-profile` first (events constructor needs its address).
-3. Deploys `boundless-events` with `fee_account`, `fee_bps`, and the profile contract id.
-4. `profile.set_events_contract(events_id)` so profile recognizes the events contract for cross-contract auth.
-5. Writes the deployment record to `deployments/testnet.json`.
-6. Prints the env-var lines for the nestjs side.
+### 3.4 Register tokens
 
-Expected output tail:
-
-```
-==> done. summary written to deployments/testnet.json
-
-set these in the nestjs deployment env:
-  BOUNDLESS_EVENTS_CONTRACT_ADDRESS=C...
-  BOUNDLESS_PROFILE_CONTRACT_ADDRESS=C...
-
-next: ./scripts/deploy/register_token.sh testnet <token-address>
-```
-
----
-
-## 4. Add the fee-account trustline + register the token
-
-USDC on testnet uses the Circle test issuer. The token contract address
-depends on whether you wrap the Stellar Classic asset or use Circle's Soroban
-deployment directly. Check Stellar's developer portal for the current testnet
-USDC SAC address before running this step.
-
-### 4a. Add the trustline (off-chain)
-
-The contract's `register_supported_token` does NOT verify the trustline (a
-Soroban contract cannot authorize a deeper-than-root call). The admin runbook
-covers it instead:
+Give the fee account a trustline first, then register:
 
 ```sh
-# Where boundless-fee is the CLI identity that owns the FEE_ACCOUNT key.
-# (If FEE_ACCOUNT is a separate non-CLI account, run this on that account's
-#  signing setup.)
-stellar tx new change-trust \
-  --source boundless-fee \
-  --network testnet \
+stellar tx new change-trust --source boundless-fee --network testnet \
   --line USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
 
-# Verify:
-stellar contract invoke \
-  --id CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75 \
-  --network testnet \
-  -- balance --id "$(stellar keys address boundless-fee)"
+./scripts/deploy/register_token.sh testnet \
+  CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA \
+  USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
 ```
 
-(`CCW67TSZV3SSS...` is the testnet USDC SAC address at the time of writing;
-verify against current docs.)
+`CBIELTK6…` is the testnet USDC SAC. The script checks that the asset you name
+is the one the token contract wraps (`stellar contract id asset`) and runs
+`scripts/admin/verify-fee-trustline.sh` before it signs; the contract checks
+neither, and a missing trustline makes every `create_event` and `add_funds` in
+that token revert. For native XLM pass `native` as the asset and the id that
+`stellar contract id asset --asset native --network testnet` prints.
 
-### 4b. Register on the events contract
-
-```sh
-./scripts/deploy/register_token.sh testnet <USDC_SAC_ADDRESS>
-```
-
-The script prompts to confirm the trustline exists, then invokes
-`register_supported_token`. The record updates `deployments/testnet.json` with
-the supported token.
-
----
-
-## 5. Verify
+### 3.5 Verify
 
 ```sh
 ./scripts/deploy/verify.sh testnet
 ```
 
-Cross-checks the deployment record against on-chain state. Both contracts
-should report the expected admin, the events contract should report the
-profile contract id, the profile contract should report the events contract
-address, and both should be `is_paused == false`.
+It prints the record next to each contract's version, migration marker, admin,
+fee account, fee bps, bindings, release validator and pause flag. Both admins
+should be the deployer, the bindings should point at each other, and neither
+contract should be paused.
 
-If anything looks wrong, treat it as a deploy regression and re-deploy fresh.
-Soroban storage costs are real but minimal at this scale.
+## 4. Mainnet
 
----
+### 4.1 Before you start
 
-## 6. Update nestjs orchestrator env
+- The release has been through the third-party audit, and the same commit has
+  been deployed and exercised on testnet.
+- The admin multisig is provisioned and passes
+  `scripts/admin/verify-multisig.sh` with the signer roster pinned
+  (`docs/multisig-guide.md`, Part E).
+- The fee account exists, is funded, and holds an authorized trustline for
+  every token you will register.
+- Two people who can stop the deploy are present for the whole window.
 
-Take the `BOUNDLESS_EVENTS_CONTRACT_ADDRESS` and
-`BOUNDLESS_PROFILE_CONTRACT_ADDRESS` lines from `deploy.sh`'s output and put
-them in the nestjs deployment environment (Railway, etc.):
+### 4.2 Network and environment
 
-```
-STELLAR_RPC_URL=https://soroban-rpc.testnet.stellar.org
-STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-BOUNDLESS_EVENTS_CONTRACT_ADDRESS=C...
-BOUNDLESS_PROFILE_CONTRACT_ADDRESS=C...
-```
-
-The env schema (`src/config/env-schema.ts`) validates both addresses are
-56-char strings starting with `C`. Mistakes surface at app boot.
-
----
-
-## 7. Apply the Prisma migration
-
-Against the active database (dev / staging / production):
+Configure a named network once and use only that name. `deploy_mainnet.sh`
+checks that it carries the public passphrase and a real RPC URL, and refuses
+to run while `STELLAR_RPC_URL` or `STELLAR_NETWORK_PASSPHRASE` is set (mixing
+the two breaks RPC resolution; see `docs/contract-ops-runbook.md`, rule 5).
 
 ```sh
-cd ../boundless-nestjs
-npx prisma migrate deploy
+stellar network add boundless-mainnet \
+  --rpc-url <production RPC URL> \
+  --network-passphrase "Public Global Stellar Network ; September 2015"
+export STELLAR_NETWORK=boundless-mainnet
+unset STELLAR_RPC_URL STELLAR_NETWORK_PASSPHRASE
+
+stellar keys generate boundless-deployer      # throwaway initial admin
+stellar keys address boundless-deployer       # fund it with about 10 XLM
+
+export INITIAL_ADMIN_KEY=boundless-deployer
+export FEE_ACCOUNT=G...                       # the fee account
+export INITIAL_GLOBAL_FEE_BPS=250
 ```
 
-Creates the `escrow_op` table + three enums. Migration file:
-`prisma/migrations/20260601213000_add_escrow_op/migration.sql`.
+The deployer key exists only to deploy and rotate. It is destroyed in 4.6.
 
-Verify:
+### 4.3 Deploy and wire
 
 ```sh
-npx prisma db pull --print 2>&1 | grep -A 8 "^model EscrowOp"
-# or, on the DB directly:
-psql "$DATABASE_URL" -c '\d escrow_op'
+./deploy_mainnet.sh deploy-profile
+./deploy_mainnet.sh deploy-events
 ```
 
----
+Each command asks you to type `mainnet`, builds its contract without the
+testnet feature, deploys it, and records the id and the deployed wasm hash in
+`deployments/mainnet.json`. It stops if the deployed hash differs from the
+local build. `deploy-events` also calls `profile.set_events_contract`. Either
+command refuses to run if the record already names that contract.
 
-## 8. Smoke-test the orchestrator end-to-end
-
-After the nestjs deployment picks up the new env vars and the migration is
-applied:
+### 4.4 Register tokens
 
 ```sh
-# From a node REPL or a small script in the nestjs repo:
-import { EscrowOrchestratorService } from './modules/escrow-contract/...';
-
-// Build an unsigned create_event XDR. No tokens move; this only assembles
-// the transaction and stores an EscrowOp row.
-const op = await orchestrator.beginCreateEvent({
-  entityKind: 'HACKATHON',
-  entityId: 'hck_smoke_test',
-  params: { /* CreateEventParams */ },
-});
-
-console.log(op.opId, op.status, op.unsignedXdr);
+./deploy_mainnet.sh register-token \
+  CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75 \
+  USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
 ```
 
-The expected state is `PENDING_SIGN` with a non-empty `unsignedXdr`. If the
-RPC call fails, check the contract address env vars and that the deployment
-record matches what's on chain.
+`CCW67TSZ…` is the mainnet USDC SAC. As on testnet, the asset must be the one
+the contract wraps and the fee account trustline must pass before anything is
+signed. For native XLM pass `native` and the id from
+`stellar contract id asset --asset native --network "$STELLAR_NETWORK"`.
+`register-token` only works while the deployer is still admin; after the
+rotation, register through the multisig (`docs/contract-ops-runbook.md`,
+Section 5) and run `verify-fee-trustline.sh` first.
 
----
-
-## 9. Rollback
-
-The contract layer has no migration story for breaking changes; a bad deploy
-means deploying fresh and pointing the orchestrator at the new addresses.
-
-For the orchestrator, every `EscrowOp` row carries the contract addresses
-it targeted (via `signer_hint` + the deployment record); a redeploy creates
-new event_ids and a new namespace.
-
-Migration rollback:
+### 4.5 Verify, smoke, rotate admin
 
 ```sh
-# Reverse the schema migration manually if needed.
-psql "$DATABASE_URL" -c 'DROP TABLE escrow_op; DROP TYPE "EscrowOpKind"; DROP TYPE "EscrowOpStatus"; DROP TYPE "EscrowOpEntityKind";'
-# Then delete the migration directory and re-generate the Prisma client.
+ADMIN_SOURCE=$(stellar keys address boundless-deployer) ./deploy_mainnet.sh verify
 ```
 
-Or, more cleanly, write a follow-up migration that drops the table.
+Before rotating, run one small end-to-end flow against the new contracts with
+the backend's smoke scripts (see the boundless-nestjs repo, which also owns
+the env values, migrations and orchestrator checks that follow a deploy). If
+anything is wrong, the deployer can still `pause` both contracts on its own.
 
----
+Then hand admin to the multisig:
 
-## Cross-references
+```sh
+EXPECTED_SIGNERS=<G1>,<G2>,<G3> ./deploy_mainnet.sh rotate-admin <MULTISIG_G_ADDRESS>
+```
 
-- `scripts/deploy/deploy.sh`, `register_token.sh`, `verify.sh`
-- `boundless-platform-contract-prd.md` Section 12 (deployment)
-- `boundless-payout-prd.md` Section 9.1 (orchestrator integration)
-- `boundless-credits-reputation-prd.md` Section 9 (credit policy — implemented as an off-chain ledger in boundless-nestjs since the 1.1.0 upgrade)
-- `.env.deploy.example` (per-network parameter template)
+`rotate-admin` runs `scripts/admin/verify-multisig.sh` against the multisig
+(and the roster, when `EXPECTED_SIGNERS` is set), asks for the typed
+confirmation, and calls `set_admin` on both contracts from the deployer. The
+multisig then accepts on each contract. Wait about ten seconds after
+`set_admin` so the nomination is in a closed ledger, then build and simulate:
+
+```sh
+EVENTS_ID=$(jq -r .events_contract deployments/mainnet.json)
+stellar contract invoke --network "$STELLAR_NETWORK" \
+  --source-account <MULTISIG_G_ADDRESS> --id "$EVENTS_ID" --build-only \
+  -- accept_admin \
+  | stellar tx simulate --network "$STELLAR_NETWORK" \
+      --source-account <MULTISIG_G_ADDRESS> > events-accept-admin.xdr
+```
+
+Sign it sequentially with two signers and submit it with `stellar tx send`
+(`docs/contract-ops-runbook.md`, Section 5). Repeat for the profile contract.
+Then confirm both admins changed and record the four transaction hashes:
+
+```sh
+ADMIN_SOURCE=<MULTISIG_G_ADDRESS> ./deploy_mainnet.sh verify
+jq --arg a <MULTISIG_G_ADDRESS> '.admin = $a' deployments/mainnet.json > tmp.json \
+  && mv tmp.json deployments/mainnet.json
+```
+
+Prove the signing path once with a no-op admin call, for example
+`set_fee_bps` to its current value.
+
+### 4.6 Destroy the deployer key
+
+```sh
+stellar keys rm boundless-deployer
+```
+
+The account keeps any leftover XLM but has no authority over either contract.
+Sweep it first if you want the balance back.
+
+## 5. If a deploy goes wrong
+
+Before the rotation, the deployer pauses either contract directly
+(`stellar contract invoke ... -- pause`). After it, pausing is a 2-of-3
+multisig call: `./deploy_mainnet.sh prepare-pause-events <xdr-output>`.
+
+A fresh deploy has no in-place undo. If the contracts are misconfigured in a
+way the admin setters cannot fix, deploy a new pair, point the backend at the
+new ids, and leave the old pair paused.
