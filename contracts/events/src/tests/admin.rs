@@ -614,3 +614,88 @@ fn accept_admin_demands_pending_targets_auth_specifically() {
         "accept_admin must demand the pending target's own auth"
     );
 }
+
+#[test]
+fn migrated_award_reserves_what_its_winner_is_still_owed() {
+    // A legacy event can be mid-flight: a winner selected, the prize not yet
+    // claimed. remaining_escrow still reads the full budget in that state,
+    // because it only drops at claim time, so 1.7.0 keeps EventOwedTotal to
+    // stop a later batch promising the same funds twice.
+    //
+    // The migration rewrites the award but never writes that reservation, so
+    // a migrated event reports nothing owed while a winner is still entitled
+    // to be paid. Every existing migration test checks the rewritten record;
+    // none replays a selection afterwards, which is why the suite stayed
+    // green. Fresh 1.7.0 events are unaffected: select_winners sets owed
+    // itself, and that path is covered.
+    let ctx = setup(250);
+    let winner = Address::generate(&ctx.env);
+    let event_id = ctx.client.id_base() + 1;
+    let budget = 1_000_0000000_i128;
+    let awarded = 600_0000000_i128;
+
+    let mut dist = Map::new(&ctx.env);
+    dist.set(1, 100_u32);
+    let legacy_event = LegacyEventRecord {
+        id: event_id,
+        pillar: Pillar::Bounty,
+        owner: ctx.admin.clone(),
+        token: Address::generate(&ctx.env),
+        total_budget: budget,
+        remaining_escrow: budget,
+        release_kind: ReleaseKind::Single,
+        status: EventStatus::Active,
+        content_uri: String::from_str(&ctx.env, "https://api.boundless.fi/b"),
+        title: String::from_str(&ctx.env, "Legacy Bounty"),
+        created_at: 1,
+        deadline: None,
+        winner_distribution: dist,
+        fee_bps_override: None,
+    };
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &legacy_event);
+        ctx.env
+            .storage()
+            .instance()
+            .set(&DataKey::NextEventId, &(event_id + 1));
+        storage::append_winner(
+            &ctx.env,
+            event_id,
+            &Winner {
+                recipient: winner.clone(),
+                position: 1,
+                amount: awarded,
+                milestone: None,
+                paid_at: None,
+            },
+        );
+    });
+
+    ctx.client.migrate_events(&8_u32);
+    ctx.client.migrate();
+
+    // 400 of the 1000 is genuinely free; 600 belongs to the unclaimed winner.
+    let second = Address::generate(&ctx.env);
+    let res = ctx.client.try_select_winners(
+        &event_id,
+        &soroban_sdk::vec![
+            &ctx.env,
+            crate::types::WinnerSpec {
+                recipient: second,
+                position: 2,
+                amount: awarded,
+                reputation_bump: 0,
+            },
+        ],
+        &BytesN::random(&ctx.env),
+    );
+    assert!(
+        res.is_err(),
+        "a migrated award must still be reserved; otherwise both winners are \
+         promised funds only one of them can claim"
+    );
+}

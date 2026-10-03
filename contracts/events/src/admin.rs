@@ -403,6 +403,45 @@ fn migrate_one_event(env: &Env, id: u64) {
         }
     }
     migrate_winner_amounts(env, id);
+    migrate_owed_total(env, id);
+}
+
+/// Rebuild `EventOwedTotal` for a migrated event.
+///
+/// 1.7.0 reserves awarded-but-unclaimed prizes, because `remaining_escrow`
+/// only drops at claim time and a second selection would otherwise see funds
+/// an earlier winner is still entitled to. Pre-1.7.0 state has no such
+/// counter, so a migrated event would report nothing reserved while a winner
+/// was still owed, and the next batch could promise the same money twice.
+///
+/// Outstanding is the same quantity the live path maintains: award amounts
+/// that have not been paid out, less whatever milestone rows already paid.
+/// A Single award marks its anchor `paid_at` on claim; a grant leaves the
+/// anchor open and appends one paid row per milestone.
+fn migrate_owed_total(env: &Env, event_id: u64) {
+    let count = storage::winner_count(env, event_id);
+    let mut awarded: i128 = 0;
+    let mut paid: i128 = 0;
+    for idx in 0..count {
+        let w = match storage::winner_at(env, event_id, idx) {
+            Some(w) => w,
+            None => continue,
+        };
+        match w.milestone {
+            None => {
+                if w.paid_at.is_none() {
+                    awarded = awarded.saturating_add(w.amount);
+                }
+            }
+            Some(_) => {
+                paid = paid.saturating_add(w.amount);
+            }
+        }
+    }
+    let owed = awarded.saturating_sub(paid);
+    if owed > 0 {
+        storage::set_owed_total(env, event_id, owed);
+    }
 }
 
 /// Pre-1.7.0 `Multi` selections stored `amount: 0` on the anchor winner row,
