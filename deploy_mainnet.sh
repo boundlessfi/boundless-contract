@@ -395,8 +395,8 @@ cmd_deploy_profile() {
     confirm_mainnet
 
     info "Building boundless-profile without the testnet feature..."
-    "$REPO_ROOT/scripts/build-release.sh" --package boundless-profile
-    local wasm="$REPO_ROOT/target/wasm32v1-none/release/boundless_profile.wasm"
+    "$REPO_ROOT/scripts/build-release-linux.sh" --package boundless-profile
+    local wasm="$REPO_ROOT/target/release-linux/boundless_profile.wasm"
     [ -f "$wasm" ] || err "missing wasm: $wasm"
 
     info "Deploying boundless-profile..."
@@ -436,8 +436,8 @@ cmd_deploy_events() {
     confirm_mainnet
 
     info "Building boundless-events without the testnet feature..."
-    "$REPO_ROOT/scripts/build-release.sh" --package boundless-events
-    local wasm="$REPO_ROOT/target/wasm32v1-none/release/boundless_events.wasm"
+    "$REPO_ROOT/scripts/build-release-linux.sh" --package boundless-events
+    local wasm="$REPO_ROOT/target/release-linux/boundless_events.wasm"
     [ -f "$wasm" ] || err "missing wasm: $wasm"
 
     info "Deploying boundless-events..."

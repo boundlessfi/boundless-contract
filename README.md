@@ -61,9 +61,11 @@ mainnet builds, then `migrate_events` (events) and `migrate`. More in
 - soroban-sdk 28.0.0 (workspace `Cargo.toml`).
 - Stellar CLI 28.1.0 (`cargo install --locked stellar-cli@28.1.0`).
 
-Build release wasm with `scripts/build-release.sh`, which runs
+Build wasm with `scripts/build-release.sh`, which runs
 `stellar contract build --locked` with machine paths remapped so the same
-commit gives the same hash on any machine. SDK 28 refuses a plain
+commit gives the same hash on machines of the same platform. The build that
+goes on mainnet is `scripts/build-release-linux.sh`, which reproduces CI's
+Linux x86-64 build from any machine through Docker. SDK 28 refuses a plain
 `cargo build --target wasm32v1-none`.
 
 ## Build and test

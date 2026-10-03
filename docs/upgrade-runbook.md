@@ -51,16 +51,19 @@ migration.
 1. Tag the release commit and build it the way mainnet will run it:
 
    ```sh
-   ./scripts/build-release.sh --package boundless-events
-   ./scripts/build-release.sh --package boundless-profile
+   ./scripts/build-release-linux.sh
    ./scripts/check-versions.sh
-   stellar contract info meta --wasm target/wasm32v1-none/release/boundless_events.wasm
-   shasum -a 256 target/wasm32v1-none/release/boundless_{events,profile}.wasm
+   stellar contract info meta --wasm target/release-linux/boundless_events.wasm
    ```
 
-   The contractmeta `version` must equal the version you will propose, and a
-   second person reproduces both hashes from the same commit before anyone
-   signs. Keep these exact files; every later step checks them.
+   `build-release-linux.sh` builds in the same Linux x86-64 environment as CI,
+   so the hashes it prints must equal the ones in CI's "Build contracts
+   reproducibly" step for the tagged commit. A native build on macOS or arm64
+   gives a different hash for the same code, because cargo folds the host
+   platform into symbol names and that changes the function order, so only
+   this build is proposed. The contractmeta `version` must equal the version you will
+   propose, and a second person reproduces both hashes with the same script
+   before anyone signs. Keep these exact files; every later step checks them.
 2. `cargo test --workspace` and `./scripts/test-storage-compat.sh` pass. The
    storage suite replays the real mainnet state through the upgrade
    (`docs/storage-compatibility.md`).
@@ -318,8 +321,8 @@ export ADMIN_SOURCE=GCVK72I6TVJVDTTY4UKU6MQT4QJ2T2AAG3NULNEUDM46L3UOQYDSO4O2
 export EVENTS_ID=CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ
 export PROFILE_ID=CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC
 export UPLOAD_SOURCE=<funded identity>
-EVENTS_WASM=target/wasm32v1-none/release/boundless_events.wasm
-PROFILE_WASM=target/wasm32v1-none/release/boundless_profile.wasm
+EVENTS_WASM=target/release-linux/boundless_events.wasm
+PROFILE_WASM=target/release-linux/boundless_profile.wasm
 
 ./deploy_mainnet.sh upgrade-status
 ./deploy_mainnet.sh upload-profile-wasm "$PROFILE_WASM" 1.2.1

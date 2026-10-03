@@ -27,9 +27,13 @@ Source: <https://github.com/stellar/stellar-dev-skill>
 ## Build, test, deploy
 
 ```bash
-# Build (remaps machine paths so the hash reproduces anywhere; soroban-sdk 28
-# refuses a plain `cargo build --target wasm32v1-none`)
+# Build (remaps machine paths; soroban-sdk 28 refuses a plain
+# `cargo build --target wasm32v1-none`)
 ./scripts/build-release.sh
+
+# The mainnet build: CI's Linux x86-64 environment via Docker, so the hash
+# matches CI's from any machine
+./scripts/build-release-linux.sh
 
 # Test (host target)
 cargo test -p boundless-events

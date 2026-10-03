@@ -1,101 +1,101 @@
 # Testnet grant run
 
-Run 2026-10-03T09:54:26.273Z against `CBEODVJGUYCIYTVXD7KI5UG3BJ2UE4T7AGI2TGY3T4Q5GQRFGTRYVTZP` with the BGT test asset `CBEOUEMDTM56NRTOOSXCPGMD33RPD5YWEKJ542HAEVREAYCC4QIZ3XIU`.
+Run 2026-10-03T18:06:56.506Z against `CBEODVJGUYCIYTVXD7KI5UG3BJ2UE4T7AGI2TGY3T4Q5GQRFGTRYVTZP` with the BGT test asset `CBEOUEMDTM56NRTOOSXCPGMD33RPD5YWEKJ542HAEVREAYCC4QIZ3XIU`.
 317 of 317 checks passed across 154 transactions.
-Highest fee paid by one transaction: 9960118 stroops.
+Highest fee paid by one transaction: 9998776 stroops.
 
 ## setup
 
 - pass: BGT CBEOUEMDTM56NRTOOSXCPGMD33RPD5YWEKJ542HAEVREAYCC4QIZ3XIU is whitelisted on CBEODVJGUYCIYTVXD7KI5UG3BJ2UE4T7AGI2TGY3T4Q5GQRFGTRYVTZP (2.0.0)
 
-  - [provision 2 accounts](https://stellar.expert/explorer/testnet/tx/43303068e112738cf13833744066d00d229a70e5c25c51f502226416039ada3a)
-  - [provision 4 accounts](https://stellar.expert/explorer/testnet/tx/002146647b62635b45fb6f35cdee157d54c93fd8abbe4a4539b5e51c07f720f7)
-  - [provision 15 accounts](https://stellar.expert/explorer/testnet/tx/554d2ba1cefa32940a2d7151a747a585298f750f20f51ddfb37fb9f6e553273b)
-  - [provision 15 accounts](https://stellar.expert/explorer/testnet/tx/5c0f71439b56b697d412fc30dac58486cec7045a652864e6ced75e152153a6f9)
-  - [provision 15 accounts](https://stellar.expert/explorer/testnet/tx/5300389140df301654a3d58a810899819c71288f8c465b915eecf132689ebe0a)
-  - [provision 7 accounts](https://stellar.expert/explorer/testnet/tx/742b0face71117cc9d21727840dcfaf37352cc7f038f606aa64d0760b788713d)
-  - [provision 3 accounts](https://stellar.expert/explorer/testnet/tx/daa6c6ba64cf718074bdce4e62480376b94fc63b48667de2503135cf6d60b23b)
+  - [provision 2 accounts](https://stellar.expert/explorer/testnet/tx/7c685d046acea0cf323b8d9868b8fd93d3c6ab5b37c6fb192967a622eef88c1d)
+  - [provision 4 accounts](https://stellar.expert/explorer/testnet/tx/df6af281c3087efb852e3cdce1c15f0a82491bbd33fac16fedce097898ae7596)
+  - [provision 15 accounts](https://stellar.expert/explorer/testnet/tx/e679f186cdbf2b9d472970a3bbdc778cd1641f66d3f3e69f6d8fd587f629836a)
+  - [provision 15 accounts](https://stellar.expert/explorer/testnet/tx/a5eb0c85f7679eda38fd060f094ca7d667d84b3c359a8c51ce61d1011b56523e)
+  - [provision 15 accounts](https://stellar.expert/explorer/testnet/tx/22b2e9c031c404069cb181e3d45f94f2340b47c3dbfe5d2b7ae7609baa62c3d4)
+  - [provision 7 accounts](https://stellar.expert/explorer/testnet/tx/131ef06179e414362d2085e2271c957227cdc98d4b7c059a85668924e92c1218)
+  - [provision 3 accounts](https://stellar.expert/explorer/testnet/tx/ecbc1097b28dabd8d9b60177bc605049f88209dffa20466909940fb5983123df)
 
 ## micro grant
 
 - pass: publish the grant
 - pass: owner paid budget plus fee
 - pass: select three recipients
-- pass: release milestone 0 to GBLCHA
+- pass: release milestone 0 to GAG3YV
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GAIEF4
+- pass: release milestone 0 to GAUSXM
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GANEUH
+- pass: release milestone 0 to GD4QY3
 - pass: milestone 0 paid exactly
 - pass: completes when the last award is paid
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/c78aaee5c34906b7fa8ed87b43c9af097423dd4653db3929dd86c5fb45a15757)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/9d7c855a6d47a18d332a326b8422d45bdf2de7f1dab54e225ae6c7fc9b7117ad)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/b00670f6823f92661ffbd429ba12fcd14ef59065edc60c3afd7cce59d8240ce0)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/5297057a05fca836240612f38e82c6ec32ce40447fcb0666ab80d28de4770845)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/9c1754c5c4fee7a0b6fb776d2ad393f30c0e0ca771d5ffc5f45fe3a63b07c795)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/bff76c4f7acc7f98760865e403ed5687d78733f23e1c785348ce7b5a86b09e3d)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/167ea947488e4658b5eb88267cbc7608d2826f4bd8e16b582018454cf0132b07)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6f738b752a546afb8d0e9e60651dcdf6752476c2001dca25b534adb48804abe5)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/66f5b15d0463c72209a55715ddbb2d704e36e92787bdf804b008e5b66cbe8c19)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c1628333683853e479fd1ace196bfd3095fd9a29f8e90a70ef4f5eeecb6313a8)
 
 ## tiered, rounding, any order
 
 - pass: publish the grant
 - pass: owner paid budget plus fee
 - pass: select three tiers
-- pass: release milestone 2 to GALEW6
+- pass: release milestone 2 to GADYBG
 - pass: milestone 2 paid exactly
-- pass: release milestone 0 to GB6AIZ
+- pass: release milestone 0 to GBRG5F
 - pass: milestone 0 paid exactly
-- pass: release milestone 1 to GCYQYI
+- pass: release milestone 1 to GD3WIU
 - pass: milestone 1 paid exactly
-- pass: release milestone 2 to GB6AIZ
+- pass: release milestone 2 to GBRG5F
 - pass: milestone 2 paid exactly
-- pass: release milestone 0 to GALEW6
+- pass: release milestone 0 to GADYBG
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCYQYI
+- pass: release milestone 0 to GD3WIU
 - pass: milestone 0 paid exactly
-- pass: release milestone 1 to GB6AIZ
+- pass: release milestone 1 to GBRG5F
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GALEW6
+- pass: release milestone 1 to GADYBG
 - pass: milestone 1 paid exactly
-- pass: release milestone 2 to GCYQYI
+- pass: release milestone 2 to GD3WIU
 - pass: milestone 2 paid exactly
 - pass: tier 1 received its whole award
 - pass: tier 2 received its whole award
 - pass: completed
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/b00550c3c7ca97ee60501bfd868513fb38c97699f9669abce3dd1d164e9e693d)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/d881b76e9dabefe4ea05f37ab701935be769165efda12a2f3eb3a981c5f50108)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/e109535e089af6a1c9cf81792554aab640bf4c2843bcf0357dc1c1596f2c3ba2)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/b756afc0925d0d67f9fefefa8b9284c06d30c2eff13c9f14fc3bf09b764e916e)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/0f62f243970658b4da8b42a06d1e82b180a5d031d4b1ec1168ab6606d741e415)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/5cbb43cf4f5f72243323197a7c2ef88adaa0a142a02bb38db646d5769a075dc7)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d135646c70434dee93b2e08f19ce6ac7cf9021f4ac8150d576654e30d2602990)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c649fe3cfb2d5df62cf56f2399fb0948bfd4fc67f951b22ef6ce104a85849f1b)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c0a600718528b2464814d3dd57d3479336aeb0f43e48f513648cd5b8b4e79d7c)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/754a43cfd99536d09432f7993dd8a871273eeee07372f27306047a3c9959ddff)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/f37c7bee0109eabd5c3c7f834af3ac694677e2ebbf99a3096efa32d6d3b4b67b)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/f9d66a52d1ea981a64d80b7c71a321429207a0895320358d8968a8c9e56c3ff2)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/f48ced0aa477e07e4fb68c743ef2595ac6a87af92c82c04e2306b45ac0f2825e)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/3734a44f17950b4a8a65ed0ffdb5fc5c308f54f13cb94c3dbf97b9a69f35c585)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/59374c0a23b51075a581d2c5e15fa407be8ef95e605013754745cd0ee7f54cfa)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/e5c2ba47fc881a8ddc1f39d0c4105a9aa3bd214338611d1f0b867456310aad6e)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2f0c2eea34a9833b85d9049def3bcde4d463f552c6b17b49af6dcc2fd0f89a76)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/49941ec16dd25620c7b9c4f5a2d61ceaa622606e85e5af558035d4eaab0beafb)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/f2176dc27c1a6a36e7f7036e4382146d7e7b4a3b4ca93c96b44ecbf2fae6fca3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/58f7cb213f7f31195275af96ec11d1e5ff174ef87ac691e05003c0928bbd91d0)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/288f75d577fd7c9fb0531f7123e73e7c24da90b4dd9f4daccc01fe222f61c30a)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/84af8971fc063d65b83f37ff40afbe7bbc1dd6b045a05eb567c9ecb30f838468)
 
 ## forfeit and the cancel guard
 
 - pass: publish the grant
 - pass: owner paid budget plus fee
 - pass: select one recipient
-- pass: release milestone 0 to GCJZKP
+- pass: release milestone 0 to GCDARJ
 - pass: milestone 0 paid exactly
 - pass: forfeit milestone 1
 - pass: a forfeit pays nothing
 - pass: cancel refused while an award is owed (AwardsOutstanding)
-- pass: release milestone 2 to GCJZKP
+- pass: release milestone 2 to GCDARJ
 - pass: milestone 2 paid exactly
 - pass: start cancel
 - pass: grant cancelled
 - pass: forfeited share returned to the owner
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/77003b2f998fa3cf955e76d01700569077bdaabe5c8257a8dbfc4cc8c83ab876)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/6af3ca56e39cb1a97040437e61ccc363c9462c7ac7ae51f6acfc616295afbfac)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/5eccc98f1df853ad1f2e1b56933e8547fc4cf6f030d650e2fa0c9585c23a5e52)
-  - [forfeit_milestone](https://stellar.expert/explorer/testnet/tx/2beb87c625d7fa2de5fe4a417a759fdadf7e63959962175dea54e64e260cc192)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/fde369b7583129da470cc337e8ff7524fb9bf2dffde6718bc73c5bf2203aef8b)
-  - [start_cancel](https://stellar.expert/explorer/testnet/tx/c61138719114b9641ed630e8ec0c73c016a4341a836807e9ce0afc9af58c41ca)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/b87715e8887699381c8cbeb63a93da82646dacacbd841c9960aac0454c1d3fac)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/088d8bfcd1597438d521b2dd641077068693b4de6b9a1e1b07c6f261b589d9dd)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/a430fc40b967d16bd8633bd7b24ea73cefc91bc21306d5a2f53eee12641b5e46)
+  - [forfeit_milestone](https://stellar.expert/explorer/testnet/tx/b96cfc4aeaa0f024b4a608fe9dea8dd0fc6ffa268ec4acd6eaf42cedb245f10e)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/56a09ed1691b673f645f491a3ff62f4db9d7f048855df0481c7e72b0f9cbeabf)
+  - [start_cancel](https://stellar.expert/explorer/testnet/tx/2a0d5145604453db88e2a9fdca3269ab588044c4ff2f80c14a54c1065ea580eb)
 
 ## partners, pro rata
 
@@ -104,11 +104,11 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: partner adds 20.0000000
 - pass: partner paid amount plus fee
 - pass: award more than the budget, funded by the partner
-- pass: release milestone 0 to GDZSRB
+- pass: release milestone 0 to GCA65U
 - pass: milestone 0 paid exactly
 - pass: partner adds 15.0000000
 - pass: partner paid amount plus fee
-- pass: release milestone 1 to GDZSRB
+- pass: release milestone 1 to GCA65U
 - pass: milestone 1 paid exactly
 - pass: the late top-up keeps the grant open
 - pass: start cancel
@@ -119,15 +119,15 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: partner 2 refunded pro rata
 - pass: owner gets nothing when partners are short
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/d3d47c20da243c51c3b3278024b82bd0d4444085e61ac2d3dc038ab74b942989)
-  - [add_funds](https://stellar.expert/explorer/testnet/tx/cc75425875de191ddd8580e1edced083a529954f12b855f68d8e253334b7cdf3)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/c02a6528a76c8168a4ead1fa0d4ba87144e1ad7fd170e4b7c745986b31802648)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c55d83171df79dcc30f0ca4eb225656193bf5fac7fc0254c20bfc923ff214c5c)
-  - [add_funds](https://stellar.expert/explorer/testnet/tx/7b85bffe6de0c88e0df70e97787e3486bb7ad4adfa9dfaf6dd7a015c9067703e)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/439bf8db026b93b4a1b821985a3899146f3c5ef956c2e60ae6e1999db377b084)
-  - [start_cancel](https://stellar.expert/explorer/testnet/tx/a81c1a0ad8cb87c17e0d5cbae268d692ad0d699cce4a8de3a45a5b0bcc2eb290)
-  - [process_cancel_batch](https://stellar.expert/explorer/testnet/tx/d8db627f692452c126ba4b0add8eb7f1c2154949991c679da59e00d93ab0f55a)
-  - [finalize_cancel](https://stellar.expert/explorer/testnet/tx/44416739a3d8f722722586abd78722174acbc00c823700f5e86f2de2a9d2a2ca)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/d629631e613016bf786b8fd5844ece081896ce62c4bd472ec36b8c8ce83c9a8f)
+  - [add_funds](https://stellar.expert/explorer/testnet/tx/befd68dce6d058fefc0da9000d8956f38b0e7cbbba19f3fb88b15707f8ef55b2)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/058076ba208b7c625022d04bf248eaadb7a1a08113491b72b520fb9b50ca7aba)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/0bfdcaec66e7f2ec136f0ede9ffbfddad9e173afdeef02e6e38bca19bf016b23)
+  - [add_funds](https://stellar.expert/explorer/testnet/tx/ce7af8bdb4ab3d27e58c3231e94264586041771fcfbd1c262be12d4bbd1d36b6)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/7b92dbb0b5279e4621b140d4eb526771d7ac4a674f5b534bf0907a0df5e37296)
+  - [start_cancel](https://stellar.expert/explorer/testnet/tx/a14d2884832b9eb53293d4d069606acddf0b7d2770ad2141a2d19c53349ec2de)
+  - [process_cancel_batch](https://stellar.expert/explorer/testnet/tx/f0178dedb3f92bc9cd7ab4b6dedcebfd286aece1bcfaa5d148daaa0b135b1bdb)
+  - [finalize_cancel](https://stellar.expert/explorer/testnet/tx/bdda49e0394d31de6788b8a01591983b9eabd9e3742202e3167f6c608263123f)
 
 ## frozen partner
 
@@ -149,15 +149,15 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: frozen partner made whole
 - pass: a second claim is refused (NoRefundOwed)
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/16a9363b0b6c8c783e6d7a185fed67965505b943d354d2feed492c20ec218004)
-  - [add_funds](https://stellar.expert/explorer/testnet/tx/ce27b401a530afba374f8852a76ada34146239181c7be39fbe5225c6177461c9)
-  - [add_funds](https://stellar.expert/explorer/testnet/tx/41cb91b5fc940f953e813ba422fd697a90418b82dcd35d5bfd60f4296f808eaa)
-  - [freeze](https://stellar.expert/explorer/testnet/tx/bc6b9e9167e162ab615f64eb6ed7989c986d830b27780306365b8c8880a5473d)
-  - [start_cancel](https://stellar.expert/explorer/testnet/tx/64f07cb54e3516be8628bd0019702c4f47389d844df751cabd09181b6a6f0a50)
-  - [process_cancel_batch](https://stellar.expert/explorer/testnet/tx/83059189b58b0fc9d60ab710d549967b496e015ceead6ab2f3d8a30ba29c6ddc)
-  - [finalize_cancel](https://stellar.expert/explorer/testnet/tx/abc9c8514cda57bf11bb1789dba56c60d8cd3eff948024512cdd722a597dbf5a)
-  - [unfreeze](https://stellar.expert/explorer/testnet/tx/8d3bf81c3c92e6e4432cfa19d458021241cd0060cf0a690c0c00908b2a865ffa)
-  - [claim_refund](https://stellar.expert/explorer/testnet/tx/2a5beecc43a8abaec0fa01ab31e49d0dea6b70cda95ccbc377b286aa341891df)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/da2a1869751d7da5014ab4518efd2d0f7f898fab700be9582a3d49541e5c30fa)
+  - [add_funds](https://stellar.expert/explorer/testnet/tx/51647f68ee81d423b216a10ca0adab36da2363f3c446423caf23c3190aeff9a4)
+  - [add_funds](https://stellar.expert/explorer/testnet/tx/0b17ad6afa05b1685ca34bfc2a43061670c147a82c05579f30e3d26015b14eca)
+  - [freeze](https://stellar.expert/explorer/testnet/tx/2bb14ddd42f0e93a25a524857dfa998e4320ecfa1d1acfbaa0701779a1bc9b21)
+  - [start_cancel](https://stellar.expert/explorer/testnet/tx/94a1a9fd22fb3d687e6338bc9644eb0363ed9ff6e3c4bf83ab47992d8553979d)
+  - [process_cancel_batch](https://stellar.expert/explorer/testnet/tx/39af2679ca4f07ea5b4ab4a26bfa8309ac8e413aedddbef70c706f45a341585f)
+  - [finalize_cancel](https://stellar.expert/explorer/testnet/tx/28289796ee0f4fad1bf61fb042539ce79559f2bbfa216ca4d8a13826861a4a0d)
+  - [unfreeze](https://stellar.expert/explorer/testnet/tx/d9bda9b42038fe3f0d8141a417369394089571239f3058ea00be6ba7331eb04f)
+  - [claim_refund](https://stellar.expert/explorer/testnet/tx/05bb0a7d788d1dd5b754f29b7db53a03141b3a1b743b50fe9dc90b5e406983a2)
 
 ## refusals
 
@@ -172,7 +172,7 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: a second selection
 - pass: milestone out of range
 - pass: someone never selected
-- pass: release milestone 0 to GDVTCZ
+- pass: release milestone 0 to GAFWBO
 - pass: milestone 0 paid exactly
 - pass: the same milestone twice
 - pass: release with an op id
@@ -187,13 +187,13 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: start cancel
 - pass: grant cancelled
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/7e028af44aae9cd078f926107acdc1b33c27cefda7a74275ae9b919d055ef886)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/342b6b2f998ff324e296d72f00afa05e667646c081da8162b41df687a8157879)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/ca8c1cc89ab2b408e37639c6ce0c396c9e51bb10963a18afb7c7d59dc0135df4)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2741ae25686d1e147a9775ddac68139d86c0c516815aace0485d9c5138326b5b)
-  - [forfeit_milestone](https://stellar.expert/explorer/testnet/tx/373f3be1be07819fb54874a3d5a4c5d49e9833260b4314eb10def97ee278615b)
-  - [forfeit_milestone](https://stellar.expert/explorer/testnet/tx/0c4997179369b379ad780f637e2eddab38a69f004ac619f6947e89033abc59d3)
-  - [start_cancel](https://stellar.expert/explorer/testnet/tx/c09ee7faac9cef813205ee2feb4e750eb1efb319d93587fd1dc6c4b3401fc5bc)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/5dc59e21f7f6049c972687c72969e83ae3dff443eec51b5554af0a69f6e7fc13)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/73b61ad9ae46013e6b2543a5c0356d2a65109d1947ac80de302b284a03b84ac5)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/09fdeb0bad95ca16efdf3925e3872abb5d892c81e30e1be475d0fc6445804d7c)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2cd16bf9ace33ecdd122560f19c01f596d909471fc5e839a14e0447d965274af)
+  - [forfeit_milestone](https://stellar.expert/explorer/testnet/tx/fa7e0123246123aa395bf32ec86410a43b75ffa5e864885bcef3a8e3007e4573)
+  - [forfeit_milestone](https://stellar.expert/explorer/testnet/tx/310e316b7df97b9153086f89a8f94f051a81d3b21d592ef86f0cf8c5b893f4c4)
+  - [start_cancel](https://stellar.expert/explorer/testnet/tx/7671a2264d61c708a6b3dfc7db00cd9e2f5a5508c5f9ab0264ff0b8ab9805274)
 
 ## signatures
 
@@ -203,12 +203,12 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: owner selects
 - pass: a recipient cannot release their own milestone (HostError: Error(Auth, InvalidAction))
 - pass: nothing moved
-- pass: release milestone 0 to GDRPDG
+- pass: release milestone 0 to GAZ3NU
 - pass: milestone 0 paid exactly
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/2b71a63beb441c4b34246d0eb965bea12a46e4a5b801fb7f44a5e32389d46944)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/05feda61bb92c1421e4346cbb5cafdc26709ea0f26a56a591b26177cc4abc290)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/a31ff6bb819736552d8ab7efa435ca415782760281b3d9eb7eab8c13eb467d1d)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/709043ae8556bf6e7251084145aeee4999fb9ca131d9395a0f3b997f961975ab)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/553dca78a0d8f03e9c3944789e9256848f8d646e99dd717c832a6a44701171b3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/a5b71774cb923e9b380892e533cb38341b5c59d629a48500b9bacfe45cdef7f6)
 
 ## manager handover
 
@@ -220,9 +220,9 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: the manager selects
 - pass: no reclaim after selection
 - pass: the manager cannot release (HostError: Error(Auth, InvalidAction))
-- pass: release milestone 0 to GBK2R7
+- pass: release milestone 0 to GCCCB3
 - pass: milestone 0 paid exactly
-- pass: release milestone 1 to GBK2R7
+- pass: release milestone 1 to GCCCB3
 - pass: milestone 1 paid exactly
 - pass: publish the grant
 - pass: owner paid budget plus fee
@@ -230,271 +230,271 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: owner takes management back
 - pass: the owner manages again
 - pass: owner selects after reclaiming
-- pass: release milestone 0 to GBK2R7
+- pass: release milestone 0 to GCCCB3
 - pass: milestone 0 paid exactly
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/9502d33390c6cbeda86184dbceb57850720f9ecdd411d799403acd00aa7fda55)
-  - [accept_manager](https://stellar.expert/explorer/testnet/tx/e5a5bd071a6f181d78402a3e3548ec112ef4d9af44cc36da9ebd3c21ac099db0)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/a93f3c8a13e5431b26fa0a03cb8d4024513b476084fe8e871ea599f3509d01d6)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/3bb77fa810e1b64e6acfdd72ef6b517b7389aeab6ae0f96eadb90f8cb916d72b)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/88449cc8546fa17cb4fe00b5030f31c31f6319f838dd308743013a1fdcc02b78)
-  - [create_event](https://stellar.expert/explorer/testnet/tx/6888610da9fd60ebfb59601fd258742058420f677b86a1a85d41c620966910a8)
-  - [accept_manager](https://stellar.expert/explorer/testnet/tx/d34fbe4bec22e23c2c0394cce001ece3bf88f81ea4d11ef964e5274d40e0fcfe)
-  - [reclaim_management](https://stellar.expert/explorer/testnet/tx/18d6ad962b6bac60c23b40b84e4f283b9a17c5d1dc1d6c9f901e4dff9e335644)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/4e8cb52a087f28a6cb895087df441a5c9d197821bb26b46f9f3ee776666eb871)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/0034e09ad229e94d1d20be7508f8d7f1ca3656f125a6412cb6ab2a9a6f934527)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/4bc695b5acac2246ffbb9f13155bf8ad96bea25862d4a6c5a9753d8273f7d8ea)
+  - [accept_manager](https://stellar.expert/explorer/testnet/tx/2acc3221c0f0dd006cc167d1d46eaf0f66581a439da9beb4cc98aa0f1ac7e28c)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/ce962cea51d9ae1af7ef8e711e6ca725e026e33e2169ba72720ece0aa0f0e703)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d865f61ecc1ef0d7e902e6c9f736a25810873aac36af7217b4b6bea94c1348de)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/697337e087807d3d1977d3cc35dcbaeaf5332fda6ddaacc0e624421ffdf04f10)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/8a3f9f325d900eda63688cc3799f428ce6b350c9443f30cb9261d4d8abe579de)
+  - [accept_manager](https://stellar.expert/explorer/testnet/tx/87ced2faea51a5addf75fe33346cf42f1ad597bf4ae87db5aa5220b2e31595d3)
+  - [reclaim_management](https://stellar.expert/explorer/testnet/tx/59db16a6c43d1004aa6bd9ebe62c9d5e72375a738c70aa29c9aa93eb67d2bd1e)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/912f4c9a102b0a7a6d1422dfb394043654478e8912c9e91a0c673351bf49e133)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/bf89b4b16223d9dfe0c5de752be31630098291e6fa3fa463194b27d41c8e335b)
 
 ## 40 recipients
 
 - pass: publish the grant
 - pass: owner paid budget plus fee
 - pass: select 40 recipients in one transaction
-- pass: release milestone 0 to GAKMUH
+- pass: release milestone 0 to GCMQHP
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBD6NQ
+- pass: release milestone 0 to GCZOKQ
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GD7YBV
+- pass: release milestone 0 to GB5XFM
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCCSIY
+- pass: release milestone 0 to GAUXJN
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCCSTJ
+- pass: release milestone 0 to GA5BQH
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GDAOQ7
+- pass: release milestone 0 to GCC4AW
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GAB5YH
+- pass: release milestone 0 to GDBJKE
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBO2RD
+- pass: release milestone 0 to GBXCQ2
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBEDOP
+- pass: release milestone 0 to GBDFD5
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GAFVE4
+- pass: release milestone 0 to GBASYN
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GDI35S
+- pass: release milestone 0 to GBBJZJ
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCNFJU
+- pass: release milestone 0 to GC4X7Y
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBEFLB
+- pass: release milestone 0 to GB5334
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GAYNV3
+- pass: release milestone 0 to GDMPEB
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCDMZN
+- pass: release milestone 0 to GAJZGD
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GDQXCV
+- pass: release milestone 0 to GCJFRI
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBLZK6
+- pass: release milestone 0 to GASYF2
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBW24G
+- pass: release milestone 0 to GBO5RV
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GDBJBB
+- pass: release milestone 0 to GAPMBQ
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GC6ZPO
+- pass: release milestone 0 to GAICKT
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCIHKL
+- pass: release milestone 0 to GDLXNY
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCVCHE
+- pass: release milestone 0 to GANKX4
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBBVFG
+- pass: release milestone 0 to GBRWFB
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBYLFZ
+- pass: release milestone 0 to GCQJUK
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GD7QSB
+- pass: release milestone 0 to GCSX3H
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GALB4H
+- pass: release milestone 0 to GCBO72
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GD3M5F
+- pass: release milestone 0 to GBBT2W
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBB7PT
+- pass: release milestone 0 to GC3Y4C
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GD76RN
+- pass: release milestone 0 to GDL5WI
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBAX6W
+- pass: release milestone 0 to GD35UM
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GAMOO2
+- pass: release milestone 0 to GAUT2V
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBICRD
+- pass: release milestone 0 to GARB66
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GDTZXJ
+- pass: release milestone 0 to GCDVP2
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBNKH7
+- pass: release milestone 0 to GCMMO3
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBTQI5
+- pass: release milestone 0 to GAL6XX
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GAOFJB
+- pass: release milestone 0 to GB33S4
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GBHTHY
+- pass: release milestone 0 to GAVQFR
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GABOR6
+- pass: release milestone 0 to GDODL3
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GCRIDA
+- pass: release milestone 0 to GDUONY
 - pass: milestone 0 paid exactly
-- pass: release milestone 0 to GDONJ3
+- pass: release milestone 0 to GCFFIF
 - pass: milestone 0 paid exactly
-- pass: release milestone 1 to GAKMUH
+- pass: release milestone 1 to GCMQHP
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBD6NQ
+- pass: release milestone 1 to GCZOKQ
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GD7YBV
+- pass: release milestone 1 to GB5XFM
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GCCSIY
+- pass: release milestone 1 to GAUXJN
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GCCSTJ
+- pass: release milestone 1 to GA5BQH
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GDAOQ7
+- pass: release milestone 1 to GCC4AW
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GAB5YH
+- pass: release milestone 1 to GDBJKE
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBO2RD
+- pass: release milestone 1 to GBXCQ2
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBEDOP
+- pass: release milestone 1 to GBDFD5
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GAFVE4
+- pass: release milestone 1 to GBASYN
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GDI35S
+- pass: release milestone 1 to GBBJZJ
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GCNFJU
+- pass: release milestone 1 to GC4X7Y
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBEFLB
+- pass: release milestone 1 to GB5334
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GAYNV3
+- pass: release milestone 1 to GDMPEB
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GCDMZN
+- pass: release milestone 1 to GAJZGD
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GDQXCV
+- pass: release milestone 1 to GCJFRI
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBLZK6
+- pass: release milestone 1 to GASYF2
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBW24G
+- pass: release milestone 1 to GBO5RV
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GDBJBB
+- pass: release milestone 1 to GAPMBQ
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GC6ZPO
+- pass: release milestone 1 to GAICKT
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GCIHKL
+- pass: release milestone 1 to GDLXNY
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GCVCHE
+- pass: release milestone 1 to GANKX4
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBBVFG
+- pass: release milestone 1 to GBRWFB
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBYLFZ
+- pass: release milestone 1 to GCQJUK
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GD7QSB
+- pass: release milestone 1 to GCSX3H
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GALB4H
+- pass: release milestone 1 to GCBO72
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GD3M5F
+- pass: release milestone 1 to GBBT2W
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBB7PT
+- pass: release milestone 1 to GC3Y4C
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GD76RN
+- pass: release milestone 1 to GDL5WI
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBAX6W
+- pass: release milestone 1 to GD35UM
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GAMOO2
+- pass: release milestone 1 to GAUT2V
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBICRD
+- pass: release milestone 1 to GARB66
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GDTZXJ
+- pass: release milestone 1 to GCDVP2
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBNKH7
+- pass: release milestone 1 to GCMMO3
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBTQI5
+- pass: release milestone 1 to GAL6XX
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GAOFJB
+- pass: release milestone 1 to GB33S4
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GBHTHY
+- pass: release milestone 1 to GAVQFR
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GABOR6
+- pass: release milestone 1 to GDODL3
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GCRIDA
+- pass: release milestone 1 to GDUONY
 - pass: milestone 1 paid exactly
-- pass: release milestone 1 to GDONJ3
+- pass: release milestone 1 to GCFFIF
 - pass: milestone 1 paid exactly
 - pass: completed
 - pass: a full page of winners reads in one call
 - pass: the rest on the next page
 
-  - [create_event](https://stellar.expert/explorer/testnet/tx/39f055782bff602de073ad7012f7386b809edfeebcdaf2d77ce58118498dbbc3)
-  - [select_winners](https://stellar.expert/explorer/testnet/tx/d0bedebfec73df2726d52d80d57b8f20cb9e22dd633d102c85f22b50ee2a1248)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/7d24da85a0952d04c4e7e5736614e867d63360100aa019af67ffd8ee84a64656)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/624638c8eaba72fe939387e9f8c501147c0a352b1ef116c2ef716c5fd7856081)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2855ceb466fd0297fcdd55752b32a053f7ea7ecc948fbe2a122c168f017b3753)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/4193002a990e474aeace68a1670201a986bc37d897f46f829390da1a2381cc26)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1ece78e6d0dd990e11e3ad7aa9a48e17ca52c029360b98aebf80c306a6fc4bb3)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/cb090dfda26bc52a2efda3a7a5197a731fea5f7b056f68088fb1bcae38177141)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/e6ab0fd69d13513a437499bcc951475200c07043961658a6fe9495cc9e5d8f24)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c127f9d957faf3fbbca155d00b6a9c0175451d1f815979eabdc4e87b54f12bf2)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/b40ed526d727b7ddcbff9c0909bedb2413fbe967d7177036516c512674a9a264)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/7ec5eb862ed0b5574a738ffe185e27db381e55c37c6165ac93686aff8e257b5c)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d7a8821d2a826c09aafa89189d7e55f86e205632fc981ffb1c03a5e58264b4b3)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/13db432c3f74a8e4c18d708d30be33695569ca14f0f5b02f9f708b34d9201c41)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/73cc1f3ee092bc49706cff503212e6849b61941fcd8174a2aeba7faf30dcdb62)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/263d04242bd7eab5a46129b7aa66725b870e46f4e1cab0dfcd5853fa537c27d0)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/450084e817e393a57de11e8e82c60384fb690545a3729c940bd3c56a3669399d)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c9c12539914a5f10466848441fcaca7759cf668cd8a88e773c7b0e6889a1c0fa)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/8a257ed77e58e07e8155c4e71c8bf3bce5fde09c77ff285e87e192b3ca05334f)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/37a561a4e9bbcdbab194ae8c0eb239217d779824410117ec47db27592ccb5c19)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/b89f04a5010a11d332c2f1bf95aa41a960444987c98b76d36dd4a9f69c26e5d4)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/79382996bfd877f8d60e7eac75be0bf134954513d9d48505a2fefcc1cda251f4)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/bc101f28428850835d57fb468c4d96fa612d0d2465817a0ad9455394cc2ae9f8)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/ee0a0320e15f2a878517df445df9bdfb02b5692190a8ee314bca6315bb1b608d)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2618e9c0ac839da5b4a05b08e79d0a68a831f968302a2ac08dd9273b4550e541)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/37207648a3ccedf6f01283c140c44ce038bd3e9e7a59d39cd72e41c48dd74d59)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/79662d23cd467760236b213f0c266ca0b8f4e17e29d0cd555e558fcd5bd53f2f)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/916eaf4628b701dc1f002ad5f35cd30480eb57f97b3a056a8cacf05e6de183a4)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/fe2240ea2333acf3728ccde8df69546d28915e7108cc0d495a80d103372af823)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/9e5b85468e8a3ebcd9a895e8c50f3de1d775ddfe08a7acb15e542dc9aced94d7)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6648715962606750261969920b3ca265d90f965d3b60799bb8c0ca3d75ad37d0)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2650c15c684b6f5a66d5d649cb631757d74c6d8436a7c2b9067c1a450a3d3d1c)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/3b52bb83cf88a0c7940ee03694d6e5c311ed19e151c15bba5559370d8095c265)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2580089a31de777b0ff8a56b68f9a2c1a03be2c86e512a8a03834badfb85b2f0)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/304efea234093a453a5d8bff24c50f108e2812afe8bb980f57df5d5adde31347)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/888109b134317ea37d43288100a0d4f8f9c57b448044ddaf84c0c3516f0795a9)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/f5a2f96d1160648e89bcd36d246c15d166ff14fec431e02fac2b6a993a6f7ce7)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/75b289cd61d96c19c3fb26dd2f139b65143da87b6088b7895500f867fe886ac9)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/497f4f47d7ea7e4233d548a0c827286dfdcc3bc20a78cf54b154892df36dd6e3)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/e93292b30a53db1205c923236fb5d62bc17a0b807e2aef39ae6a2b46a44f5a63)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/69895c4b96f8eaf2708461a21c89a905d5a5306ad7b42a089eecd079bb6574cc)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/dd0139a91682a729731f6d6aa101268016658ad4a7edd6bf7923a7c2a176ae19)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/08fa620e5c54c14cc651374f3f74348038fa2d2ae2b5478405851e75be509eb1)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d478fbee228e9dde9c59d9c0712fba8d5627db7ce7f5bdcdc9206b9736d48ffa)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/928a70371745ee82c1016c971736c8419b13bc00581be363d3aa452b649c6859)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2f1827409f29bef2416017d6fa3e9839252858558dc72f65e740be388a43a2e6)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/069ecab5d29a6f49b62f1f4b8122637f3d42ea72d189a8911f3c54fae3ebfd45)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/bc1ad2494ee930516c10acf9d88396930307cb17c39559106cafb817a6080725)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/5fde924f77309d39f9cb5759b4e544e91a15d401267fc8fe012d1fba5548de73)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/07679b46c1dbb795361d67287f710435e7cc9ef4818f70daa67909a7f52d735d)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/9b94c712fdb2c7cde69dfc53a0c7b422c9f87529991b86ff7cf4279bdb15c833)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/84064bd42348fc95f845f1ac9c9a16976ddacfab468a90a762986e1ca1b6cc84)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/3021f51f15d092b44b2e654ca8236cf5ccbbd8b851a715255688045ce342a93e)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/cc71ac298197e1c3872a151523d74ff6bb5ef7254cfc7e7421d2698c52b937ee)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/48c6f5243503096dbfdde142db0f939901bd52b803cf6c3ce5d11f94596fece6)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/fcf2d01a896eca17bd3d1b068f20f86b6fb465832f57477e63226716c6456b12)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2aa6590ea339cf29d32ef9af7cef8e9437892276604f0d21aed3bbc403dfd03e)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6a1332a7d84a24f4462e8411c71cb5b7c8d50b398912cb9edd3e355574624dcb)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c2dd0e228dfbcc22056c325e0a60408ab5d5d67996474108f4c49a3f6495f9d7)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1e89f9838ae13b6d6e692aab11196e9068b526577a17aaa159e4ea0307e244b2)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2aec80d040106fa6b7e8583063d00b55e6ee9656966675c7ce3130ac3ed7527a)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/56db084e505fa38834f3644231841b69942f091245df52ac636fbcccc6eaa223)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/78a0716bb2c49a388ccfe58d5dad53afcb4f7e45d9cf2ce5e72f1db44485c7eb)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/817cc5d37c79eefd5194de9d7a397782fca7fb87ba166fe8b04af538db6d69fa)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/88ef8bbcb2b6751b664fabd17b42f53c6d309ed32040a063027e16670064e845)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c9964c27ae249cc37084e961ae6fa9689bc42a59c4690dc1c56618d2e8a68150)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/7e7caeac35ef57067cfd2d61c1bbe22f930f74bf385587dc5945caa21d81efb4)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2233e2f44be51cecd41a24dd8452f1b821b777b58b2c6cfca38859c25c71200f)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2547359703b37e6731c30a8bf7c59ad81e3f6f422aca7c2d50bdf3dbf0d0dfb1)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/87cf4f5a3fb4c7ad7916d1e18538b810911dafe61d5abc9de982f4eda692916d)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/4e3480fa348a61355b5ab0c80fc390bdd07566a377e105320f8d7ef9a0be2209)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d4c11647e8d08ade736d3b34818898bd7d78e4f01d901bfe6e5e5d617394bb52)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/7b75718e76591f37de3b952e1495109c91ebd9b107d5b1fc3f23d43bc436350d)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/e8b569a895e9abc23e9104869758aa3700fcc6d955eb1a519a8a723861600fa0)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2c7986cb7b190d29384084a2f0805288b0e2c402e37ed761524472025b024ce5)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d4313699d0144672ef40b1b196da9c1b7843669e8578b96b72e6086d123fbeeb)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/428f3ea10e426c588587949f6f21950c027ec6029077db1aab261fdd6294fa1c)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6e695162e4df6b031ebb7f7ab88ae6f28aaec4d34f3cdd3a70fa8e2c80e7343a)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/002af34286d49890e7aa10153dbb5872d560f7f814449208cf7cec4e55ec8601)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/19a65f9cc74e87236578da5e917fd1f077e80dfe7640b1ecbfef54186c21692d)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/fbefc5e44b6297a2614db67895b381f2643011ea9167b0e938ced308bf2d5999)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/8a5d9c64a40aaf548ab8cb19c8c4c1262303a5b7c817b4cc8e1756ba7e106839)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/5b3621a0c46f37574e4be924fcca449a8f80eadb98fecce00d1daced47fddf68)
+  - [select_winners](https://stellar.expert/explorer/testnet/tx/a87168e3ad6d51a5eed768a4aa24da438e3ecedc18b886ca8fb0fdbfc3acaa36)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/23f8d6077c0354614d93873392cf9c30c870d3ebca7e15a08b6d4d5a544557bb)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d5287744777a577c7dbf21150ece30d9a21eb49d98c897c8a28328b22cec2709)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/04b7ea265a2928c71b04337599460c79c65d05e5b52f0917dbf274cb4109a3c3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/05a5e6a0ba310287f7c11cfd0528fc5eea356079e8b25687ae71ef7da44d91d8)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/f878750ae8426e5732811e15f2c222287ffa7c156ad4be001e36f2883d08101a)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/dbb23b6ca88ebfd9a29603b582004788d1d7ea3b2754afe49227557c28c5a12c)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/f6d52cfd80428bbd94b9998dcb376579e10d98e7ccb7aa80a017d15f6c4b4309)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/746d35a2f00d9101bc9d5b9926d20d88028d435363f0a47540d355e3efe5e8e9)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/eb92fce7d6b6d745abd04c4f29f04b6cfaea5fb45fd09ad26da56ded801eacb6)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/0ebb79d7b968e8dde8575c90599ce1c8d3433221cb63f2c375e65bd9d18a8b46)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/67a972d25a70ac897688c1f87aed5e717c645e3959132a62e4072cd5ffbde2cd)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/63ebece9126c8f049b74c9cf239d2a0f1955c59d029c4f010c400c7203c9a904)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6ac1b605783d592109ef3dd6dd453e846953bcaedea890d3aa1409c85708ff75)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/65e8093bdd02fe513df63533adda74d66a277a9c0f707fc35d3b1b5e4916a0c3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1743c96061be4b6e74b307d62d18b25ffa0c03cff2b57e2ff06192894fdc7731)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6358c78d14886b5c610f5df1fc05d2527d709dfdc20ba2700e275b47492375b8)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/28d624ec90efa19b15bc1b31304aae9cf265f0bf5b70df2e912cb9a3cb013f99)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6c7854c001b7b71be35e59f465d44e379637c58f15223b437f0deef40de1f05c)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c2870ad5bc9e993110b3db04d661c2a0a4f19c0d68dc1ae02701287914e055ea)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/b1bdc179b28dd40f425a303982d4e386cf0c665cb596bc77ccab99add2b56f54)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/3d83a45d747cde093c5b6af8c10a07949021ea63fdaa1ac7d4f74110f0425b74)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/ad7c147f92d25d9190188240dc3c1cbddc7e56fccc177ec7aedb6f4b25e832e1)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/6e3a6a4c9c9871b6dc0575a59b7ded1fc4d8aa94fefe45a55037665286986d68)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/17de75246c2c8e9890b1099674f3493caea9ea5f11e9387983acaea41b2ebf2f)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d90b836ac725750e8bad15671c90f9fd8e1a2c389c4853a50f4cddfe4365078a)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/811f8d3607bc37d33d098105dbdc64f0bb53da5cb91b4f9baff7e2a05ee6071f)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1350bdc035bb5a0bc9af4d68ebf0a561e8a1ed738fcd5624204faeb95ea7432c)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/824713f30cf0640738f7a2a02265f4a079469803d316a38b0ed9aa64cc42dbad)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/b95cd2b1a3234530539d5e690f82e9c95dfb9c47335f81fa3208d0531c74c18d)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/9310b3d386ad03004d6bcf68944ccb101d643cdb30e5069cca5b0ec38140e334)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/de59a4bec1ecf311ed1c8b06d687a9a0c945a957d78635c575f6660f453586d0)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/eb5006e77c8f810771a0a3b4ff703d69414ffb8b7b181ccdb734e873d8d06646)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d5faf0c3fbbffc7dfbba737da93d1e08b851504f66d3ae279e5d9eb82bbc92c0)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/39ade78a649b43d6225b876fb82563c1bcc416d51b1d4b5ab75cfb721e964d85)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/dbce262fc6969bb486ea7f9f15119dcce23a1ed389f654a08eeae666eb230408)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/3aa5ef54fd80098a01309010c228f8364cd878151be755be21ff05061de6ee29)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/270d23e193bf35fb73401172e9e65c6aafb4920a41c66cb07af2568bbc33369e)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/4dfdab6b8d1872fd20d547fd75892bbef1ba875186c6f76e9ce3bea058c97193)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/22a6adcfdb4d343bb4a71e6c56e88cf2af4eea31e835525fd5b92588f31b26e7)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/0ffe6850247a8951e37c4b3e87f807a1e903c1cd9aa2cde609b1c51d69b2faa2)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/e9fec6d55482e6a89a406dbf7721d0f652344952730b7751a45326b51da87866)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/9058e452d7338004c7ff5d4df51522063cdf3043fe0427c31ba2ca346155aee0)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/a4c713986b33bc17dc575d85868a93019ec94c622382acd204e9c49d2330f53e)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/82881a31331821c8fc4ecb5d6d93756c4c16734c4522019a51390ee8cc2f42b4)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/b5463bb20ffc7f5f5f0b890b33898cd1c7bfffd4983a8b333c42d22b24824d69)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/5542deaf56b44093225375f148bac5a3a6eb3835698ec460ae9ea130e02d1a65)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/95f94c1f6a69a45988aeeecadaa757862094d90834c185071c35a729f1f151f2)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1b014aa0fad6d6e48c9879aae9bbda30a38644df027280b4ec6e3463596370fa)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/42608bb2260b00d07792a2deafa23889bfb8e24f904fddb4830f92dc56a80b3e)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/4df0343587573126f6088340f42014cc2efdd5de03550258b8808161cdaec3e6)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c2d7f3fc1bb55ac53d22bd212e1d7eb2067b99e5f05e91d48d9af413b7a483a1)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/af3995eeeed8113bba31779bd9d009b292d6f194e6279405707b380f12057069)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/c51e9a2bf1d79541047b2ab311f2d0e75b4aefe8d2d591eaf7b4d966be646c15)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/a477adeb467f6f99ef72f61adcfba41fcda27951b8e4f488f81b89752088bbf9)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/041c96314b7177614699bebeabb4f7aab43d8756e1b1c8a7102952681433f5b6)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/623fac10464498a668ec6f911fdfbb788bf5f96a5c2184af627f7f1c390a83e0)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1a0cbf82c2ccebdf58eeed1f8491f7e9a507a73ca02e9407411009604c8c477d)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/81c7e0f540939e1aa757ee58d11e9afdd82c988073506a4027d562aeb90a0dc6)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/691e84aade02c4bbc042a7521e8de2871e5e8116d8cd1ba2c2cc7f495ba8f323)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/932083f17db357ef4e3be21944113e067c65a379e7c10ecb5127fcd05e5a54ab)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/291ef7e0ed995ec29c8a5829c7b2c51895aaac57ac924f3c731e8991c2eab14c)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/07d655308139dd92c6715c16e2e9e384c69d211e1b9b3feea9635b3ada69fad8)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/eb8dadc139cd424087b7945d693c14e1e37a550993d2c883a234ad1716758dba)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/01e8f88b659c150ca4db0953ac18452fde6f9331629243501a2716020aeb81e1)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/bdedc172240a74e9c22171cdca9b7c2acea5430e92361cc48e7572cc7a425ee3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/4f56d4cf8d716bd8fe2aecd75845d79c00ada2f133e77b853d3b52b6ae9a8641)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1ae396451987af20fa5d84572fa1367bb583c29df6c1bb53568fd55f75094121)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/02e18ff8fd754609b0beaffcac09a04f2a6947437d6f9ff3ed9ca2c56d0f60ec)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/90dd0b4f772a1c7338a2c48e6cfacd6c9e13d8242f11f2adb9f2d132e78256a3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/ef389a41dc0fc07104b4db90be90552ad5637f35ebea0373acd573676c270e20)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/8f73ebde17b8dba39522e8418da3ff69a848706a8e8a547fe69622f3590110a0)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/31ff0e1484b51bd9f516e17af47900119f026ff6cf0eb949d99221fe43559359)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/39f2bb3ef0caa38d0055768d8f2d0887fcfb1e0c8d73ea358c3a7f3bb66aa0b3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2b3d2b2d5e3c5590767920e2187c8da44b2834ffd342d535267dfbd322553f53)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/1d2cb3a8c8f6a677db407fc3c0d8c3a0920e516b4ba1f250317009fb6ea2b1c3)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/7f69276a1c98e739525f41d25fb6b069059ba26d39fce6b4cfcbb17f31fbc33d)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/f423a13d264a35c1f8671c17ebdcc3ce2fc3f4998b70218140f9ed054ac8b451)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/d08345f465bca3379ecc3f425b1b234dcb134d76484ae8f4e19ca38557dcc91f)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/97e4020b7e83f209dc113031f8d80941ea24b4fc3b26cb4fe8e3cc96af067add)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/e26a0edc3fece1843ef312073e3da51d4f2bd7aeb90b702fc7c32111c06fb9e5)
 
 ## crowdfunding release validator
 
@@ -512,11 +512,11 @@ Highest fee paid by one transaction: 9960118 stroops.
 - pass: fee withheld at release
 - pass: campaign completes on its last release
 
-  - [provision 1 accounts](https://stellar.expert/explorer/testnet/tx/aa0dcce2f72b8e642a0cf76d83da9fd933d9ce7ce9acc74f53fc151f0d983942)
-  - [create_event](https://stellar.expert/explorer/testnet/tx/68adb492b228b0b9590d6ad163e1b0e43b3a1325905c7a33130df1752f0f7024)
-  - [add_funds](https://stellar.expert/explorer/testnet/tx/13216bdefec6754b37ffebe5042baca9406c0a1debdc3345cd71539f069f74d6)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/9c59bbf88a6282be59b193dd0c11c896847c14229ddcd7ef14f88bb96cd44251)
-  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/97ed9a410eac75b13ca2f565eaa96c07eff9af43fbf52901f9993aaa14bf5dde)
+  - [provision 1 accounts](https://stellar.expert/explorer/testnet/tx/8a0c5f15009718f71186a8578ca7c0d46c72afe88c2801e36b39f97f8d3dd91b)
+  - [create_event](https://stellar.expert/explorer/testnet/tx/6bba582caaa23cd9388a94ef19bf3b526e2c5b4b938e0840c07ecaf0beb3a702)
+  - [add_funds](https://stellar.expert/explorer/testnet/tx/679c3042532de989fb5bf5e179b41e0da161f7a0c0ecfa8c43165e8ecebe7a09)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/4b54a1423654e438cffe02278ba8ab5055dede22d1384aa8f8851393123cf83f)
+  - [claim_milestone](https://stellar.expert/explorer/testnet/tx/2c0f4f33129245dee815d52fa74f92557c8e942aad5e9ee82666b57606b98f31)
 
 ## fees
 

@@ -40,9 +40,11 @@ in the README.
 - `jq`.
 
 Build with `scripts/build-release.sh`, which runs `stellar contract build
---locked` with machine paths remapped, so anyone building the same commit with
-the same toolchain gets the same hash. A plain `cargo build --target
-wasm32v1-none` is refused by SDK 28. Testnet and
+--locked` with machine paths remapped, so the same commit gives the same hash
+on any machine of the same platform. Mainnet builds use
+`scripts/build-release-linux.sh`, which runs that build in CI's Linux x86-64
+environment through Docker, so its hashes match CI's from any machine. A plain
+`cargo build --target wasm32v1-none` is refused by SDK 28. Testnet and
 futurenet builds add `--features testnet`, which sets the upgrade timelock to
 0 ledgers; mainnet builds leave it off and carry the 17,280-ledger timelock.
 The scripts choose the right build for the network.
