@@ -119,7 +119,7 @@ propose_upgrade() {
         die "propose-upgrade needs the new version as argument 3, e.g. ./deploy_and_upgrade.sh propose-upgrade events 2.1.0 testnet"
 
     echo -e "${YELLOW}Building boundless-$CONTRACT_KIND with --features testnet...${NC}"
-    (cd "$REPO_ROOT" && stellar contract build --locked --package "boundless-$CONTRACT_KIND" --features testnet)
+    "$REPO_ROOT/scripts/build-release.sh" --package "boundless-$CONTRACT_KIND" --features testnet
     meta_version="$(stellar contract info meta --wasm "$WASM_PATH" --output json 2>/dev/null \
         | jq -r '[.[] | .sc_meta_v0? | select(.key == "version") | .val][0] // empty')"
     [ "$meta_version" = "$new_version" ] || \

@@ -121,8 +121,8 @@ values from our drill are in `‹comments›`.
 ### 4.1 Build
 ```bash
 cd boundless-contract
-stellar contract build --locked --package boundless-events
-stellar contract build --locked --package boundless-profile
+./scripts/build-release.sh --package boundless-events
+./scripts/build-release.sh --package boundless-profile
 # target/wasm32v1-none/release/boundless_{events,profile}.wasm
 ```
 

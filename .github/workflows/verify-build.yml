@@ -62,6 +62,7 @@ jobs:
           bash -n deploy_and_upgrade.sh
           bash -n scripts/capture-mainnet-compat-snapshot.sh
           bash -n scripts/test-storage-compat.sh
+          bash -n scripts/build-release.sh
           bash -n scripts/test-mainnet-upgrade-guards.sh
           bash -n scripts/testdata/mock-stellar
           bash -n scripts/lib/deploy-env.sh
@@ -83,7 +84,7 @@ jobs:
         run: ./scripts/test-mainnet-upgrade-guards.sh
 
       - name: Build contracts reproducibly
-        run: stellar contract build --locked
+        run: ./scripts/build-release.sh
 
       - name: Check WASM sizes (64 KB ceiling)
         run: |

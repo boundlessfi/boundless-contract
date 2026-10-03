@@ -51,8 +51,8 @@ migration.
 1. Tag the release commit and build it the way mainnet will run it:
 
    ```sh
-   stellar contract build --locked --package boundless-events
-   stellar contract build --locked --package boundless-profile
+   ./scripts/build-release.sh --package boundless-events
+   ./scripts/build-release.sh --package boundless-profile
    ./scripts/check-versions.sh
    stellar contract info meta --wasm target/wasm32v1-none/release/boundless_events.wasm
    shasum -a 256 target/wasm32v1-none/release/boundless_{events,profile}.wasm

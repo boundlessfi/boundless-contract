@@ -61,7 +61,9 @@ mainnet builds, then `migrate_events` (events) and `migrate`. More in
 - soroban-sdk 28.0.0 (workspace `Cargo.toml`).
 - Stellar CLI 28.1.0 (`cargo install --locked stellar-cli@28.1.0`).
 
-Build wasm with `stellar contract build`; SDK 28 refuses a plain
+Build release wasm with `scripts/build-release.sh`, which runs
+`stellar contract build --locked` with machine paths remapped so the same
+commit gives the same hash on any machine. SDK 28 refuses a plain
 `cargo build --target wasm32v1-none`.
 
 ## Build and test
@@ -70,11 +72,11 @@ Build wasm with `stellar contract build`; SDK 28 refuses a plain
 cargo test --workspace
 
 # Release wasm as mainnet runs it (17,280-ledger upgrade timelock)
-stellar contract build --locked --package boundless-events
-stellar contract build --locked --package boundless-profile
+./scripts/build-release.sh --package boundless-events
+./scripts/build-release.sh --package boundless-profile
 
 # Testnet wasm (no upgrade timelock)
-stellar contract build --locked --package boundless-events --features testnet
+./scripts/build-release.sh --package boundless-events --features testnet
 
 # Size against the 64 KB ceiling
 cd contracts/events && make size && cd ../..

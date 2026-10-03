@@ -27,8 +27,9 @@ Source: <https://github.com/stellar/stellar-dev-skill>
 ## Build, test, deploy
 
 ```bash
-# Build (soroban-sdk 28 refuses a plain `cargo build --target wasm32v1-none`)
-stellar contract build --locked
+# Build (remaps machine paths so the hash reproduces anywhere; soroban-sdk 28
+# refuses a plain `cargo build --target wasm32v1-none`)
+./scripts/build-release.sh
 
 # Test (host target)
 cargo test -p boundless-events

@@ -395,7 +395,7 @@ cmd_deploy_profile() {
     confirm_mainnet
 
     info "Building boundless-profile without the testnet feature..."
-    (cd "$REPO_ROOT" && stellar contract build --locked --package boundless-profile)
+    "$REPO_ROOT/scripts/build-release.sh" --package boundless-profile
     local wasm="$REPO_ROOT/target/wasm32v1-none/release/boundless_profile.wasm"
     [ -f "$wasm" ] || err "missing wasm: $wasm"
 
@@ -436,7 +436,7 @@ cmd_deploy_events() {
     confirm_mainnet
 
     info "Building boundless-events without the testnet feature..."
-    (cd "$REPO_ROOT" && stellar contract build --locked --package boundless-events)
+    "$REPO_ROOT/scripts/build-release.sh" --package boundless-events
     local wasm="$REPO_ROOT/target/wasm32v1-none/release/boundless_events.wasm"
     [ -f "$wasm" ] || err "missing wasm: $wasm"
 

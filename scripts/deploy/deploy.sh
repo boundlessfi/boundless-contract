@@ -79,8 +79,8 @@ echo
 # The testnet feature zeroes the upgrade timelock so test upgrades can apply at
 # once; mainnet builds (deploy_mainnet.sh) leave it off.
 echo "==> building contracts with --features testnet"
-( cd "$REPO_ROOT" && stellar contract build --locked --package boundless-events --features testnet )
-( cd "$REPO_ROOT" && stellar contract build --locked --package boundless-profile --features testnet )
+"$REPO_ROOT/scripts/build-release.sh" --package boundless-events --features testnet
+"$REPO_ROOT/scripts/build-release.sh" --package boundless-profile --features testnet
 
 EVENTS_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_events.wasm"
 PROFILE_WASM="$REPO_ROOT/target/wasm32v1-none/release/boundless_profile.wasm"

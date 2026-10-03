@@ -39,8 +39,10 @@ in the README.
   other. `cargo install --locked stellar-cli@28.1.0`.
 - `jq`.
 
-Build with `stellar contract build --locked`. A plain
-`cargo build --target wasm32v1-none` is refused by SDK 28. Testnet and
+Build with `scripts/build-release.sh`, which runs `stellar contract build
+--locked` with machine paths remapped, so anyone building the same commit with
+the same toolchain gets the same hash. A plain `cargo build --target
+wasm32v1-none` is refused by SDK 28. Testnet and
 futurenet builds add `--features testnet`, which sets the upgrade timelock to
 0 ledgers; mainnet builds leave it off and carry the 17,280-ledger timelock.
 The scripts choose the right build for the network.

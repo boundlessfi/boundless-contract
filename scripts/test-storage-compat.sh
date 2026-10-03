@@ -88,5 +88,5 @@ jq -e \
 
 # The replay upgrades into the release build of this tree, so build it first.
 cd "$ROOT"
-stellar contract build --locked
+./scripts/build-release.sh
 cargo test --locked -p boundless-storage-compatibility -- --include-ignored

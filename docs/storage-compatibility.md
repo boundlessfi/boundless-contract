@@ -30,7 +30,7 @@ The test is marked `#[ignore]` because it needs the release wasm, which a plain
 
 The script checks the fixture hashes, the contractmeta versions and the snapshot
 provenance against `contracts/compatibility/fixtures/manifest.json`, builds the
-release wasm with `stellar contract build --locked`, and runs the replay. CI runs
+release wasm with `scripts/build-release.sh`, and runs the replay. CI runs
 the same script after its reproducible build. `BOUNDLESS_WASM_DIR` points the
 test at a different build directory.
 
