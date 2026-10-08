@@ -14,12 +14,13 @@ of this tree the way `docs/upgrade-runbook.md` does it on chain:
    upgrade timelock), page `migrate_events`, check that `migrate` refuses with
    `MigrationIncomplete` before the conversion and stamps after it, and
    unpause.
-3. Read everything again through events 2.0.0 and profile 1.2.1 and require the
+3. Read everything again through events 2.1.0 and profile 1.2.1 and require the
    same values. The two converted records must carry prize floors equal to what
    each position was paid.
 4. Run a grant through the upgraded pair on a fresh token (selection, releases,
    a forfeit, the close that returns the forfeited share) and check that event
-   ids continue from the deployed counter.
+   ids continue from the deployed counter, then a grant published with a
+   milestone split, paid in full.
 
 The test is marked `#[ignore]` because it needs the release wasm, which a plain
 `cargo test` does not build. Run it with:

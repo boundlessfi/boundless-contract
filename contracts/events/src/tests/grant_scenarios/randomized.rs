@@ -1,5 +1,5 @@
-//! Seeded random grants: budgets, milestone counts, tiers, partner money
-//! before and after selection, releases and forfeits in any order, then the
+//! Seeded random grants: budgets, milestone counts and splits, tiers, partner
+//! money before and after selection, releases and forfeits in any order, then the
 //! remainder returned. Every token is accounted for at the end. `GRANT_SCENARIO_RUNS=<n>` runs more seeds.
 
 use super::*;
@@ -45,6 +45,25 @@ fn run(seed: u64) {
     let budget = usdc(2_000 + rng.below(10_000) as i128) + rng.below(USDC as u64) as i128;
     let n = 1 + rng.below(10) as u32;
     let k = 1 + rng.below(8) as usize;
+    let split: Option<std::vec::Vec<u32>> = if n > 1 && rng.chance(50) {
+        let raw: std::vec::Vec<u32> = (0..n).map(|_| 1 + rng.below(100) as u32).collect();
+        let total: u32 = raw.iter().sum();
+        let mut shares: std::vec::Vec<u32> = raw.iter().map(|w| w * 10_000 / total).collect();
+        let short = 10_000 - shares.iter().sum::<u32>();
+        let largest = (0..shares.len()).max_by_key(|&i| shares[i]).unwrap();
+        shares[largest] += short;
+        Some(shares)
+    } else {
+        None
+    };
+    // The smallest award whose every milestone pays at least one unit.
+    let min_award: i128 = match &split {
+        Some(shares) => {
+            let smallest = *shares.iter().min().unwrap() as i128;
+            (10_000 + smallest - 1) / smallest
+        }
+        None => n as i128,
+    };
 
     let early: std::vec::Vec<(Address, i128)> = (0..rng.below(4))
         .map(|_| (g.someone(), usdc(10 + rng.below(500) as i128)))
@@ -57,7 +76,7 @@ fn run(seed: u64) {
     let people: std::vec::Vec<Address> = (0..k).map(|_| g.someone()).collect();
     let awards: std::vec::Vec<i128> = weights
         .iter()
-        .map(|w| (share * w / weight_sum).max(n as i128))
+        .map(|w| (share * w / weight_sum).max(min_award))
         .collect();
     assert!(
         awards.iter().sum::<i128>() <= pool,
@@ -69,7 +88,11 @@ fn run(seed: u64) {
         .enumerate()
         .map(|(i, a)| (i as u32 + 1, (a / 4).max(1)))
         .collect();
-    let id = g.create(Spec::new(budget, n).floors(&floors));
+    let spec = Spec::new(budget, n).floors(&floors);
+    let id = g.create(match &split {
+        Some(shares) => spec.split(shares),
+        None => spec,
+    });
     for (partner, amount) in early.iter() {
         g.contribute(id, partner, *amount);
     }
@@ -106,7 +129,10 @@ fn run(seed: u64) {
         let expected = if count[*r] == n {
             awards[*r] - settled[*r]
         } else {
-            awards[*r] / n as i128
+            match &split {
+                Some(shares) => awards[*r] * shares[*m as usize] as i128 / 10_000,
+                None => awards[*r] / n as i128,
+            }
         };
         if *forfeit {
             g.forfeit(id, &people[*r], *m, expected);

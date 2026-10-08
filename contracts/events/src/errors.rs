@@ -66,4 +66,5 @@ pub enum Error {
     NoRefundOwed = 95,
     AwardsOutstanding = 96,
     MigrationIncomplete = 97,
+    InvalidMilestoneSplit = 98,
 }

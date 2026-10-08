@@ -3,7 +3,7 @@ use soroban_sdk::{Address, BytesN, Env, Symbol};
 use crate::admin;
 use crate::errors::Error;
 use crate::escrow;
-use crate::event_ops::MAX_REPUTATION_BUMP;
+use crate::event_ops::{MAX_REPUTATION_BUMP, SPLIT_BPS_TOTAL};
 use crate::events as evt;
 use crate::idempotency::{self, tag};
 use crate::profile_client;
@@ -29,16 +29,55 @@ fn standing(env: &Env, event_id: u64, recipient: &Address) -> Result<Standing, E
     })
 }
 
-/// An even share of the award, or what is left of it when this is the last
-/// milestone the recipient has open.
-fn share(standing: &Standing, total_milestones: u32) -> Result<i128, Error> {
+/// One milestone's part of an award, rounded down: an even share for Multi,
+/// its basis points for Split.
+pub(crate) fn milestone_share(
+    kind: &ReleaseKind,
+    award: i128,
+    milestone: u32,
+) -> Result<i128, Error> {
+    match kind {
+        ReleaseKind::Multi(n) if *n > 0 => Ok(award / (*n as i128)),
+        ReleaseKind::Split(shares) => {
+            let bps = shares.get(milestone).ok_or(Error::InvalidMilestone)?;
+            award
+                .checked_mul(bps as i128)
+                .map(|v| v / SPLIT_BPS_TOTAL as i128)
+                .ok_or(Error::InvalidDistribution)
+        }
+        _ => Err(Error::InvalidReleaseKind),
+    }
+}
+
+/// Whether every milestone of `award` pays something, so it can be released
+/// in full.
+pub(crate) fn every_milestone_pays(kind: &ReleaseKind, award: i128) -> bool {
+    match kind {
+        // Multi has no length cap, so its check stays a comparison.
+        ReleaseKind::Multi(n) => *n > 0 && award >= *n as i128,
+        ReleaseKind::Split(shares) => {
+            (0..shares.len()).all(|m| matches!(milestone_share(kind, award, m), Ok(a) if a > 0))
+        }
+        ReleaseKind::Single => false,
+    }
+}
+
+/// The milestone's share, or what is left of the award when this is the last
+/// milestone the recipient has open. The remainder holds whichever order the
+/// milestones settle in: it is this milestone's share plus every rounding.
+fn share(
+    standing: &Standing,
+    kind: &ReleaseKind,
+    total_milestones: u32,
+    milestone: u32,
+) -> Result<i128, Error> {
     if standing.settled.saturating_add(1) == total_milestones {
         standing
             .award
             .checked_sub(standing.settled_amount)
             .ok_or(Error::InvalidDistribution)
     } else {
-        Ok(standing.award / (total_milestones as i128))
+        milestone_share(kind, standing.award, milestone)
     }
 }
 
@@ -91,8 +130,8 @@ pub fn claim_milestone(
         return Err(Error::EventNotActive);
     }
 
-    let total_milestones = match event.release_kind {
-        ReleaseKind::Multi(n) if n > 0 => n,
+    let total_milestones = match event.release_kind.milestones() {
+        Some(n) if n > 0 => n,
         _ => return Err(Error::InvalidReleaseKind),
     };
 
@@ -126,7 +165,7 @@ pub fn claim_milestone(
     let amount: i128 = if let Some(standing) = &standing {
         // The award carries its own amount, set at selection. Milestones split
         // that, and whichever settles last takes the rounding remainder.
-        share(standing, total_milestones)?
+        share(standing, &event.release_kind, total_milestones, milestone)?
     } else {
         let claimed_count = storage::get_crowdfunding_milestones_claimed(env, event_id);
         let remaining_milestones = total_milestones.saturating_sub(claimed_count);
@@ -240,8 +279,8 @@ pub fn forfeit_milestone(
     if !matches!(event.pillar, Pillar::Grant) {
         return Err(Error::InvalidPillar);
     }
-    let total_milestones = match event.release_kind {
-        ReleaseKind::Multi(n) if n > 0 => n,
+    let total_milestones = match event.release_kind.milestones() {
+        Some(n) if n > 0 => n,
         _ => return Err(Error::InvalidReleaseKind),
     };
     if milestone >= total_milestones {
@@ -256,7 +295,7 @@ pub fn forfeit_milestone(
     }
 
     let standing = standing(env, event_id, &recipient)?;
-    let amount = share(&standing, total_milestones)?;
+    let amount = share(&standing, &event.release_kind, total_milestones, milestone)?;
     if amount <= 0 {
         return Err(Error::InvalidDistribution);
     }

@@ -13,6 +13,7 @@ Legend: `[ ]` open, `[~]` in flight, `[x]` done.
 
 ## P1
 
+- [ ] **Events 2.1.0 (grant milestone splits) to mainnet**, as its own upgrade after 2.0.0, waiting the 17,280-ledger timelock. Before it goes: rerun Scout on the 2.1.0 code and add it to `docs/threat-model.md` Section 6 (the scan covers 2.0.0; the testnet grant run already passed on 2.1.0, `docs/audit/testnet-grant-run-2.1.0.md`). Refresh the storage replay from 2.0.0 once mainnet runs it (`docs/storage-compatibility.md`).
 - [ ] Per-event prize claim window: `PRIZE_CLAIM_WINDOW_SECS` (90 days) is a module constant because adding a field to `EventRecord` requires a storage migration. Move it onto `EventRecord` at the next real migration window, per the per-event-config rule in `CLAUDE.md`.
 - [ ] `Error` enum headroom: events uses 42 of the 50-case `contracterror` cap after 2.0.0, and retired codes are never reused. Plan a consolidation before the cap, not when the next variant fails to compile.
 - [ ] Grant committee multi-sig primitive (dedicated signer set + quorum at the contract level vs the current address-level multi-sig).

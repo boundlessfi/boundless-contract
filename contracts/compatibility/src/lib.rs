@@ -221,7 +221,7 @@ fn mainnet_upgrades_from_the_deployed_builds_to_this_tree() {
     let events_hash = env
         .deployer()
         .upload_contract_wasm(release_wasm("boundless_events").as_slice());
-    events_v1.propose_upgrade(&events_hash, &String::from_str(&env, "2.0.0"));
+    events_v1.propose_upgrade(&events_hash, &String::from_str(&env, "2.1.0"));
     events_v1.apply_upgrade();
     let events = EventsContractClient::new(&env, &events_id);
     assert!(events.is_paused());
@@ -233,11 +233,11 @@ fn mainnet_upgrades_from_the_deployed_builds_to_this_tree() {
     events.migrate();
     events.unpause();
 
-    assert_eq!(events.version(), String::from_str(&env, "2.0.0"));
+    assert_eq!(events.version(), String::from_str(&env, "2.1.0"));
     assert_eq!(profile.version(), String::from_str(&env, "1.2.1"));
     assert_eq!(
         events.get_migrated_to_version(),
-        Some(String::from_str(&env, "2.0.0"))
+        Some(String::from_str(&env, "2.1.0"))
     );
     assert_eq!(
         profile.get_migrated_to_version(),
@@ -371,4 +371,48 @@ fn run_a_grant(
     assert_eq!(events.get_event(&id).status, EventStatus::Cancelled);
     assert_eq!(token.balance(&owner), 200_0000000);
     assert_eq!(token.balance(&events.address), 0);
+
+    // A grant published after the upgrade can pay milestones unequal shares.
+    let split_budget: i128 = 500_0000000;
+    token::StellarAssetClient::new(env, &token_id)
+        .mint(&owner, &(split_budget + split_budget * 250 / 10_000));
+    let mut split_floors = Map::new(env);
+    split_floors.set(1, split_budget);
+    let split_id = events.create_event(
+        &CreateEventParams {
+            pillar: Pillar::Grant,
+            owner: owner.clone(),
+            token: token_id.clone(),
+            total_budget: split_budget,
+            release_kind: ReleaseKind::Split(vec![env, 2_000, 3_000, 5_000]),
+            content_uri: String::from_str(env, "https://boundlessfi.xyz/grants/replay-split"),
+            title: String::from_str(env, "Upgrade replay, split"),
+            deadline: None,
+            prize_floors: split_floors,
+            fee_bps_override: None,
+            manager: None,
+        },
+        &BytesN::random(env),
+    );
+    let c = Address::generate(env);
+    events.select_winners(
+        &split_id,
+        &vec![
+            env,
+            WinnerSpec {
+                recipient: c.clone(),
+                position: 1,
+                amount: split_budget,
+                reputation_bump: 0,
+            },
+        ],
+        &BytesN::random(env),
+    );
+    let mut received = 0;
+    for (milestone, share) in [(0, 100_0000000), (1, 150_0000000), (2, 250_0000000)] {
+        events.claim_milestone(&split_id, &c, &milestone, &0, &BytesN::random(env));
+        received += share;
+        assert_eq!(token.balance(&c), received);
+    }
+    assert_eq!(events.get_event(&split_id).status, EventStatus::Completed);
 }

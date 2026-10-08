@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Map, String};
+use soroban_sdk::{contracttype, Address, BytesN, Map, String, Vec};
 
 // ============================================================
 // PILLAR
@@ -53,6 +53,20 @@ pub struct CancellationState {
 pub enum ReleaseKind {
     Single,
     Multi(u32),
+    /// Grants only: each milestone's share of an award in basis points, in
+    /// milestone order, summing to 10_000. Appended so stored records decode.
+    Split(Vec<u32>),
+}
+
+impl ReleaseKind {
+    /// How many milestones a multi-release event pays across.
+    pub fn milestones(&self) -> Option<u32> {
+        match self {
+            ReleaseKind::Single => None,
+            ReleaseKind::Multi(n) => Some(*n),
+            ReleaseKind::Split(shares) => Some(shares.len()),
+        }
+    }
 }
 
 // ============================================================

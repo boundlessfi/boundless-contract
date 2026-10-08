@@ -318,18 +318,20 @@ let feesExpected = 0n;
 type GrantSpec = {
   budget: bigint;
   milestones: number;
+  /** Basis points per milestone, published as ReleaseKind::Split. */
+  split?: number[];
   floors: [number, bigint][];
   manager?: string;
   pillar?: 'Grant' | 'Crowdfunding';
 };
 
-async function createGrant(owner: Keypair, g: GrantSpec): Promise<bigint> {
+function grantParams(owner: Keypair, g: GrantSpec): xdr.ScVal {
   const floors = xdr.ScVal.scvMap(
     [...g.floors]
       .sort((a, b) => a[0] - b[0])
       .map(([p, v]) => new xdr.ScMapEntry({ key: sv.u32(p), val: sv.i128(v) })),
   );
-  const params = sv.struct({
+  return sv.struct({
     content_uri: xdr.ScVal.scvString('https://api.boundless.fi/grants/testnet-run/content'),
     deadline: sv.u64(BigInt(Math.floor(Date.now() / 1000) + 30 * 86_400)),
     fee_bps_override: xdr.ScVal.scvVoid(),
@@ -337,11 +339,17 @@ async function createGrant(owner: Keypair, g: GrantSpec): Promise<bigint> {
     owner: sv.addr(owner.publicKey()),
     pillar: xdr.ScVal.scvVec([sv.sym(g.pillar ?? 'Grant')]),
     prize_floors: floors,
-    release_kind: xdr.ScVal.scvVec([sv.sym('Multi'), sv.u32(g.milestones)]),
+    release_kind: g.split
+      ? xdr.ScVal.scvVec([sv.sym('Split'), xdr.ScVal.scvVec(g.split.map(sv.u32))])
+      : xdr.ScVal.scvVec([sv.sym('Multi'), sv.u32(g.milestones)]),
     title: xdr.ScVal.scvString(`Testnet grant run: ${scenario}`),
     token: sv.addr(TOKEN),
     total_budget: sv.i128(g.budget),
   });
+}
+
+async function createGrant(owner: Keypair, g: GrantSpec): Promise<bigint> {
+  const params = grantParams(owner, g);
   const before = await balance(owner.publicKey());
   const id = BigInt(
     (await must(events(owner, 'create_event', [params, sv.op()]), 'publish the grant')) as bigint,
@@ -475,6 +483,54 @@ async function main() {
     eq(await balance(r(3).publicKey()), a, 'tier 1 received its whole award');
     eq(await balance(r(4).publicKey()), b, 'tier 2 received its whole award');
     eq(await status(id), 'Completed', 'completed');
+  }
+
+  scenario = 'milestone split, any order';
+  if (wanted(scenario)) {
+    const [sa, sb] = await provision(2, 0n);
+    const split = [2_000, 3_000, 5_000];
+    const [a, b] = [bgt(40) + 3n, bgt(20)];
+    await refused(
+      events(owner, 'create_event', [
+        grantParams(owner, { budget: a, milestones: 3, split: [3_000, 3_000, 3_000], floors: [[1, 1n]] }),
+        sv.op(),
+      ]),
+      98,
+      'a split that does not add up to the whole award',
+    );
+    const id = await createGrant(owner, {
+      budget: a + b,
+      milestones: 3,
+      split,
+      floors: [[1, 1n], [2, 1n]],
+    });
+    eq(
+      JSON.stringify((await event(id)).release_kind),
+      JSON.stringify(['Split', split]),
+      'the split is stored on the grant',
+    );
+    await must(
+      events(owner, 'select_winners', [
+        sv.u64(id),
+        winners([
+          { to: sa.publicKey(), position: 1, amount: a },
+          { to: sb.publicKey(), position: 2, amount: b },
+        ]),
+        sv.op(),
+      ]),
+      'select two awards of different sizes',
+    );
+    const share = (x: bigint, m: number) => (x * BigInt(split[m])) / 10_000n;
+    await release(owner, id, sa, 2, share(a, 2));
+    await release(owner, id, sb, 0, share(b, 0));
+    await release(owner, id, sa, 0, share(a, 0));
+    await release(owner, id, sb, 1, share(b, 1));
+    await release(owner, id, sb, 2, b - share(b, 0) - share(b, 1));
+    // Milestone 1 settles last for the larger award: its share plus the rounding.
+    await release(owner, id, sa, 1, a - share(a, 2) - share(a, 0));
+    eq(await balance(sa.publicKey()), a, 'the larger award was paid exactly');
+    eq(await balance(sb.publicKey()), b, 'the smaller award was paid exactly');
+    eq(await status(id), 'Completed', 'completes when the last share is paid');
   }
 
   scenario = 'forfeit and the cancel guard';

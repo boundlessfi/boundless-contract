@@ -1,11 +1,12 @@
 # Boundless STRIDE Threat Model
 
-**Version:** 1.2  
-**Date:** 3 October 2026  
+**Version:** 1.3  
+**Date:** 8 October 2026  
 **Prepared for:** Stellar Development Foundation, Soroban Security Audit Bank  
 **Prepared by:** Boundless Engineering  
-**Contracts under review:** `boundless-events` 2.0.0 and `boundless-profile` 1.2.1. Mainnet runs 1.7.0 and 1.2.0 until the upgrade in Section 4.4.  
+**Contracts under review:** `boundless-events` 2.0.0 and `boundless-profile` 1.2.1, plus the grant milestone split that `boundless-events` 2.1.0 adds (Tamp.20), which reaches mainnet in a later upgrade. Mainnet runs 1.7.0 and 1.2.0 until the upgrade in Section 4.4.  
 **Repository:** github.com/boundlessfi/boundless-contract  
+**Changes in 1.3:** events 2.1.0 lets a grant pay its milestones fixed, unequal shares of each award (`ReleaseKind::Split`), adding Tamp.20. The testnet grant run was repeated on 2.1.0 with a split grant; the static analysis covers 2.0.0 and is due again for 2.1.0.  
 **Changes in 1.2:** reworded for clarity, retired threats moved to their own table, flow steps renumbered after the participation removal, statuses limited to four defined values, and Section 4 reorganized.
 
 ---
@@ -14,18 +15,18 @@
 
 This is the threat model for the two Soroban contracts behind Boundless: `boundless-events`, which holds prize money in escrow and runs hackathons, bounties, grants and crowdfunding campaigns, and `boundless-profile`, which records builder reputation and earnings. It follows the Stellar Development Foundation's four questions: what are we working on, what can go wrong, what are we going to do about it, and did we do a good job.
 
-The model lists 76 threats across the six STRIDE categories, each tied to a step in the on-chain flow and to a trust boundary, and each rated for likelihood and impact.
+The model lists 77 threats across the six STRIDE categories, each tied to a step in the on-chain flow and to a trust boundary, and each rated for likelihood and impact.
 
 | Status | Meaning | Count |
 |---|---|---|
-| Mitigated | A control in the contracts or in operating procedure addresses the threat. Every contract-level control has a test that proves it fails safely. | 62 |
+| Mitigated | A control in the contracts or in operating procedure addresses the threat. Every contract-level control has a test that proves it fails safely. | 63 |
 | Accepted | The remaining risk is carried on purpose, with the reason written down. | 10 |
 | Retired | The feature the threat described was removed, so the threat no longer applies. | 4 |
 | Open | No treatment yet. | 0 |
 
 All ten Priority 1 threats, whose failure would be catastrophic, are mitigated and tested.
 
-**Pending deployment** describes code, not threats: every 2.0.0 fix is in the code under review but not yet on mainnet. Section 4.4 lists what the upgrade involves and what the backend must ship first.
+**Pending deployment** describes code, not threats: every fix since 1.7.0 is in the code under review but not yet on mainnet. Section 4.4 lists what the upgrade involves and what the backend must ship first.
 
 ## 1. What are we working on?
 
@@ -45,7 +46,7 @@ Joining an event and submitting work happen on the platform, not in the contract
 | Builder | An account that takes part in an event. A winner is a builder named in a selection. |
 | Admin | The platform's 2-of-3 multi-signature account, the only privileged role in either contract. It may appoint a release validator to co-sign crowdfunding payouts in its place. |
 | Single-release event | A hackathon or bounty. Each winner collects their prize with `claim_prize` within 90 days. |
-| Multi-release event | A grant or crowdfunding campaign, paid per milestone with `claim_milestone`. A grant milestone the owner decides not to pay is closed with `forfeit_milestone`. |
+| Multi-release event | A grant or crowdfunding campaign, paid per milestone with `claim_milestone`. A grant milestone the owner decides not to pay is closed with `forfeit_milestone`. A grant's milestones pay even shares of each award, or the basis-point shares it was published with (`ReleaseKind::Split`). |
 | Managed and external wallets | A managed wallet's key is created, stored encrypted and used by the platform for the user. An external wallet, such as Freighter, keeps its key on the user's device. |
 
 ### 1.2 Scope and assets
@@ -93,7 +94,7 @@ The threat tables in Section 2 refer to these steps by number.
 4. **Top up.** Contributors call `add_funds` with at least 10 tokens. Outside crowdfunding the fee is paid on deposit; crowdfunding takes its fee at payout. The contract keeps a running total of money from contributors other than the owner, for refunds.
 5. **Select.** The manager calls `select_winners` with awards (recipient, position, amount, reputation bump): up to 20 per call for hackathons and bounties, over any number of calls, or one call of up to 40 for a grant. Each position is awarded once, at or above its floor, with a bump of at most 100, and the awards plus everything awarded but unpaid (`EventOwedTotal`) must fit within `remaining_escrow`. A grant gives each recipient one award of at least one stroop per milestone and records it in a grant roster. Hackathon and bounty selections open or extend a 90-day claim window.
 6. **Claim a prize.** Each winner calls `claim_prize`. The contract records the payment, transfers the tokens, then updates the winner's profile on a best-effort basis.
-7. **Settle a milestone.** For a grant, the owner pays a milestone with `claim_milestone` or closes it unpaid with `forfeit_milestone`, which releases that share but leaves it in the pool. Each milestone is settled once and is worth an even share of the award; the last takes the rounding remainder. The contract records, transfers, then updates the profile best-effort. Crowdfunding also needs the release validator's signature (the admin's while none is appointed), pays the owner `remaining_escrow / milestones_left`, and takes the fee at payout.
+7. **Settle a milestone.** For a grant, the owner pays a milestone with `claim_milestone` or closes it unpaid with `forfeit_milestone`, which releases that share but leaves it in the pool. Each milestone is settled once and is worth its share of the award, even or as published in a split; whichever settles last takes the rounding remainder. The contract records, transfers, then updates the profile best-effort. Crowdfunding also needs the release validator's signature (the admin's while none is appointed), pays the owner `remaining_escrow / milestones_left`, and takes the fee at payout.
 8. **Cancel.** The manager calls `start_cancel`, which is refused while a hackathon or bounty prize is in its claim window or a grant award is owed. Without outside contributors the event settles at once; otherwise it enters `Cancelling`, anyone may run `process_cancel_batch` (up to 15 refunds per call) and `finalize_cancel` returns the owner's remainder. A refund an account cannot receive is set aside for `claim_refund`.
 9. **Govern.** The admin may pause and unpause, change the fee (at most 10%) and fee account, manage the token list, appoint the release validator, rotate the admin in two steps, and upgrade: `propose_upgrade`, `apply_upgrade`, `migrate_events` (up to 8 events per call) and `migrate` (a one-time version stamp).
 
@@ -238,6 +239,7 @@ The four retired threats are in Section 4.3, not here.
 | Tamp.16 | (Step 5) A grant selection names one recipient at two positions, leaving one award reserved and unpayable. | `select_winners`, `claim_milestone` | L | M | P4 |
 | Tamp.18 | (Steps 5, 7) A grant award smaller than its number of milestones rounds every share but the last to zero, so the award can never be paid. | `select_winners`, `claim_milestone` | L | M | P4 |
 | Tamp.19 | (Steps 7, 9) A migration that recalculates what an event owes from its winner records misses forfeits, which write no record, and reserves the forfeited share again; the grant can then never be cancelled. Every upgrade migrates the events created since the last one, so live grants are exposed. | `migrate_events` | M | H | P2 |
+| Tamp.20 | (Steps 1, 7) A grant published with milestone shares that do not add up to the whole award leaves part of every award unpayable, or lets early milestones pay out money owed to other recipients. | `create_event`, `claim_milestone` | L | M | P4 |
 
 #### Repudiation
 
@@ -306,7 +308,7 @@ The four retired threats are in Section 4.3, not here.
 
 ### 2.3 Priority summary
 
-Of the 72 active threats, 10 are P1, 23 are P2, 23 are P3 and 16 are P4.
+Of the 73 active threats, 10 are P1, 23 are P2, 23 are P3 and 17 are P4.
 
 **Priority 1 (10).** The controls whose failure would be catastrophic, and the ones the audit should check first. All are mitigated and tested: Spoof.1 (acting under another user's address), Spoof.6 (claiming another winner's prize), Tamp.2 (spending more than the pool holds), Tamp.10 (migration correctness), Tamp.13 (replayed operations), DoS.2 (cancellations that cannot finish), DoS.12 (a migration too large for one transaction), EoP.1 (selection by someone other than the manager), EoP.6 (admin functions called by a non-admin), EoP.12 (migration called by a non-admin).
 
@@ -345,8 +347,9 @@ Of the 72 active threats, 10 are P1, 23 are P2, 23 are P3 and 16 are P4.
 | **Tamp.14** | Derived ids hash (SHA-256) the caller's operation id, a tag, an index, the profile address and the original signer, so one id used by two callers yields unrelated derived ids. Profile calls are also best-effort (DoS.7), so a collision could cost a reputation update, never a payout. Tests: `someone_reusing_an_op_id_cannot_block_or_strip_another_payout`, `sha256_child_ids_differ_for_xor_colliding_parents`. | Mitigated |
 | **Tamp.15** | Cancelling before selection is a deliberate owner right: the pool is the owner's money until awarded, and the contracts have no entry deadline. The platform's terms and the public `EventCancelled` record are the controls. | Accepted |
 | **Tamp.16** | A grant naming a recipient twice is refused with `DuplicateRecipient` before anything is reserved. Test: `one_recipient_cannot_hold_two_awards_in_a_grant`. | Mitigated |
-| **Tamp.18** | A grant award smaller than its number of milestones is refused with `InvalidDistribution`, so every milestone pays at least one stroop. Test: `an_award_too_small_to_split_is_refused`. | Mitigated |
+| **Tamp.18** | A grant award too small for every milestone to pay at least one stroop (smaller than its number of milestones, or under a split, smaller than 10,000 divided by its smallest share) is refused with `InvalidDistribution`. Tests: `an_award_too_small_to_split_is_refused`, `selection_refuses_an_award_too_small_for_its_smallest_share`. | Mitigated |
 | **Tamp.19** | `migrate_events` converts the record layout and nothing else; it does not recalculate amounts owed or awards, which every live payout path keeps current. The only records awaiting conversion need neither. Test: `a_migration_pass_after_a_forfeit_keeps_it_released`. | Mitigated |
+| **Tamp.20** | `create_event` accepts a split only on a grant, and refuses one that is empty, longer than 20 milestones, has a zero share or does not total exactly 10,000 basis points (`InvalidMilestoneSplit`). Each payout is the milestone's share of the award rounded down, and whichever milestone settles last takes what is left, so an award pays exactly its amount in total, in any order. Tests: the `split` group in `grant_scenarios`, the randomized run (which mixes splits, settlement orders and forfeits), and the upgrade replay. | Mitigated |
 | **Repud.1** | The selection, its winner records and its awards are written in the transaction the manager signed, which is public. Each award also emits `WinnerAwarded` with the event, recipient, position and amount. Test: `each_award_and_each_cancel_branch_is_on_the_record`. | Mitigated |
 | **Repud.2** | `WinnerPaid` (event, recipient, position, amount) is emitted with the transfer, and the payment time can be read with `get_winner_at`. | Mitigated |
 | **Repud.3** | An append-only audit log records the staff member, action, target, time and reason in the same database transaction as the change. | Mitigated |
@@ -404,7 +407,7 @@ Yes. Drawing it made two boundaries explicit that the code alone did not: owner 
 Yes, ten issues nobody had written down: a lost manager key stranding a pool (DoS.9), one undeliverable refund blocking the rest (DoS.14), cancellation of an awarded grant (EoP.14), unlimited reputation bumps (EoP.15), derived operation ids not tied to the signer (Tamp.14), a grant naming one recipient twice (Tamp.16), payouts depending on the profile contract (DoS.7), inconsistent payout ordering (Tamp.11), gaps in the event record (Repud.1, Repud.4), and payouts co-signed with the upgrade keys (Spoof.2). All are fixed in 2.0.0 (Section 4.2). It also made explicit that managed wallets extend a backend compromise to escrow (Spoof.10, accepted, Section 4.5) and that mainnet had no upgrade timelock and two records in the old layout (EoP.10, Tamp.10, resolved by the upgrade, Section 4.4). Tamp.17 and DoS.13 were retired rather than fixed (Section 4.3).
 
 **Did the treatments in Section 3 address the threats?**
-For 62 of the 72 active threats, yes. Every contract-level control has a test: 386 pass (326 for `boundless-events`, 60 for `boundless-profile`), a further test replays the next mainnet upgrade against captured mainnet storage, and the grant lifecycle has run on testnet with exact balance checks (Section 5). Backend and process controls are covered by the backend's tests and procedures. Tamp.5 and EoP.13 depend on the upgrade timelock and are fully effective on mainnet only once EoP.10 is deployed. The other ten threats are accepted with written reasons. Auditors' views on the designs chosen for DoS.9, DoS.14 and EoP.14 are welcome.
+For 63 of the 73 active threats, yes. Every contract-level control has a test: 397 pass (337 for `boundless-events`, 60 for `boundless-profile`), a further test replays the next mainnet upgrade against captured mainnet storage, and the grant lifecycle has run on testnet with exact balance checks (Section 5). Backend and process controls are covered by the backend's tests and procedures. Tamp.5 and EoP.13 depend on the upgrade timelock and are fully effective on mainnet only once EoP.10 is deployed. The other ten threats are accepted with written reasons. Auditors' views on the designs chosen for DoS.9, DoS.14 and EoP.14 are welcome.
 
 **Were further issues found after the model was written?**
 Yes, four, all fixed. Running every entry point at mainnet's per-transaction limits, which the test host now enforces, found DoS.16 (grant payouts whose cost grew until they no longer fit), DoS.17 (batches and pages larger than a transaction) and Tamp.18 (grant awards too small to split); earlier tests never reached those limits. Reviewing a Scout static-analysis scan then found Tamp.19 (a migration that could reserve a forfeited share again). The model will be revised after the audit report and whenever the architecture changes materially: a new event type, authorization flow or external service, or an upgrade that changes the storage layout.
@@ -461,6 +464,7 @@ These threats concerned on-chain applications and submissions, which 2.0.0 remov
 | Mainnet upgrade | Mainnet runs events 1.7.0 and profile 1.2.0. Every fix in Section 4.2 takes effect only after the admin multisig upgrades both, to events 2.0.0 and profile 1.2.1, following `docs/upgrade-runbook.md` Section 8. The deployed builds have no timelock, so this upgrade applies immediately; every later one waits 17,280 ledgers (EoP.10). |
 | Old-layout records (Tamp.10) | Two mainnet event records cannot be read until converted. Both are completed events with no escrow, so no money is affected. Mainnet holds eight events, so one `migrate_events` call during the upgrade converts the two and leaves the others unchanged, and `migrate` then stamps the version. |
 | Backend changes that must ship first | Page winner and contributor reads at 90 or fewer and run refunds in batches of 15 or fewer (DoS.17); pages of 100 and batches of 25 already fail on the deployed build for large events. Split hackathon selections above 20 winners (DoS.17). Call `forfeit_milestone` when a grant milestone is rejected, or the grant can never be cancelled (EoP.14). Support `claim_refund` for refunds set aside (DoS.14). Stop calling the participation functions that 2.0.0 removed. |
+| Events 2.1.0 | Grant milestone splits (Tamp.20) run on testnet from 8 October 2026 and reach mainnet in a separate upgrade after 2.0.0, which waits the 17,280-ledger timelock (`docs/upgrade-runbook.md` Section 9). |
 
 ### 4.5 Accepted risks
 
@@ -485,7 +489,7 @@ DoS.9 is mitigated, but one case remains: if a manager's key is lost after the f
 
 | Layer | What is in place | When |
 |---|---|---|
-| Contract tests | 386 tests. Payout splits check recipient and fee-account balances, admin authorization is checked as genuinely required, and cancellation is tested with 220 contributors. The grant scenario suite (`contracts/events/src/tests/grant_scenarios`) checks errors, signers, events and balances after every step, runs every cap at its maximum, and reconciles 48 random grants to the last token (`GRANT_SCENARIO_RUNS` raises the number). A separate test replays the next mainnet upgrade against storage from mainnet ledger 64,747,647 (`docs/storage-compatibility.md`). | Every commit, in CI. |
+| Contract tests | 397 tests. Payout splits check recipient and fee-account balances, admin authorization is checked as genuinely required, and cancellation is tested with 220 contributors. The grant scenario suite (`contracts/events/src/tests/grant_scenarios`) checks errors, signers, events and balances after every step, runs every cap at its maximum, and reconciles 48 random grants to the last token (`GRANT_SCENARIO_RUNS` raises the number). A separate test replays the next mainnet upgrade against storage from mainnet ledger 64,747,647 (`docs/storage-compatibility.md`). | Every commit, in CI. |
 | Live-network tests | `scripts/testnet/grant-scenarios.ts` runs the grant lifecycle on testnet with a revocable test asset: rounding, payments in any order, forfeits, the cancellation guard, partner refunds, an issuer freeze, every refusal, manager handover and a 40-recipient grant, with exact balance checks. On 3 October 2026 it passed 317 of 317 checks against the final build (events `b63afc1f…`, profile `09110572…`); the report is `docs/audit/testnet-grant-run.md`. The backend's 21 testnet smoke scripts cover other paths through the platform. | Before every upgrade. |
 | Build integrity | `scripts/build-release.sh` remaps machine paths out of the wasm, and the mainnet build runs it in CI's Linux x86-64 environment (`scripts/build-release-linux.sh`), so anyone reproduces CI's hash for a commit from any machine. The runbook (`docs/upgrade-runbook.md`) requires a second person to reproduce the hash and every admin transaction to be simulated before signing. The mainnet 1.7.0 binaries predate this and embed the builder's local paths; rebuilt with CLI 27.0.0 on that machine, the 1.7.0 source reproduces both live hashes exactly. | Every upgrade. |
 | Static analysis | Scout (CoinFabrik) runs against the code under review; findings are recorded with a register of false positives (`docs/scout-audit-report.md`). | Every release. |
@@ -535,9 +539,9 @@ DoS.9 is mitigated, but one case remains: if a manager's key is lost after the f
 | Item | Status |
 |---|---|
 | Tests | 386 passing (326 events, 60 profile), plus the mainnet upgrade replay (Section 5). |
-| Live-network tests | Grant lifecycle on testnet against the final 2.0.0 build: 317 of 317 checks (Section 5). |
+| Live-network tests | Grant lifecycle on testnet against the final 2.0.0 build: 317 of 317 checks (Section 5). Against 2.1.0, adding a split grant paid in mixed order and a malformed split refused: 337 of 337 checks across 163 transactions (`docs/audit/testnet-grant-run-2.1.0.md`). |
 | Continuous integration | Reproducible build (any machine can match CI's hash), size limit, formatting, version checks, admin and upgrade-guard script tests, the upgrade replay, clippy with warnings as errors, full test suite. |
-| Static analysis | Scout 0.3.17 on the 2.0.0 code (`docs/scout-audit-report.md`): no critical findings; the real findings (Tamp.19, Tamp.7) are fixed and every other warning is a documented false positive. |
+| Static analysis | Scout 0.3.17 on the 2.0.0 code (`docs/scout-audit-report.md`): no critical findings; the real findings (Tamp.19, Tamp.7) are fixed and every other warning is a documented false positive. Not yet run on 2.1.0. |
 | Upgrade path | Timelocked proposal and application, on-chain `version()`, paged migration, testnet rehearsal, the CI replay, and `docs/upgrade-runbook.md`. |
 | Admin custody | Custody policy (`docs/admin-custody-policy.md`), multisig setup checklist (`docs/multisig-guide.md` Part E), on-chain signer check script. |
 | On-chain monitoring | Events for every state change are in place; alerting, balance reconciliation and stuck-state detection are not yet, and are required before fieldwork. |

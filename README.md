@@ -15,12 +15,13 @@ earnings.
 |---------|----------|---------|---------|
 | Mainnet | `boundless-events` | `CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ` | `1.7.0` |
 | Mainnet | `boundless-profile` | `CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC` | `1.2.0` |
-| Testnet | `boundless-events` | `CBEODVJGUYCIYTVXD7KI5UG3BJ2UE4T7AGI2TGY3T4Q5GQRFGTRYVTZP` | `2.0.0` |
-| Testnet | `boundless-profile` | `CCA3OAIBOZBUPHPRI5GI6N5PDTE7RTNLKAEID4JTC2YZIHIZNDX5Q6T3` | `1.2.0` |
+| Testnet | `boundless-events` | `CBEODVJGUYCIYTVXD7KI5UG3BJ2UE4T7AGI2TGY3T4Q5GQRFGTRYVTZP` | `2.1.0` |
+| Testnet | `boundless-profile` | `CCA3OAIBOZBUPHPRI5GI6N5PDTE7RTNLKAEID4JTC2YZIHIZNDX5Q6T3` | `1.2.1` |
 
-This tree builds events `2.0.0` and profile `1.2.1`. Mainnet moves to them
-through the procedure in `docs/upgrade-runbook.md` (Section 8); until then it
-runs the versions above. Both contracts answer `version()`, so read it rather
+This tree builds events `2.1.0` and profile `1.2.1`. Mainnet first moves to
+events `2.0.0` and profile `1.2.1` through the procedure in
+`docs/upgrade-runbook.md` (Section 8), and to `2.1.0` in a later upgrade; until
+then it runs the versions above. Both contracts answer `version()`, so read it rather
 than trusting this table.
 
 On mainnet both contracts are administered by the 2-of-3 multisig
@@ -40,7 +41,9 @@ at most 20, grants once with at most 40 recipients. No award may fall below the
 event's published prize floor for its position.
 Hackathon and bounty winners collect with `claim_prize`; grant awards and
 crowdfunding funds are paid per milestone with `claim_milestone`, and an owner
-can `forfeit_milestone` a grant milestone it rejects. A crowdfunding release
+can `forfeit_milestone` a grant milestone it rejects. A grant's milestones pay
+even shares of each award, or the shares it was published with
+(`ReleaseKind::Split`, in basis points). A crowdfunding release
 also needs the release validator's signature, or the admin's while none is
 appointed. Cancellation is paged (`start_cancel`, `process_cancel_batch` with at
 most 15 refunds per call, `finalize_cancel`), and a refund an account cannot
@@ -134,7 +137,7 @@ boundless-contract/
 | `docs/contract-ops-runbook.md` | Building, simulating, signing and submitting admin transactions |
 | `docs/multisig-guide.md` | Plain-English guide for signers; provisioning the multisig |
 | `docs/admin-custody-policy.md` | Custody policy: signers, thresholds, rotation, release validator |
-| `docs/threat-model.md` | Threat model for the 2.0.0 contracts |
+| `docs/threat-model.md` | Threat model for the 2.0.0 contracts and the 2.1.0 milestone split |
 | `docs/scout-audit-report.md` | Static analysis report |
 | `docs/storage-compatibility.md` | The storage compatibility suite |
 | `docs/dune-analytics.md` | Emitted events and Dune queries (`docs/dune-queries/`) |
