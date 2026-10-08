@@ -21,7 +21,7 @@ mod tests;
 use crate::errors::Error;
 use crate::types::*;
 
-contractmeta!(key = "version", val = "2.0.0");
+contractmeta!(key = "version", val = "2.1.0");
 contractmeta!(
     key = "description",
     val = "Boundless events contract: hackathon, bounty, grant + escrow"

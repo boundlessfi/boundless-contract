@@ -377,3 +377,19 @@ Rollback: before the events apply, cancel and unpause with
 `UNPAUSE_UNMIGRATED=1` (the marker was already 1.6.0). After the apply, a
 rollback to 1.7.0 waits the 17,280-ledger timelock that 2.0.0 carries, with
 events paused throughout; after the first page, fix forward.
+
+## 9. Events 2.1.0 (grant milestone splits)
+
+2.1.0 adds `ReleaseKind::Split`, which lets a grant pay its milestones fixed,
+unequal shares of each award. It converts no records, so `migrate_events` only
+pages past the events created since the last stamp.
+
+Testnet went from 2.0.0 to 2.1.0 on 2026-10-08 with `deploy_and_upgrade.sh`:
+wasm `c742cb96…` uploaded and proposed (`fc713ba2…`), applied (`d3f1e8c0…`),
+10 `migrate_events` pages, then `migrate` stamped 2.1.0 (`d91f1ddc…`). Grants
+created on 2.0.0 read and pay as before.
+
+Mainnet takes 2.1.0 only after Section 8 has put it on 2.0.0, as a separate
+upgrade that waits the 17,280-ledger timelock. The backend sends a split only
+to a contract that reports 2.1.0 or later, so nothing has to ship first.
+

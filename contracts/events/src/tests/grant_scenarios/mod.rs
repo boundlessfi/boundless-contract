@@ -19,6 +19,7 @@ mod pause;
 mod randomized;
 mod refusing_token;
 mod selection;
+mod split;
 
 use soroban_sdk::{
     testutils::{
@@ -109,6 +110,7 @@ pub fn setup<'a>() -> G<'a> {
 pub struct Spec {
     pub budget: i128,
     pub milestones: u32,
+    pub split: Option<std::vec::Vec<u32>>,
     pub floors: std::vec::Vec<(u32, i128)>,
     pub fee_bps_override: Option<u32>,
     pub manager: Option<Address>,
@@ -119,6 +121,7 @@ impl Spec {
         Spec {
             budget,
             milestones,
+            split: None,
             floors: std::vec![(1, budget)],
             fee_bps_override: None,
             manager: None,
@@ -127,6 +130,13 @@ impl Spec {
 
     pub fn floors(mut self, floors: &[(u32, i128)]) -> Self {
         self.floors = floors.to_vec();
+        self
+    }
+
+    /// Pays milestones unequal shares, in basis points.
+    pub fn split(mut self, shares: &[u32]) -> Self {
+        self.milestones = shares.len() as u32;
+        self.split = Some(shares.to_vec());
         self
     }
 
@@ -168,7 +178,16 @@ impl<'a> G<'a> {
             owner: self.owner.clone(),
             token: self.token.address.clone(),
             total_budget: spec.budget,
-            release_kind: ReleaseKind::Multi(spec.milestones),
+            release_kind: match &spec.split {
+                Some(shares) => {
+                    let mut v = Vec::new(&self.env);
+                    for share in shares.iter() {
+                        v.push_back(*share);
+                    }
+                    ReleaseKind::Split(v)
+                }
+                None => ReleaseKind::Multi(spec.milestones),
+            },
             content_uri: String::from_str(&self.env, "https://api.boundless.fi/grants/x/content"),
             title: String::from_str(&self.env, "Community grants"),
             deadline: Some(self.env.ledger().timestamp() + 30 * 86_400),

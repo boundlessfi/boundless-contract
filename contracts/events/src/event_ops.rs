@@ -4,6 +4,7 @@ use crate::admin::{self, MAX_FEE_BPS};
 use crate::errors::Error;
 use crate::escrow;
 use crate::events as evt;
+use crate::grant;
 use crate::idempotency::{self, tag};
 use crate::profile_client;
 use crate::storage;
@@ -23,6 +24,10 @@ const MAX_TITLE_LEN: u32 = 120;
 // can have.
 pub const MAX_AWARDS_PER_SELECT: u32 = 20;
 pub const MAX_GRANT_AWARDS: u32 = 40;
+
+// A split lives on the event record, so its length is bounded.
+pub const MAX_SPLIT_MILESTONES: u32 = 20;
+pub const SPLIT_BPS_TOTAL: u32 = 10_000;
 
 const PENDING_MANAGER_TTL_LEDGERS: u32 = 17_280;
 
@@ -65,6 +70,23 @@ fn get_or_init_non_owner_total(env: &Env, event_id: u64) -> Result<i128, Error> 
         }
         None => Err(Error::CancellationTotalMissing),
     }
+}
+
+fn split_is_valid(shares: &Vec<u32>) -> bool {
+    if shares.is_empty() || shares.len() > MAX_SPLIT_MILESTONES {
+        return false;
+    }
+    let mut total: u32 = 0;
+    for share in shares.iter() {
+        if share == 0 {
+            return false;
+        }
+        total = match total.checked_add(share) {
+            Some(t) => t,
+            None => return false,
+        };
+    }
+    total == SPLIT_BPS_TOTAL
 }
 
 pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> Result<u64, Error> {
@@ -134,12 +156,21 @@ pub fn create_event(env: &Env, params: CreateEventParams, op_id: BytesN<32>) -> 
     };
     let release_kind_fits = match params.pillar {
         Pillar::Hackathon | Pillar::Bounty => matches!(params.release_kind, ReleaseKind::Single),
-        Pillar::Grant | Pillar::Crowdfunding => {
-            matches!(params.release_kind, ReleaseKind::Multi(n) if n > 0)
+        Pillar::Grant => {
+            matches!(
+                params.release_kind,
+                ReleaseKind::Multi(n) if n > 0
+            ) || matches!(params.release_kind, ReleaseKind::Split(_))
         }
+        Pillar::Crowdfunding => matches!(params.release_kind, ReleaseKind::Multi(n) if n > 0),
     };
     if !release_kind_fits {
         return Err(Error::InvalidReleaseKind);
+    }
+    if let ReleaseKind::Split(shares) = &params.release_kind {
+        if !split_is_valid(shares) {
+            return Err(Error::InvalidMilestoneSplit);
+        }
     }
 
     if !is_crowdfunding {
@@ -673,7 +704,7 @@ pub fn select_winners(
     // A grant selects once, and only a selection gives it winner records.
     // Single events award in batches; each position may be awarded once,
     // enforced per position below.
-    if matches!(event.release_kind, ReleaseKind::Multi(_)) && existing_count > 0 {
+    if !matches!(event.release_kind, ReleaseKind::Single) && existing_count > 0 {
         return Err(Error::WinnersAlreadySelected);
     }
 
@@ -682,7 +713,7 @@ pub fn select_winners(
     }
     let cap = match event.release_kind {
         ReleaseKind::Single => MAX_AWARDS_PER_SELECT,
-        ReleaseKind::Multi(_) => MAX_GRANT_AWARDS,
+        ReleaseKind::Multi(_) | ReleaseKind::Split(_) => MAX_GRANT_AWARDS,
     };
     if winners.len() > cap {
         return Err(Error::InvalidWinnerPosition);
@@ -710,7 +741,7 @@ pub fn select_winners(
 
     let now = admin::open_time(env);
 
-    match event.release_kind {
+    match &event.release_kind {
         ReleaseKind::Single => {
             // `remaining_escrow` only drops at claim time, so a prize named by
             // an earlier selection is still sitting in it. Reserving the owed
@@ -786,7 +817,7 @@ pub fn select_winners(
                 storage::set_prize_claim_expiry(env, event_id, expiry);
             }
         }
-        ReleaseKind::Multi(milestones) => {
+        ReleaseKind::Multi(_) | ReleaseKind::Split(_) => {
             // Same reservation as Single: milestone claims drain
             // `remaining_escrow` gradually, so without it a second grantee
             // could be awarded funds the first is still owed.
@@ -796,7 +827,7 @@ pub fn select_winners(
             for spec in winners.iter() {
                 // Every milestone must pay something, or the award can never
                 // be released in full.
-                if spec.amount < milestones as i128 {
+                if !grant::every_milestone_pays(&event.release_kind, spec.amount) {
                     return Err(Error::InvalidDistribution);
                 }
                 // Releases are tracked per recipient, so a second award to the
