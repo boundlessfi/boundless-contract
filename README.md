@@ -133,7 +133,7 @@ boundless-contract/
 |-----|----------------|
 | `docs/ARCHITECTURE.md` | What lives on chain and why, roles, cross-contract calls |
 | `docs/DEPLOYMENT.md` | Fresh deploy on testnet or mainnet, token registration, admin rotation |
-| `docs/upgrade-runbook.md` | Upgrading live contracts, including mainnet 1.7.0 to 2.0.0 |
+| `docs/upgrade-runbook.md` | Upgrading live contracts, including mainnet 1.7.0 to 1.8.0 |
 | `docs/contract-ops-runbook.md` | Building, simulating, signing and submitting admin transactions |
 | `docs/multisig-guide.md` | Plain-English guide for signers; provisioning the multisig |
 | `docs/admin-custody-policy.md` | Custody policy: signers, thresholds, rotation, release validator |

@@ -29,7 +29,7 @@ The admin authority on `boundless-events` gates:
 - `set_admin(new_admin)`: rotate the admin authority (two-step with `accept_admin`).
 - `pause()`: emergency stop on every event-lifecycle call. Admin calls keep working.
 - `unpause()`: resume them.
-- `propose_upgrade(wasm_hash, version)`, `apply_upgrade()`, `cancel_pending_upgrade()`: replace contract logic. Mainnet builds from events 2.0.0 and profile 1.2.1 make `apply_upgrade` wait 17,280 ledgers (about a day) after the proposal. `migrate_events(max_events)` and `migrate()` finish an upgrade (`docs/upgrade-runbook.md`).
+- `propose_upgrade(wasm_hash, version)`, `apply_upgrade()`, `cancel_pending_upgrade()`: replace contract logic. Mainnet builds from events 1.8.0 and profile 1.2.1 make `apply_upgrade` wait 17,280 ledgers (about a day) after the proposal. `migrate_events(max_events)` and `migrate()` finish an upgrade (`docs/upgrade-runbook.md`).
 - `register_supported_token(token)` / `deregister_supported_token(token)`: token whitelist.
 - `propose_release_validator(target)`, `cancel_pending_release_validator()`, `clear_release_validator()`: appoint, withdraw a proposal for, or remove the co-signer for crowdfunding milestone releases (from events 2.0.0; see §4.1). The proposed key must accept with its own signature. While none is appointed, the admin co-signs those releases itself.
 
