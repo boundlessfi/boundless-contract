@@ -59,7 +59,7 @@ To check that the fixture still reproduces from the history archive (Stellar CLI
 
 ## Refreshing for the next upgrade
 
-Once mainnet runs 2.0.0, the replay should start from 2.0.0 instead:
+Once mainnet runs 1.8.0 (tag `events-v1.8.0`), the replay should start from 1.8.0 instead:
 
 1. Fetch the deployed wasm for both contracts by hash into the fixtures
    directory and replace the two `mainnet-*.wasm` files.

@@ -4,7 +4,7 @@
 **Date:** 8 October 2026  
 **Prepared for:** Stellar Development Foundation, Soroban Security Audit Bank  
 **Prepared by:** Boundless Engineering  
-**Contracts under review:** `boundless-events` 2.0.0 and `boundless-profile` 1.2.1, plus the grant milestone split that `boundless-events` 2.1.0 adds (Tamp.20), which reaches mainnet in a later upgrade. Mainnet runs 1.7.0 and 1.2.0 until the upgrade in Section 4.4.  
+**Contracts under review:** `boundless-events` 2.0.0 and `boundless-profile` 1.2.1, plus the grant milestone split that `boundless-events` 2.1.0 adds (Tamp.20), which reaches mainnet in a later upgrade. Mainnet runs 1.7.0 and 1.2.0 until the upgrade in Section 4.4, which installs the 2.0.0 code as events 1.8.0.  
 **Repository:** github.com/boundlessfi/boundless-contract  
 **Changes in 1.3:** events 2.1.0 lets a grant pay its milestones fixed, unequal shares of each award (`ReleaseKind::Split`), adding Tamp.20. The testnet grant run was repeated on 2.1.0 with a split grant; the static analysis covers 2.0.0 and is due again for 2.1.0.  
 **Changes in 1.2:** reworded for clarity, retired threats moved to their own table, flow steps renumbered after the participation removal, statuses limited to four defined values, and Section 4 reorganized.
@@ -163,7 +163,7 @@ The model relies on these assumptions. A threat that needs one of them to fail i
 | Parameter | Value |
 |---|---|
 | Maximum fee | 1,000 bps (10%) |
-| Upgrade timelock | 17,280 ledgers (about one day) on mainnet builds from 2.0.0; 0 on testnet builds. The deployed 1.7.0 build has 0 (Section 4.4). |
+| Upgrade timelock | 17,280 ledgers (about one day) on mainnet builds from 2.0.0, including its 1.8.0 mainnet label; 0 on testnet builds. The deployed 1.7.0 build has 0 (Section 4.4). |
 | Upgrade proposal expiry | 518,400 ledgers (about 30 days) |
 | Admin rotation and release validator acceptance windows | 120,960 ledgers (about 7 days) each |
 | Manager proposal expiry | 17,280 ledgers (about one day) |
@@ -388,7 +388,7 @@ Of the 73 active threats, 10 are P1, 23 are P2, 23 are P3 and 17 are P4.
 | **EoP.7** | The owner must sign the same transaction as the co-signer, the money goes only to the owner, and the amount is calculated from the pool. The backend prepares the transaction only for the signed-in owner. | Mitigated |
 | **EoP.8** | The manager can select, cancel and rotate. It cannot change the owner (no function exists), receive refunds, pay milestones, or change floors. It can award any address, including its own: judging is off chain by design, and the owner chooses whom to delegate to. `ManagerChanged` is on chain before any selection. | Accepted |
 | **EoP.9** | The recipient must hold an award in the grant roster, and the amount comes from that award (grants) or from `remaining_escrow / milestones_left` (crowdfunding), never from the caller. Each milestone is settled once and must be in range. | Mitigated |
-| **EoP.10** | Mainnet builds have a 17,280-ledger upgrade timelock from events 2.0.0 and profile 1.2.1; testnet builds keep zero, and `deploy_mainnet.sh` always builds without the testnet setting. The deployed 1.7.0 and 1.2.0 builds have no timelock until the upgrade in Section 4.4, which itself runs without one. Tests: `apply_upgrade_waits_out_the_timelock`, `apply_upgrade_waits_out_the_timelock_profile`. | Mitigated |
+| **EoP.10** | Mainnet builds have a 17,280-ledger upgrade timelock from events 2.0.0 (1.8.0 on mainnet) and profile 1.2.1; testnet builds keep zero, and `deploy_mainnet.sh` always builds without the testnet setting. The deployed 1.7.0 and 1.2.0 builds have no timelock until the upgrade in Section 4.4, which itself runs without one. Tests: `apply_upgrade_waits_out_the_timelock`, `apply_upgrade_waits_out_the_timelock_profile`. | Mitigated |
 | **EoP.11** | `admin_slash_reputation` requires the admin and a non-empty reason, emits `AdminReputationSlashed`, and is the only way to lower a score. | Mitigated |
 | **EoP.12** | Both migration functions require the admin, the cursor only moves forward, and `migrate` runs once per version. | Mitigated |
 | **EoP.13** | After the first binding, a change is `propose_events_contract`, a 17,280-ledger wait, then `accept_events_contract` within 7 days, all admin-only and all emitting events. The wait only means something once the profile's upgrade timelock is deployed (EoP.10). | Mitigated |
@@ -461,10 +461,10 @@ These threats concerned on-chain applications and submissions, which 2.0.0 remov
 
 | Item | What is needed |
 |---|---|
-| Mainnet upgrade | Mainnet runs events 1.7.0 and profile 1.2.0. Every fix in Section 4.2 takes effect only after the admin multisig upgrades both, to events 2.0.0 and profile 1.2.1, following `docs/upgrade-runbook.md` Section 8. The deployed builds have no timelock, so this upgrade applies immediately; every later one waits 17,280 ledgers (EoP.10). |
+| Mainnet upgrade | Mainnet runs events 1.7.0 and profile 1.2.0. Every fix in Section 4.2 takes effect only after the admin multisig upgrades both, to events 1.8.0 (the 2.0.0 code, tag `events-v1.8.0`) and profile 1.2.1, following `docs/upgrade-runbook.md` Section 8. The deployed builds have no timelock, so this upgrade applies immediately; every later one waits 17,280 ledgers (EoP.10). |
 | Old-layout records (Tamp.10) | Two mainnet event records cannot be read until converted. Both are completed events with no escrow, so no money is affected. Mainnet holds eight events, so one `migrate_events` call during the upgrade converts the two and leaves the others unchanged, and `migrate` then stamps the version. |
 | Backend changes that must ship first | Page winner and contributor reads at 90 or fewer and run refunds in batches of 15 or fewer (DoS.17); pages of 100 and batches of 25 already fail on the deployed build for large events. Split hackathon selections above 20 winners (DoS.17). Call `forfeit_milestone` when a grant milestone is rejected, or the grant can never be cancelled (EoP.14). Support `claim_refund` for refunds set aside (DoS.14). Stop calling the participation functions that 2.0.0 removed. |
-| Events 2.1.0 | Grant milestone splits (Tamp.20) run on testnet from 8 October 2026 and reach mainnet in a separate upgrade after 2.0.0, which waits the 17,280-ledger timelock (`docs/upgrade-runbook.md` Section 9). |
+| Events 2.1.0 | Grant milestone splits (Tamp.20) run on testnet from 8 October 2026 and reach mainnet in a separate upgrade after 1.8.0, which waits the 17,280-ledger timelock (`docs/upgrade-runbook.md` Section 9). |
 
 ### 4.5 Accepted risks
 
