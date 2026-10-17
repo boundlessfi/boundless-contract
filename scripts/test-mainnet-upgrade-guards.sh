@@ -8,7 +8,7 @@ TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/boundless-mainnet-guards.XXXXXX")"
 FAKE_BIN="$TEST_ROOT/bin"
 SCRIPT="$TEST_ROOT/deploy_mainnet.sh"
 XDR_DIR="$TEST_ROOT/xdr"
-EVENTS_WASM="$TEST_ROOT/events-2.0.0.wasm"
+EVENTS_WASM="$TEST_ROOT/events-1.8.0.wasm"
 PROFILE_WASM="$TEST_ROOT/profile-1.2.1.wasm"
 MISLABELLED_WASM="$TEST_ROOT/events-mislabelled.wasm"
 OLD_EVENTS_HASH="b87365c16102f7242a8fc3e770f615991841741c40673bb241cb254130be4c26"
@@ -24,7 +24,7 @@ mkdir -p "$FAKE_BIN" "$XDR_DIR"
 cp "$ROOT/scripts/testdata/mock-stellar" "$FAKE_BIN/stellar"
 cp "$ROOT/deploy_mainnet.sh" "$SCRIPT"
 chmod +x "$FAKE_BIN/stellar" "$SCRIPT"
-printf 'kind=events\nversion=2.0.0\n' > "$EVENTS_WASM"
+printf 'kind=events\nversion=1.8.0\n' > "$EVENTS_WASM"
 printf 'kind=profile\nversion=1.2.1\n' > "$PROFILE_WASM"
 printf 'kind=events\nversion=2.0.1\n' > "$MISLABELLED_WASM"
 
@@ -45,11 +45,11 @@ hash_file() {
 
 events_hash="$(hash_file "$EVENTS_WASM")"
 profile_hash="$(hash_file "$PROFILE_WASM")"
-events_pending="{\"new_version\":\"2.0.0\",\"wasm_hash\":\"$events_hash\",\"available_at_ledger\":100,\"expires_at_ledger\":518500}"
+events_pending="{\"new_version\":\"1.8.0\",\"wasm_hash\":\"$events_hash\",\"available_at_ledger\":100,\"expires_at_ledger\":518500}"
 profile_pending="{\"new_version\":\"1.2.1\",\"wasm_hash\":\"$profile_hash\",\"available_at_ledger\":100,\"expires_at_ledger\":518500}"
-bad_events_pending="{\"new_version\":\"2.0.0\",\"wasm_hash\":\"$WRONG_HASH\"}"
+bad_events_pending="{\"new_version\":\"1.8.0\",\"wasm_hash\":\"$WRONG_HASH\"}"
 
-# Mainnet as of the 2.0.0 upgrade: events 1.7.0 stamped at 1.6.0 with rows
+# Mainnet as of the 1.8.0 upgrade: events 1.7.0 stamped at 1.6.0 with rows
 # still in the old layout, profile 1.2.0 never stamped.
 set_events() {
     export FAKE_EVENTS_VERSION="$1"
@@ -57,7 +57,7 @@ set_events() {
     export FAKE_EVENTS_PENDING="$3"
     export FAKE_EVENTS_MIGRATED="$4"
     export FAKE_EVENTS_MIGRATION_REMAINING="${5:-0}"
-    if [ "$1" = "2.0.0" ]; then
+    if [ "$1" = "1.8.0" ]; then
         export FAKE_EVENTS_LIVE_HASH="$events_hash"
     else
         export FAKE_EVENTS_LIVE_HASH="$OLD_EVENTS_HASH"
@@ -120,7 +120,7 @@ reset
 export STELLAR_RPC_URL=https://rpc.example.invalid
 expect_fail explicit-rpc-with-named-network "$SCRIPT" upgrade-status
 unset STELLAR_RPC_URL
-expect_fail direct-submit-action "$SCRIPT" propose-upgrade-events "$EVENTS_WASM" 2.0.0
+expect_fail direct-submit-action "$SCRIPT" propose-upgrade-events "$EVENTS_WASM" 1.8.0
 expect_fail unknown-action "$SCRIPT" launch-everything
 
 reset
@@ -141,77 +141,77 @@ set_events 1.7.0 true null '"1.6.0"' 8
 expect_fail pause-events-twice "$SCRIPT" prepare-pause-events "$(x d)"
 
 expect_ok propose-events \
-    "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 2.0.0 "$(x propose-events)"
+    "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 1.8.0 "$(x propose-events)"
 expect_fail propose-events-with-profile-artifact \
     "$SCRIPT" prepare-propose-upgrade-events "$PROFILE_WASM" 1.2.1 "$(x e)"
 expect_fail propose-events-version-not-in-contractmeta \
     "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 2.0.1 "$(x f)"
 expect_fail propose-events-mislabelled-artifact \
-    "$SCRIPT" prepare-propose-upgrade-events "$MISLABELLED_WASM" 2.0.0 "$(x g)"
+    "$SCRIPT" prepare-propose-upgrade-events "$MISLABELLED_WASM" 1.8.0 "$(x g)"
 expect_fail propose-events-malformed-version \
     "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 2.0 "$(x h)"
 expect_fail propose-events-missing-wasm \
-    "$SCRIPT" prepare-propose-upgrade-events "$TEST_ROOT/none.wasm" 2.0.0 "$(x i)"
+    "$SCRIPT" prepare-propose-upgrade-events "$TEST_ROOT/none.wasm" 1.8.0 "$(x i)"
 set_events 1.7.0 true "$events_pending" '"1.6.0"' 8
 expect_fail propose-events-while-pending \
-    "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 2.0.0 "$(x j)"
-set_events 2.0.0 false null '"2.0.0"' 0
+    "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 1.8.0 "$(x j)"
+set_events 1.8.0 false null '"1.8.0"' 0
 expect_fail propose-events-same-version \
-    "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 2.0.0 "$(x k)"
+    "$SCRIPT" prepare-propose-upgrade-events "$EVENTS_WASM" 1.8.0 "$(x k)"
 
 set_events 1.7.0 true "$events_pending" '"1.6.0"' 8
 expect_ok verify-events-proposal \
-    "$SCRIPT" verify-proposed-upgrade-events "$EVENTS_WASM" 2.0.0
+    "$SCRIPT" verify-proposed-upgrade-events "$EVENTS_WASM" 1.8.0
 expect_fail verify-events-proposal-wrong-version \
     "$SCRIPT" verify-proposed-upgrade-events "$MISLABELLED_WASM" 2.0.1
 set_events 1.7.0 true "$bad_events_pending" '"1.6.0"' 8
 expect_fail verify-events-proposal-wrong-wasm \
-    "$SCRIPT" verify-proposed-upgrade-events "$EVENTS_WASM" 2.0.0
+    "$SCRIPT" verify-proposed-upgrade-events "$EVENTS_WASM" 1.8.0
 
 set_events 1.7.0 true "$events_pending" '"1.6.0"' 8
 expect_ok apply-events \
-    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 2.0.0 "$(x apply-events)"
+    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 1.8.0 "$(x apply-events)"
 set_events 1.7.0 false "$events_pending" '"1.6.0"' 8
 expect_fail apply-events-unpaused \
-    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 2.0.0 "$(x l)"
+    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 1.8.0 "$(x l)"
 set_events 1.7.0 true "$bad_events_pending" '"1.6.0"' 8
 expect_fail apply-events-wrong-pending-wasm \
-    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 2.0.0 "$(x m)"
+    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 1.8.0 "$(x m)"
 set_events 1.7.0 true null '"1.6.0"' 8
 expect_fail apply-events-nothing-pending \
-    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 2.0.0 "$(x n)"
+    "$SCRIPT" prepare-apply-upgrade-events "$EVENTS_WASM" 1.8.0 "$(x n)"
 
-set_events 2.0.0 true null '"1.6.0"' 2
+set_events 1.8.0 true null '"1.6.0"' 2
 expect_ok migrate-events-page \
     "$SCRIPT" prepare-migrate-events-page 8 "$(x migrate-events-page)"
 expect_fail migrate-events-page-zero "$SCRIPT" prepare-migrate-events-page 0 "$(x o)"
 expect_fail migrate-events-page-not-a-number "$SCRIPT" prepare-migrate-events-page eight "$(x p)"
 expect_fail migrate-before-pages-finish \
-    "$SCRIPT" prepare-migrate-upgrade-events 2.0.0 "$(x q)"
-set_events 2.0.0 false null '"1.6.0"' 2
+    "$SCRIPT" prepare-migrate-upgrade-events 1.8.0 "$(x q)"
+set_events 1.8.0 false null '"1.6.0"' 2
 expect_fail migrate-events-page-unpaused "$SCRIPT" prepare-migrate-events-page 8 "$(x r)"
-set_events 2.0.0 true "$events_pending" '"1.6.0"' 2
+set_events 1.8.0 true "$events_pending" '"1.6.0"' 2
 expect_fail migrate-events-page-with-pending-upgrade \
     "$SCRIPT" prepare-migrate-events-page 8 "$(x s)"
-set_events 2.0.0 true null '"1.6.0"' 0
+set_events 1.8.0 true null '"1.6.0"' 0
 expect_fail migrate-events-page-when-done "$SCRIPT" prepare-migrate-events-page 8 "$(x t)"
 
 expect_ok migrate-events \
-    "$SCRIPT" prepare-migrate-upgrade-events 2.0.0 "$(x migrate-events)"
+    "$SCRIPT" prepare-migrate-upgrade-events 1.8.0 "$(x migrate-events)"
 expect_fail migrate-events-wrong-version \
     "$SCRIPT" prepare-migrate-upgrade-events 1.9.9 "$(x u)"
-set_events 2.0.0 false null '"1.6.0"' 0
+set_events 1.8.0 false null '"1.6.0"' 0
 expect_fail migrate-events-unpaused \
-    "$SCRIPT" prepare-migrate-upgrade-events 2.0.0 "$(x v)"
-set_events 2.0.0 true null '"2.0.0"' 0
+    "$SCRIPT" prepare-migrate-upgrade-events 1.8.0 "$(x v)"
+set_events 1.8.0 true null '"1.8.0"' 0
 expect_fail migrate-events-replay \
-    "$SCRIPT" prepare-migrate-upgrade-events 2.0.0 "$(x w)"
+    "$SCRIPT" prepare-migrate-upgrade-events 1.8.0 "$(x w)"
 expect_fail migrate-events-page-after-stamp "$SCRIPT" prepare-migrate-events-page 8 "$(x y)"
 
-expect_ok unpause-events "$SCRIPT" prepare-unpause-events 2.0.0 "$(x unpause-events)"
+expect_ok unpause-events "$SCRIPT" prepare-unpause-events 1.8.0 "$(x unpause-events)"
 expect_fail unpause-events-wrong-version "$SCRIPT" prepare-unpause-events 1.7.0 "$(x z)"
-set_events 2.0.0 true null '"1.6.0"' 0
-expect_fail unpause-events-unmigrated "$SCRIPT" prepare-unpause-events 2.0.0 "$(x aa)"
+set_events 1.8.0 true null '"1.6.0"' 0
+expect_fail unpause-events-unmigrated "$SCRIPT" prepare-unpause-events 1.8.0 "$(x aa)"
 set_events 1.7.0 true null '"1.6.0"' 8
 export UNPAUSE_UNMIGRATED=1
 expect_ok abandon-unpause-events "$SCRIPT" prepare-unpause-events 1.7.0 "$(x abandon-events)"
@@ -220,23 +220,23 @@ set_events 1.7.0 true "$events_pending" '"1.6.0"' 8
 export UNPAUSE_UNMIGRATED=1
 expect_fail unpause-events-with-pending-upgrade "$SCRIPT" prepare-unpause-events 1.7.0 "$(x ab)"
 unset UNPAUSE_UNMIGRATED
-set_events 2.0.0 false null '"2.0.0"' 0
-expect_fail unpause-events-not-paused "$SCRIPT" prepare-unpause-events 2.0.0 "$(x ac)"
+set_events 1.8.0 false null '"1.8.0"' 0
+expect_fail unpause-events-not-paused "$SCRIPT" prepare-unpause-events 1.8.0 "$(x ac)"
 
-expect_ok verify-events "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 2.0.0
+expect_ok verify-events "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 1.8.0
 export FAKE_EVENTS_LIVE_HASH="$WRONG_HASH"
-expect_fail verify-events-wrong-live-wasm "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 2.0.0
-set_events 2.0.0 true null '"2.0.0"' 0
-expect_fail verify-events-still-paused "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 2.0.0
-set_events 2.0.0 false null '"1.6.0"' 0
-expect_fail verify-events-unmigrated "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 2.0.0
+expect_fail verify-events-wrong-live-wasm "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 1.8.0
+set_events 1.8.0 true null '"1.8.0"' 0
+expect_fail verify-events-still-paused "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 1.8.0
+set_events 1.8.0 false null '"1.6.0"' 0
+expect_fail verify-events-unmigrated "$SCRIPT" verify-upgrade-events "$EVENTS_WASM" 1.8.0
 
 reset
-set_events 2.0.0 false null '"2.0.0"' 0
+set_events 1.8.0 false null '"1.8.0"' 0
 expect_ok propose-profile \
     "$SCRIPT" prepare-propose-upgrade-profile "$PROFILE_WASM" 1.2.1 "$(x propose-profile)"
 expect_fail propose-profile-with-events-artifact \
-    "$SCRIPT" prepare-propose-upgrade-profile "$EVENTS_WASM" 2.0.0 "$(x ad)"
+    "$SCRIPT" prepare-propose-upgrade-profile "$EVENTS_WASM" 1.8.0 "$(x ad)"
 set_profile 1.2.0 false "$profile_pending" null
 expect_ok verify-profile-proposal \
     "$SCRIPT" verify-proposed-upgrade-profile "$PROFILE_WASM" 1.2.1
@@ -255,5 +255,5 @@ expect_ok verify-profile "$SCRIPT" verify-upgrade-profile "$PROFILE_WASM" 1.2.1
 export FAKE_PROFILE_LIVE_HASH="$WRONG_HASH"
 expect_fail verify-profile-wrong-live-wasm "$SCRIPT" verify-upgrade-profile "$PROFILE_WASM" 1.2.1
 
-set_events 2.0.0 true "$events_pending" '"1.6.0"' 0
+set_events 1.8.0 true "$events_pending" '"1.6.0"' 0
 expect_ok cancel-events "$SCRIPT" prepare-cancel-upgrade-events "$(x cancel-events)"

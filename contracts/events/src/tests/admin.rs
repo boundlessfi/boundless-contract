@@ -21,7 +21,7 @@ fn initializes_with_expected_config() {
     assert_eq!(ctx.client.get_fee_bps(), 250);
     assert_eq!(ctx.client.get_profile_contract(), ctx.profile_contract);
     assert!(!ctx.client.is_paused());
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "2.0.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.8.0"));
     assert_eq!(ctx.client.get_pending_upgrade(), None);
     assert_eq!(ctx.client.get_migrated_to_version(), None);
 }
@@ -138,7 +138,7 @@ fn cancel_pending_upgrade_clears_proposal() {
 
     ctx.client.cancel_pending_upgrade();
     assert_eq!(ctx.client.get_pending_upgrade(), None);
-    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "2.0.0"));
+    assert_eq!(ctx.client.version(), String::from_str(&ctx.env, "1.8.0"));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn migrate_refuses_to_stamp_while_events_remain_unconverted() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "2.0.0"))
+        Some(String::from_str(&ctx.env, "1.8.0"))
     );
 }
 
@@ -363,8 +363,8 @@ fn migrate_runs_regardless_of_how_the_version_was_spelled() {
             .storage()
             .instance()
             .set(&DataKey::NextEventId, &(event_id + 1));
-        // The operator proposed the upgrade as "v2.0.0" rather than "2.0.0".
-        storage::set_version(&ctx.env, &String::from_str(&ctx.env, "v2.0.0"));
+        // The operator proposed the upgrade as "v1.8.0" rather than "1.8.0".
+        storage::set_version(&ctx.env, &String::from_str(&ctx.env, "v1.8.0"));
     });
 
     ctx.client.migrate_events(&8_u32);
@@ -381,7 +381,7 @@ fn migrate_is_a_no_op_on_a_fresh_deployment() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "2.0.0"))
+        Some(String::from_str(&ctx.env, "1.8.0"))
     );
 }
 
@@ -393,7 +393,7 @@ fn migrate_marks_current_version_and_blocks_replay() {
     ctx.client.migrate();
     assert_eq!(
         ctx.client.get_migrated_to_version(),
-        Some(String::from_str(&ctx.env, "2.0.0"))
+        Some(String::from_str(&ctx.env, "1.8.0"))
     );
 
     let err = ctx

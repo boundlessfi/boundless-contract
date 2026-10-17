@@ -5,7 +5,7 @@ mainnet every admin step is a 2-of-3 multisig transaction that
 `./deploy_mainnet.sh` prepares and checks but never submits; on testnet
 `./deploy_and_upgrade.sh` signs with the local admin identity. Section 8 is
 the specific procedure for taking mainnet from events 1.7.0 and profile 1.2.0
-to events 2.0.0 and profile 1.2.1.
+to events 1.8.0 and profile 1.2.1.
 
 Related: `docs/contract-ops-runbook.md` (signing and submitting a multisig
 transaction), `docs/admin-custody-policy.md` (who signs what),
@@ -34,7 +34,7 @@ There is no `upgrade()` entry point. Both contracts expose `version()`,
 The timelock that applies is the one compiled into the wasm that is live when
 you propose, not the one you are proposing. The deployed mainnet builds,
 events 1.7.0 and profile 1.2.0, were compiled with 0 for the August rollout;
-events 2.0.0 and profile 1.2.1 restore 17,280.
+events 1.8.0 and profile 1.2.1 restore 17,280.
 
 Pausing events blocks every event-lifecycle call: `create_event`, `add_funds`,
 `select_winners`, `claim_prize`, `claim_milestone`, `forfeit_milestone`,
@@ -263,7 +263,14 @@ Confirm the proposal with `get_pending_events_contract` before preparing the
 accept. `deploy_mainnet.sh` refuses upgrade steps while a rotation is pending,
 so finish or cancel it first.
 
-## 8. Mainnet 1.7.0 to 2.0.0
+## 8. Mainnet 1.7.0 to 1.8.0
+
+Events 1.8.0 is the 2.0.0 code under a 1.x label: the release branch
+`release/events-1.8.0` is the 2.0.0 commit `8b4f054` with only the version
+changed. The backend turns on grants and held-refund claims for events 2.0.0 or
+later, so both stay off on mainnet until a later 2.x upgrade. A refund 1.8.0
+holds back during a cancellation stays claimable on chain and can be paid once
+that upgrade lands.
 
 ### 8.1 Where mainnet stands
 
@@ -272,7 +279,7 @@ so finish or cancel it first.
 | Contract | `CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ` | `CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC` |
 | Live version | 1.7.0 | 1.2.0 |
 | Migration marker | 1.6.0 | none |
-| Target | 2.0.0 | 1.2.1 |
+| Target | 1.8.0 | 1.2.1 |
 | Upgrade timelock of the live build | 0 | 0 |
 
 The admin of both is the 2-of-3 multisig
@@ -286,13 +293,15 @@ Events holds 8 events. The 1.7.0 `migrate_events` never ran (there is no
 pre-1.7.0 record layout and fail to decode on read. Both are Completed with
 zero escrow. The other six are in the current layout.
 
-Because the live builds have a zero timelock, each 2.0.0 and 1.2.1 proposal
+Because the live builds have a zero timelock, each 1.8.0 and 1.2.1 proposal
 can be applied as soon as it lands, in the same session. Every upgrade after
 this one waits 17,280 ledgers.
 
 Re-read all of this with `upgrade-status` and `get_event` before signing.
 
 ### 8.2 What has to ship in the backend first
+
+All of this is in production already (nestjs #867 and #874).
 
 - Read winners and contributors in pages of at most 90 rows.
 - Crank cancellation refunds in batches of at most 15 per
@@ -303,15 +312,16 @@ Re-read all of this with `upgrade-status` and `get_event` before signing.
 - Use `claim_refund` and `get_unclaimed_refund` for refunds the contract had to
   hold back.
 - Stop calling the participation entry points (`apply`, `apply_to_bounty`,
-  `remove_applicant`, `submit`) and the applicant and submission reads; 2.0.0
+  `remove_applicant`, `submit`) and the applicant and submission reads; 1.8.0
   removes them and participation lives in the backend.
 
 ### 8.3 Steps
 
-Rehearsed on testnet on 2026-10-02: events `CBEODVJG…` went to 2.0.0 (wasm
-`70791d71…`), 185 events paged through `migrate_events` in 24 calls, then
-`migrate` stamped 2.0.0. If testnet profile still reports 1.2.0, upgrade it to
-1.2.1 there first.
+Rehearsed on testnet with the same code under its 2.0.0 label on 2026-10-02:
+events `CBEODVJG…` went to 2.0.0 (wasm `70791d71…`), 185 events paged through
+`migrate_events` in 24 calls, then `migrate` stamped 2.0.0. Testnet has since
+moved to 2.1.0, so the 1.8.0 build itself is proven by the mainnet storage
+replay (`./scripts/test-storage-compat.sh`).
 
 Build both wasms per Section 2 and set the environment:
 
@@ -326,11 +336,11 @@ PROFILE_WASM=target/release-linux/boundless_profile.wasm
 
 ./deploy_mainnet.sh upgrade-status
 ./deploy_mainnet.sh upload-profile-wasm "$PROFILE_WASM" 1.2.1
-./deploy_mainnet.sh upload-events-wasm "$EVENTS_WASM" 2.0.0
+./deploy_mainnet.sh upload-events-wasm "$EVENTS_WASM" 1.8.0
 ```
 
 Profile first. Either order is safe: events 1.7.0 never calls the
-`slash_reputation` entry point that 1.2.1 removes, and events 2.0.0 only calls
+`slash_reputation` entry point that 1.2.1 removes, and events 1.8.0 only calls
 functions that 1.2.0 already has. Profile stays unpaused. Each line below is
 one signing ceremony; submit it and wait for it to land before the next.
 
@@ -346,18 +356,18 @@ Then events:
 
 ```sh
 ./deploy_mainnet.sh prepare-pause-events events-pause.xdr
-./deploy_mainnet.sh prepare-propose-upgrade-events "$EVENTS_WASM" 2.0.0 events-propose.xdr
-./deploy_mainnet.sh verify-proposed-upgrade-events "$EVENTS_WASM" 2.0.0
-./deploy_mainnet.sh prepare-apply-upgrade-events "$EVENTS_WASM" 2.0.0 events-apply.xdr
+./deploy_mainnet.sh prepare-propose-upgrade-events "$EVENTS_WASM" 1.8.0 events-propose.xdr
+./deploy_mainnet.sh verify-proposed-upgrade-events "$EVENTS_WASM" 1.8.0
+./deploy_mainnet.sh prepare-apply-upgrade-events "$EVENTS_WASM" 1.8.0 events-apply.xdr
 ./deploy_mainnet.sh prepare-migrate-events-page 8 events-page.xdr
-./deploy_mainnet.sh prepare-migrate-upgrade-events 2.0.0 events-migrate.xdr
-./deploy_mainnet.sh prepare-unpause-events 2.0.0 events-unpause.xdr
-./deploy_mainnet.sh verify-upgrade-events "$EVENTS_WASM" 2.0.0
+./deploy_mainnet.sh prepare-migrate-upgrade-events 1.8.0 events-migrate.xdr
+./deploy_mainnet.sh prepare-unpause-events 1.8.0 events-unpause.xdr
+./deploy_mainnet.sh verify-upgrade-events "$EVENTS_WASM" 1.8.0
 ```
 
 One page of 8 converts all eight events, so the page command should report 0
 remaining. If more events exist by then, repeat the page until it reports 0;
-`migrate` refuses with error 97 until it does. Until 2.0.0 is applied,
+`migrate` refuses with error 97 until it does. Until 1.8.0 is applied,
 `upgrade-status` cannot read the release validator (1.7.0 has no such
 function).
 
@@ -375,5 +385,5 @@ After the unpause:
 
 Rollback: before the events apply, cancel and unpause with
 `UNPAUSE_UNMIGRATED=1` (the marker was already 1.6.0). After the apply, a
-rollback to 1.7.0 waits the 17,280-ledger timelock that 2.0.0 carries, with
+rollback to 1.7.0 waits the 17,280-ledger timelock that 1.8.0 carries, with
 events paused throughout; after the first page, fix forward.

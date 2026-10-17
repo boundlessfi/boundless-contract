@@ -14,7 +14,7 @@ of this tree the way `docs/upgrade-runbook.md` does it on chain:
    upgrade timelock), page `migrate_events`, check that `migrate` refuses with
    `MigrationIncomplete` before the conversion and stamps after it, and
    unpause.
-3. Read everything again through events 2.0.0 and profile 1.2.1 and require the
+3. Read everything again through events 1.8.0 and profile 1.2.1 and require the
    same values. The two converted records must carry prize floors equal to what
    each position was paid.
 4. Run a grant through the upgraded pair on a fresh token (selection, releases,
@@ -58,7 +58,7 @@ To check that the fixture still reproduces from the history archive (Stellar CLI
 
 ## Refreshing for the next upgrade
 
-Once mainnet runs 2.0.0, the replay should start from 2.0.0 instead:
+Once mainnet runs 1.8.0, the replay should start from 1.8.0 instead:
 
 1. Fetch the deployed wasm for both contracts by hash into the fixtures
    directory and replace the two `mainnet-*.wasm` files.
