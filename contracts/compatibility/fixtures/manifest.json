@@ -3,28 +3,28 @@
     "file": "mainnet-state.json",
     "network": "mainnet",
     "network_id": "7ac33997544e3175d266bd022439b22cdb16508c01163f26e5cb2a3e1045a979",
-    "ledger": 64747647,
-    "timestamp": 1791024017,
+    "ledger": 65003455,
+    "timestamp": 1792303057,
     "protocol": 29,
     "events_contract": "CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ",
     "profile_contract": "CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
     "capture_script": "scripts/capture-mainnet-compat-snapshot.sh",
-    "sha256": "177c904b2f24ad2300b57a317fe750a58858180cdcef052f9472c1f5fc2c2a06"
+    "sha256": "0096703064e2ae1463670e0f1cdb29ae6909298270d9971458d8492f0bf547ac"
   },
   "wasm": [
     {
-      "file": "mainnet-events-1.7.0.wasm",
-      "sha256": "b87365c16102f7242a8fc3e770f615991841741c40673bb241cb254130be4c26",
+      "file": "mainnet-events-1.8.0.wasm",
+      "sha256": "acf70ca019f75ee6bc60f7806254dfb3508fd5a76634c708977e6030870dc654",
       "source": "mainnet contract CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ",
-      "soroban_sdk": "27.0.0",
-      "contractmeta_version": "1.7.0"
+      "soroban_sdk": "28.0.0",
+      "contractmeta_version": "1.8.0"
     },
     {
-      "file": "mainnet-profile-1.2.0.wasm",
-      "sha256": "6b4804920a4068dfdcaaa711fac6390850e0a92f4b5ed4e46259694b61cbae12",
+      "file": "mainnet-profile-1.2.1.wasm",
+      "sha256": "8a8a1208801c36f5d6e0b90eca4783f3d6789a10b26cf40b062782bfae5731c0",
       "source": "mainnet contract CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC",
-      "soroban_sdk": "27.0.0",
-      "contractmeta_version": "1.2.0"
+      "soroban_sdk": "28.0.0",
+      "contractmeta_version": "1.2.1"
     }
   ]
 }

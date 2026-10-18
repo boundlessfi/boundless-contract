@@ -1,10 +1,10 @@
 #![cfg(test)]
 
-//! Replays the mainnet upgrade from the deployed builds (events 1.7.0, profile
-//! 1.2.0) to the release build of this tree, against contract storage captured
-//! from a mainnet ledger. Everything readable before the upgrade must read the
-//! same after it, the records still in the pre-1.7.0 layout must convert, and
-//! the upgraded pair must run a grant end to end.
+//! Replays the next mainnet upgrade from the deployed builds (events 1.8.0,
+//! profile 1.2.1) to the release build of this tree, against contract storage
+//! captured from a mainnet ledger. Every event must read the same after the
+//! upgrade as before it, and the upgraded events contract must run grants end
+//! to end against the deployed profile.
 
 use std::fmt::Debug;
 
@@ -14,16 +14,16 @@ use boundless_events::types::{
 use boundless_events::EventsContractClient;
 use boundless_profile::ProfileContractClient;
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
+    testutils::{Address as _, BytesN as _, Ledger as _},
     token, vec, Address, BytesN, Env, Map, String,
 };
 
 mod deployed_events {
-    soroban_sdk::contractimport!(file = "fixtures/mainnet-events-1.7.0.wasm");
+    soroban_sdk::contractimport!(file = "fixtures/mainnet-events-1.8.0.wasm");
 }
 
 mod deployed_profile {
-    soroban_sdk::contractimport!(file = "fixtures/mainnet-profile-1.2.0.wasm");
+    soroban_sdk::contractimport!(file = "fixtures/mainnet-profile-1.2.1.wasm");
 }
 
 const SNAPSHOT: &str = "mainnet-state.json";
@@ -33,6 +33,10 @@ const ADMIN: &str = "GCVK72I6TVJVDTTY4UKU6MQT4QJ2T2AAG3NULNEUDM46L3UOQYDSO4O2";
 const FEE_ACCOUNT: &str = "GADSIP2HPINWTMEUNMVYA5NJRL372OV52HDEJTRTLDZXMHADIPQNYH55";
 const MAINNET_USDC: &str = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75";
 const PAGE: u32 = 90;
+const DEPLOYED_EVENTS: &str = "1.8.0";
+const DEPLOYED_PROFILE: &str = "1.2.1";
+const RELEASE_EVENTS: &str = "2.1.0";
+const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;
 
 /// The release build this tree produces. The replay upgrades into the exact
 /// artifact that would be proposed on chain, so it is read from the build
@@ -163,6 +167,14 @@ fn view_after(events: &EventsContractClient, id: u64) -> EventView {
 #[test]
 #[ignore = "needs the release wasm; run scripts/test-storage-compat.sh"]
 fn mainnet_upgrades_from_the_deployed_builds_to_this_tree() {
+    // Only events upgrades because this tree's profile is the deployed build.
+    // A profile change has to be replayed here before it can ship.
+    assert!(
+        include_str!("../../profile/Cargo.toml")
+            .contains(&format!("\nversion = \"{DEPLOYED_PROFILE}\"\n")),
+        "profile changed since the deployed {DEPLOYED_PROFILE}; replay its upgrade too"
+    );
+
     let env = mainnet_env();
     let events_id = addr(&env, EVENTS_ID);
     let profile_id = addr(&env, PROFILE_ID);
@@ -173,24 +185,26 @@ fn mainnet_upgrades_from_the_deployed_builds_to_this_tree() {
     env.deployer().upload_contract_wasm(deployed_profile::WASM);
     let events_v1 = deployed_events::Client::new(&env, &events_id);
     let profile_v1 = deployed_profile::Client::new(&env, &profile_id);
-    assert_eq!(events_v1.version(), String::from_str(&env, "1.7.0"));
-    assert_eq!(profile_v1.version(), String::from_str(&env, "1.2.0"));
+    assert_eq!(events_v1.version(), String::from_str(&env, DEPLOYED_EVENTS));
+    assert_eq!(
+        events_v1.get_migrated_to_version(),
+        Some(String::from_str(&env, DEPLOYED_EVENTS))
+    );
+    assert_eq!(
+        profile_v1.version(),
+        String::from_str(&env, DEPLOYED_PROFILE)
+    );
 
     let first = events_v1.id_base() + 1;
     let ids = event_ids(&env, &events_id, first);
-    let mut before = std::vec::Vec::new();
-    let mut old_layout = std::vec::Vec::new();
-    for id in ids.clone() {
-        match view_before(&events_v1, id) {
-            Some(view) => before.push((id, view)),
-            None => old_layout.push(id),
-        }
-    }
-    assert_eq!(
-        old_layout,
-        std::vec![first, first + 1],
-        "the deployed build cannot read exactly the two pre-1.7.0 records"
-    );
+    let before: std::vec::Vec<(u64, EventView)> = ids
+        .clone()
+        .map(|id| {
+            let view = view_before(&events_v1, id)
+                .unwrap_or_else(|| panic!("the deployed build cannot read event {id}"));
+            (id, view)
+        })
+        .collect();
 
     assert!(
         before.iter().any(|(_, view)| !view.winners.is_empty()),
@@ -206,42 +220,44 @@ fn mainnet_upgrades_from_the_deployed_builds_to_this_tree() {
         .map(|r| profile_v1.get_profile(r).map_or(0, |p| p.reputation))
         .collect();
 
-    // The runbook order: profile first, left running; then events, paused
-    // from propose to unpause. The deployed builds have no upgrade timelock.
-    let profile_hash = env
-        .deployer()
-        .upload_contract_wasm(release_wasm("boundless_profile").as_slice());
-    profile_v1.propose_upgrade(&profile_hash, &String::from_str(&env, "1.2.1"));
-    profile_v1.apply_upgrade();
-    let profile = ProfileContractClient::new(&env, &profile_id);
-    profile.migrate();
-    assert!(!profile.is_paused());
-
-    events_v1.pause();
+    // The runbook order (Section 4): propose, wait out the timelock the
+    // deployed build carries, pause, apply, page, stamp, unpause.
     let events_hash = env
         .deployer()
         .upload_contract_wasm(release_wasm("boundless_events").as_slice());
-    events_v1.propose_upgrade(&events_hash, &String::from_str(&env, "2.1.0"));
+    events_v1.propose_upgrade(&events_hash, &String::from_str(&env, RELEASE_EVENTS));
+    let pending = events_v1.get_pending_upgrade().expect("proposal queued");
+    assert_eq!(
+        pending.available_at_ledger - pending.proposed_at_ledger,
+        UPGRADE_TIMELOCK_LEDGERS
+    );
+    assert_eq!(
+        events_v1.try_apply_upgrade().unwrap_err().unwrap(),
+        deployed_events::Error::UpgradeTimelockNotElapsed
+    );
+    env.ledger().with_mut(|ledger| {
+        ledger.sequence_number = pending.available_at_ledger;
+        ledger.timestamp += u64::from(UPGRADE_TIMELOCK_LEDGERS) * 5;
+    });
+
+    events_v1.pause();
     events_v1.apply_upgrade();
     let events = EventsContractClient::new(&env, &events_id);
     assert!(events.is_paused());
-    assert_eq!(
-        events.try_migrate().unwrap_err().unwrap(),
-        boundless_events::errors::Error::MigrationIncomplete
-    );
     assert_eq!(events.migrate_events(&8), 0);
     events.migrate();
     events.unpause();
 
-    assert_eq!(events.version(), String::from_str(&env, "2.1.0"));
-    assert_eq!(profile.version(), String::from_str(&env, "1.2.1"));
+    let profile = ProfileContractClient::new(&env, &profile_id);
+    assert_eq!(events.version(), String::from_str(&env, RELEASE_EVENTS));
+    assert_eq!(profile.version(), String::from_str(&env, DEPLOYED_PROFILE));
     assert_eq!(
         events.get_migrated_to_version(),
-        Some(String::from_str(&env, "2.1.0"))
+        Some(String::from_str(&env, RELEASE_EVENTS))
     );
     assert_eq!(
         profile.get_migrated_to_version(),
-        Some(String::from_str(&env, "1.2.1"))
+        Some(String::from_str(&env, DEPLOYED_PROFILE))
     );
     assert_eq!(events.get_admin(), addr(&env, ADMIN));
     assert_eq!(profile.get_admin(), addr(&env, ADMIN));
@@ -255,20 +271,6 @@ fn mainnet_upgrades_from_the_deployed_builds_to_this_tree() {
 
     for (id, view) in &before {
         assert_eq!(&view_after(&events, *id), view, "event {id} changed");
-    }
-
-    // Percentages were always taken of the budget, so each converted floor is
-    // exactly what the old record would have paid that position.
-    for id in old_layout {
-        let event = events.get_event(&id);
-        let winners = view_after(&events, id).winners;
-        assert!(!event.prize_floors.is_empty());
-        let floors_total: i128 = event.prize_floors.values().iter().sum();
-        assert!(floors_total <= event.total_budget);
-        for (recipient, position, amount, milestone, paid_at) in winners {
-            assert!(milestone.is_none() && paid_at.is_some(), "{recipient:?}");
-            assert_eq!(event.prize_floors.get(position), Some(amount));
-        }
     }
 
     for (recipient, reputation) in recipients.iter().zip(reputations_before) {
