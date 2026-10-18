@@ -4,7 +4,7 @@
 **Date:** 8 October 2026  
 **Prepared for:** Stellar Development Foundation, Soroban Security Audit Bank  
 **Prepared by:** Boundless Engineering  
-**Contracts under review:** `boundless-events` 2.0.0 and `boundless-profile` 1.2.1, plus the grant milestone split that `boundless-events` 2.1.0 adds (Tamp.20), which reaches mainnet in a later upgrade. Mainnet runs 1.7.0 and 1.2.0 until the upgrade in Section 4.4, which installs the 2.0.0 code as events 1.8.0.  
+**Contracts under review:** `boundless-events` 2.0.0 and `boundless-profile` 1.2.1, plus the grant milestone split that `boundless-events` 2.1.0 adds (Tamp.20), which reaches mainnet in a later upgrade. Mainnet has run this code as events 1.8.0, with profile 1.2.1, since 17 October 2026 (Section 4.4).  
 **Repository:** github.com/boundlessfi/boundless-contract  
 **Changes in 1.3:** events 2.1.0 lets a grant pay its milestones fixed, unequal shares of each award (`ReleaseKind::Split`), adding Tamp.20. The testnet grant run was repeated on 2.1.0 with a split grant; the static analysis covers 2.0.0 and is due again for 2.1.0.  
 **Changes in 1.2:** reworded for clarity, retired threats moved to their own table, flow steps renumbered after the participation removal, statuses limited to four defined values, and Section 4 reorganized.
@@ -26,7 +26,7 @@ The model lists 77 threats across the six STRIDE categories, each tied to a step
 
 All ten Priority 1 threats, whose failure would be catastrophic, are mitigated and tested.
 
-**Pending deployment** describes code, not threats: every fix since 1.7.0 is in the code under review but not yet on mainnet. Section 4.4 lists what the upgrade involves and what the backend must ship first.
+**Pending deployment** describes code, not threats. Every fix since 1.7.0 reached mainnet on 17 October 2026 as events 1.8.0; Section 4.4 records that upgrade and what is still to come.
 
 ## 1. What are we working on?
 
@@ -129,7 +129,7 @@ The threat tables in Section 2 refer to these steps by number.
 | Owner or manager | Can create, fund, select and cancel for their own event; may try to reclaim or redirect a pool. | Financial gain at builders' expense. |
 | Compromised backend | Can submit any transaction, corrupt off-chain data and leak secrets. With the master key it can sign as any managed wallet, never as the admin. | Theft from events run by managed wallets; limited by TB5. |
 | Compromised single admin signer | One of three signers; cannot meet the threshold alone. | A stepping stone to the quorum. |
-| Compromised or coerced admin quorum | Full administrative control, including upgrades (after a 17,280-ledger timelock from 2.0.0; immediately on the 1.7.0 build still deployed). | Theft by replacing contract logic. |
+| Compromised or coerced admin quorum | Full administrative control, including upgrades (after a 17,280-ledger timelock on every mainnet build since the 1.8.0 upgrade). | Theft by replacing contract logic. |
 | Token issuer | Can freeze or claw back balances under the asset's policy. | Compliance, not malice; treated as an availability event. |
 | Infrastructure providers (RPC, Didit) | Outages, stale or wrong data, forged messages. | Failure or compromise of a third party. |
 
@@ -163,7 +163,7 @@ The model relies on these assumptions. A threat that needs one of them to fail i
 | Parameter | Value |
 |---|---|
 | Maximum fee | 1,000 bps (10%) |
-| Upgrade timelock | 17,280 ledgers (about one day) on mainnet builds from 2.0.0, including its 1.8.0 mainnet label; 0 on testnet builds. The deployed 1.7.0 build has 0 (Section 4.4). |
+| Upgrade timelock | 17,280 ledgers (about one day) on mainnet builds from 2.0.0, including its 1.8.0 mainnet label; 0 on testnet builds. The 1.7.0 build mainnet ran until 17 October 2026 had 0 (Section 4.4). |
 | Upgrade proposal expiry | 518,400 ledgers (about 30 days) |
 | Admin rotation and release validator acceptance windows | 120,960 ledgers (about 7 days) each |
 | Manager proposal expiry | 17,280 ledgers (about one day) |
@@ -318,7 +318,7 @@ Of the 73 active threats, 10 are P1, 23 are P2, 23 are P3 and 17 are P4.
 
 ## 3. What are we going to do about it?
 
-**Mitigated** means a control in the contracts or in operating procedure addresses the threat, and every contract-level control has a test. **Accepted** means the remaining risk is carried on purpose, for the reason given. Every control here is in the code under review; the fixes made in 2.0.0 reach mainnet only with the upgrade (Section 4.4).
+**Mitigated** means a control in the contracts or in operating procedure addresses the threat, and every contract-level control has a test. **Accepted** means the remaining risk is carried on purpose, for the reason given. Every control here is in the code under review; the fixes made in 2.0.0 reached mainnet with the 1.8.0 upgrade (Section 4.4).
 
 | Threat | Treatment | Status |
 |---|---|---|
@@ -340,7 +340,7 @@ Of the 73 active threats, 10 are P1, 23 are P2, 23 are P3 and 17 are P4.
 | **Tamp.7** | Where an overflow would matter (the event id counter, the contributor index, the winner index in `select_winners`, award and reservation totals), arithmetic is overflow-checked with a typed error. Counts that only go down (unclaimed prizes, the token list) stop at zero. The release build sets `overflow-checks = true`, so any remaining plain arithmetic stops the transaction instead of wrapping. | Mitigated |
 | **Tamp.8** | Each event keeps a running total of what it owes (`EventOwedTotal`). `select_winners` reserves each batch on top of it and refuses if the total would exceed `remaining_escrow`. Each payout lowers both together and fails safely if they disagree. `start_cancel` releases the reservation only when no prize is in its window and no grant award is owed (EoP.14). | Mitigated |
 | **Tamp.9** | `create_event` requires positive floors totalling at most the budget, and `select_winners` refuses any amount below its floor with `InvalidDistribution`. Positions without a floor take any positive amount, by design. | Mitigated |
-| **Tamp.10** | `migrate_events` (admin only) converts records page by page from a stored cursor, up to 8 per call, and `migrate` refuses with `MigrationIncomplete` until all are converted. Old records are read with an exact copy of their original structure, and each floor is `total_budget × percent / 100`, exactly what that position would have been paid. Only the record is rewritten. The two records still in the old layout are completed mainnet bounties with every award paid, so nothing needs reserving again (Tamp.19). A test replays the full mainnet upgrade against captured mainnet storage, and testnet was migrated across 185 events in 24 calls. | Mitigated |
+| **Tamp.10** | `migrate_events` (admin only) converts records page by page from a stored cursor, up to 8 per call, and `migrate` refuses with `MigrationIncomplete` until all are converted. Old records are read with an exact copy of their original structure, and each floor is `total_budget × percent / 100`, exactly what that position would have been paid. Only the record is rewritten. The two records that were still in the old layout, completed mainnet bounties with every award paid, were converted in the 17 October 2026 upgrade with nothing reserved again (Tamp.19). A test replays the full mainnet upgrade against captured mainnet storage, and testnet was migrated across 185 events in 24 calls. | Mitigated |
 | **Tamp.11** | The Soroban host does not allow re-entry during a call, and supported tokens are admin-approved. Both payout paths and `claim_refund` also record the payment, including the operation marker, before transferring, so a call-back would find it already recorded. | Mitigated |
 | **Tamp.12** | A selection listing a position twice is refused. Across selections, the stored award for each position stops it being awarded again. A grant selects once, with one award per recipient (Tamp.16). `claim_prize` refuses an award already paid with `PrizeAlreadyClaimed`. | Mitigated |
 | **Tamp.13** | Every call that moves money or changes a record carries a 32-byte operation id; a marker under the signing address and that id rejects repeats with `OpAlreadySeen`. Manager rotation and admin functions rely on Soroban's authorization nonces. A marker lasts at least 17,280 ledgers (about one day), longer than backend retries, after which the original signature has expired and a replay needs a new one. A refund batch size of zero is refused with `InvalidBatchSize`, so a stranger cannot burn the backend's next operation id. Test: `an_empty_refund_batch_cannot_burn_the_crank_op_id`. | Mitigated |
@@ -388,7 +388,7 @@ Of the 73 active threats, 10 are P1, 23 are P2, 23 are P3 and 17 are P4.
 | **EoP.7** | The owner must sign the same transaction as the co-signer, the money goes only to the owner, and the amount is calculated from the pool. The backend prepares the transaction only for the signed-in owner. | Mitigated |
 | **EoP.8** | The manager can select, cancel and rotate. It cannot change the owner (no function exists), receive refunds, pay milestones, or change floors. It can award any address, including its own: judging is off chain by design, and the owner chooses whom to delegate to. `ManagerChanged` is on chain before any selection. | Accepted |
 | **EoP.9** | The recipient must hold an award in the grant roster, and the amount comes from that award (grants) or from `remaining_escrow / milestones_left` (crowdfunding), never from the caller. Each milestone is settled once and must be in range. | Mitigated |
-| **EoP.10** | Mainnet builds have a 17,280-ledger upgrade timelock from events 2.0.0 (1.8.0 on mainnet) and profile 1.2.1; testnet builds keep zero, and `deploy_mainnet.sh` always builds without the testnet setting. The deployed 1.7.0 and 1.2.0 builds have no timelock until the upgrade in Section 4.4, which itself runs without one. Tests: `apply_upgrade_waits_out_the_timelock`, `apply_upgrade_waits_out_the_timelock_profile`. | Mitigated |
+| **EoP.10** | Mainnet builds have a 17,280-ledger upgrade timelock from events 2.0.0 (1.8.0 on mainnet) and profile 1.2.1; testnet builds keep zero, and `deploy_mainnet.sh` always builds without the testnet setting. The 1.7.0 and 1.2.0 builds mainnet ran until 17 October 2026 had none, so the upgrade in Section 4.4 ran without one. Tests: `apply_upgrade_waits_out_the_timelock`, `apply_upgrade_waits_out_the_timelock_profile`. | Mitigated |
 | **EoP.11** | `admin_slash_reputation` requires the admin and a non-empty reason, emits `AdminReputationSlashed`, and is the only way to lower a score. | Mitigated |
 | **EoP.12** | Both migration functions require the admin, the cursor only moves forward, and `migrate` runs once per version. | Mitigated |
 | **EoP.13** | After the first binding, a change is `propose_events_contract`, a 17,280-ledger wait, then `accept_events_contract` within 7 days, all admin-only and all emitting events. The wait only means something once the profile's upgrade timelock is deployed (EoP.10). | Mitigated |
@@ -421,7 +421,7 @@ None. Every threat is mitigated, accepted with a reason, or retired.
 
 ### 4.2 Closed in 2.0.0
 
-These fixes are in the code under review. None of them protects mainnet until the upgrade in Section 4.4. Tests for each are named in Section 3.
+These fixes are in the code under review and have protected mainnet since the 1.8.0 upgrade on 17 October 2026 (Section 4.4). Tests for each are named in Section 3.
 
 | ID | Issue | Fix | Error or event |
 |---|---|---|---|
@@ -461,9 +461,9 @@ These threats concerned on-chain applications and submissions, which 2.0.0 remov
 
 | Item | What is needed |
 |---|---|
-| Mainnet upgrade | Mainnet runs events 1.7.0 and profile 1.2.0. Every fix in Section 4.2 takes effect only after the admin multisig upgrades both, to events 1.8.0 (the 2.0.0 code, tag `events-v1.8.0`) and profile 1.2.1, following `docs/upgrade-runbook.md` Section 8. The deployed builds have no timelock, so this upgrade applies immediately; every later one waits 17,280 ledgers (EoP.10). |
-| Old-layout records (Tamp.10) | Two mainnet event records cannot be read until converted. Both are completed events with no escrow, so no money is affected. Mainnet holds eight events, so one `migrate_events` call during the upgrade converts the two and leaves the others unchanged, and `migrate` then stamps the version. |
-| Backend changes that must ship first | Page winner and contributor reads at 90 or fewer and run refunds in batches of 15 or fewer (DoS.17); pages of 100 and batches of 25 already fail on the deployed build for large events. Split hackathon selections above 20 winners (DoS.17). Call `forfeit_milestone` when a grant milestone is rejected, or the grant can never be cancelled (EoP.14). Support `claim_refund` for refunds set aside (DoS.14). Stop calling the participation functions that 2.0.0 removed. |
+| Mainnet upgrade | Done on 17 October 2026: the admin multisig upgraded mainnet to events 1.8.0 (the 2.0.0 code, tag `events-v1.8.0`) and profile 1.2.1, following `docs/upgrade-runbook.md` Section 8, which lists every transaction. Every fix in Section 4.2 is live there, and every later upgrade waits 17,280 ledgers (EoP.10). |
+| Old-layout records (Tamp.10) | Done: one `migrate_events` call during the upgrade converted the two completed, zero-escrow records, the other six were left unchanged, and `migrate` stamped 1.8.0. All eight events read. |
+| Backend changes that had to ship first | Shipped before the upgrade (boundless-nestjs #867 and #874). Page winner and contributor reads at 90 or fewer and run refunds in batches of 15 or fewer (DoS.17); pages of 100 and batches of 25 fail on large events. Split hackathon selections above 20 winners (DoS.17). Call `forfeit_milestone` when a grant milestone is rejected, or the grant can never be cancelled (EoP.14). Support `claim_refund` for refunds set aside (DoS.14). Stop calling the participation functions that 2.0.0 removed. |
 | Events 2.1.0 | Grant milestone splits (Tamp.20) run on testnet from 8 October 2026 and reach mainnet in a separate upgrade after 1.8.0, which waits the 17,280-ledger timelock (`docs/upgrade-runbook.md` Section 9). |
 
 ### 4.5 Accepted risks
@@ -524,7 +524,7 @@ DoS.9 is mitigated, but one case remains: if a manager's key is lost after the f
 | `set_fee_bps`, `set_fee_account`, `set_profile_contract` | events | admin | Fee at most 10%; single step. |
 | `pause`, `unpause` | events, profile | admin | Admin functions keep working while paused. |
 | `register_supported_token`, `deregister_supported_token` | events | admin | |
-| `propose_upgrade`, `apply_upgrade`, `cancel_pending_upgrade` | events, profile | admin | 17,280-ledger timelock on mainnet builds (none on the deployed 1.7.0 build); 30-day expiry. |
+| `propose_upgrade`, `apply_upgrade`, `cancel_pending_upgrade` | events, profile | admin | 17,280-ledger timelock on mainnet builds; 30-day expiry. |
 | `migrate_events` | events | admin | At most 8 events per call. |
 | `migrate` | events, profile | admin | Once per version; events refuses with `MigrationIncomplete` until every record is converted. |
 | `set_events_contract` (first binding) | profile | admin | Only when no binding exists. |

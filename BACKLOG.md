@@ -9,16 +9,15 @@ Legend: `[ ]` open, `[~]` in flight, `[x]` done.
 ## P0
 
 - [ ] Third-party security audit (events + profile). Cost ~$30-80k for a Soroban-experienced firm. Scope it to the 2.0.0 / 1.2.1 tree.
-- [ ] **Upgrade mainnet to events 1.8.0 + profile 1.2.1** (`docs/upgrade-runbook.md`, Section 8). Events 1.8.0 is the 2.0.0 code under a 1.x label (tag `events-v1.8.0`), so the backend keeps grants and held-refund claims off on mainnet until a 2.x upgrade. Carries every threat-model fix (`docs/threat-model.md` v1.1, Section 4.1.2), restores the 17,280-ledger upgrade timelock (EoP.10: the deployed 1.7.0 / 1.2.0 builds have none), and finishes the 1.7.0 migration that never ran: events still reports a 1.6.0 marker, and events 1 and 2 (`…609`, `…610`, both Completed with zero escrow) are still in the old layout and fail to decode. Rehearsed on testnet 2026-10-02 (events `CBEODVJG…` at 2.0.0, 185 events through `migrate_events`, `migrate` stamped). Backend first: read pages of 90, refund cranks of 15, hackathon selections split at 20 per call, `forfeit_milestone` on milestone rejection, `claim_refund` for held refunds, and no calls to the removed participation entry points. Then profile propose / apply / migrate, and events pause / propose / apply / one `migrate_events` page / `migrate` / unpause, all under the deployed zero timelock. `deploy_mainnet.sh` now refuses to unpause events until `migrate` has stamped, the gate the August upgrade lacked.
 
 ## P1
 
-- [ ] **Events 2.1.0 (grant milestone splits) to mainnet**, as its own upgrade after 1.8.0, waiting the 17,280-ledger timelock. Before it goes: rerun Scout on the 2.1.0 code and add it to `docs/threat-model.md` Section 6 (the scan covers 2.0.0; the testnet grant run already passed on 2.1.0, `docs/audit/testnet-grant-run-2.1.0.md`). Refresh the storage replay from 1.8.0 once mainnet runs it (`docs/storage-compatibility.md`).
+- [ ] **Events 2.1.0 (grant milestone splits) to mainnet**, as its own upgrade after 1.8.0, waiting the 17,280-ledger timelock. Before it goes: rerun Scout on the 2.1.0 code and add it to `docs/threat-model.md` Section 6 (the scan covers 2.0.0; the testnet grant run already passed on 2.1.0, `docs/audit/testnet-grant-run-2.1.0.md`). Refresh the storage replay from 1.8.0 first, which mainnet runs since 17 October 2026 (`docs/storage-compatibility.md`).
 - [ ] Per-event prize claim window: `PRIZE_CLAIM_WINDOW_SECS` (90 days) is a module constant because adding a field to `EventRecord` requires a storage migration. Move it onto `EventRecord` at the next real migration window, per the per-event-config rule in `CLAUDE.md`.
 - [ ] `Error` enum headroom: events uses 42 of the 50-case `contracterror` cap after 2.0.0, and retired codes are never reused. Plan a consolidation before the cap, not when the next variant fails to compile.
 - [ ] Grant committee multi-sig primitive (dedicated signer set + quorum at the contract level vs the current address-level multi-sig).
 - [ ] Multi-token support audit: verify the whitelist mechanism handles tokens with non-Stellar 7-decimal scales (currently assumed uniform).
-- [ ] Decide whether to appoint a crowdfunding release validator on mainnet once 1.8.0 is live, and who holds the key (`docs/admin-custody-policy.md` §4.1). Until one accepts, the admin multisig co-signs every crowdfunding release.
+- [ ] Decide whether to appoint a crowdfunding release validator on mainnet now that 1.8.0 is live, and who holds the key (`docs/admin-custody-policy.md` §4.1). Until one accepts, the admin multisig co-signs every crowdfunding release.
 
 ## P2 (roadmap)
 
@@ -29,6 +28,8 @@ Legend: `[ ]` open, `[~]` in flight, `[x]` done.
 ---
 
 ## Done
+
+- [x] 2026-10-17: mainnet upgraded to events 1.8.0 (the 2.0.0 code, tag `events-v1.8.0`) and profile 1.2.1 (`docs/upgrade-runbook.md`, Section 8, with every transaction hash). Both migrated and unpaused, the 17,280-ledger timelock is live, and events 1 and 2 were converted and read again. Grants and held-refund claims stay off on mainnet until a 2.x upgrade.
 
 - [x] 2026-10-02: measured batch headroom on the test host, which enforces mainnet limits (100 footprint entries, 50 writes): single-release selection 19 + 4 per award, grant selection 15 + 2 per award, refund crank 11 + 5 per refund, read page 3 + 1 per row. Caps are now 20 single-release awards per call, 40 per grant, 15 refunds per crank and 90-row pages, each tested at its maximum (`grant_scenarios::limits`).
 - [x] 2026-10-02: upgrade timelock restored in source (events 2.0.0, profile 1.2.1): 17,280 ledgers on mainnet builds, 0 with `--features testnet`; tests assert `UpgradeTimelockNotElapsed`.
