@@ -3,9 +3,9 @@
 How to upgrade a live `boundless-events` or `boundless-profile` contract. On
 mainnet every admin step is a 2-of-3 multisig transaction that
 `./deploy_mainnet.sh` prepares and checks but never submits; on testnet
-`./deploy_and_upgrade.sh` signs with the local admin identity. Section 8 is
-the specific procedure for taking mainnet from events 1.7.0 and profile 1.2.0
-to events 1.8.0 and profile 1.2.1.
+`./deploy_and_upgrade.sh` signs with the local admin identity. Section 8
+records how mainnet went from events 1.7.0 and profile 1.2.0 to events 1.8.0
+and profile 1.2.1 on 17 October 2026.
 
 Related: `docs/contract-ops-runbook.md` (signing and submitting a multisig
 transaction), `docs/admin-custody-policy.md` (who signs what),
@@ -32,9 +32,10 @@ There is no `upgrade()` entry point. Both contracts expose `version()`,
 | `PENDING_UPGRADE_TTL_LEDGERS` | 518,400 | about 30 days | same |
 
 The timelock that applies is the one compiled into the wasm that is live when
-you propose, not the one you are proposing. The deployed mainnet builds,
-events 1.7.0 and profile 1.2.0, were compiled with 0 for the August rollout;
-events 1.8.0 and profile 1.2.1 restore 17,280, as does every later build.
+you propose, not the one you are proposing. Mainnet has run events 1.8.0 and
+profile 1.2.1 since 17 October 2026, both compiled with 17,280, so every
+mainnet upgrade now waits about a day. The builds before them, events 1.7.0
+and profile 1.2.0, were compiled with 0 for the August rollout.
 
 Pausing events blocks every event-lifecycle call: `create_event`, `add_funds`,
 `select_winners`, `claim_prize`, `claim_milestone`, `forfeit_milestone`,
@@ -226,7 +227,7 @@ contractmeta version differs from the one you pass, uploads, and proposes.
 
 Abandoning an upgrade before it is applied: cancel, then unpause. If the live
 contract's migration marker already trailed its version before you started,
-as it does on mainnet events today, `prepare-unpause-*` refuses; set
+`prepare-unpause-*` refuses; set
 `UNPAUSE_UNMIGRATED=1` for that one command, and only for an upgrade that was
 never applied.
 
@@ -273,7 +274,30 @@ grants and held-refund claims for events 2.0.0 or later, so both stay off on
 mainnet until a 2.x upgrade. A refund 1.8.0 holds back during a cancellation
 stays claimable on chain and can be paid once that upgrade lands.
 
-### 8.1 Where mainnet stands
+Done on 17 October 2026 between 23:09 and 23:43 UTC. Both contracts report
+the new version and wasm, are migrated to it, have nothing queued and are
+unpaused, and all eight events read, including the two converted records.
+Events was paused for about 19 minutes. Each transaction carries two
+signatures:
+
+| Step | Transaction |
+|---|---|
+| Upload profile 1.2.1 wasm `8a8a1208…` | `dab6a185a849b681303db604adeb1135277e30c155d26d9c11cdf5a943dfd4ec` |
+| Upload events 1.8.0 wasm `acf70ca0…` | `d334f95fc496f7de74e25755936dca44bc80e2fb671c67b76234949dd0451563` |
+| Profile propose | `be1863a74230011fd8da6fc6ca2dfc15315255cba380a4b850bb0c65aae8aa95` |
+| Profile apply | `54a3fb7a21a06d8558feac03b9e96d07eee45a9e57eea2c06f0e05ffe9f1d510` |
+| Profile migrate | `f3f797f3ac886cbe76d384b21fe746f5839a4bfa8cdab7709482fc20560eb560` |
+| Events pause | `f61294ae79c91347f51a7bb37179bd9901e7a0e27c9677b9ca4fb507bb2c06cb` |
+| Events propose | `0403fd75579d6f8f630f51beaea7dd50a9a01d0348b4a0a41a95d34845f93883` |
+| Events apply | `bd098ce7977ac8c9a5a4b0c1974e3437a5841f9966d25c6842d8ddee1b6bd4a0` |
+| Events `migrate_events(8)`, 0 left | `adfee91d5970442c1ac4e5fd778047482f6e9c15a5a3550eafc6a9220e58210d` |
+| Events migrate | `6387190529b5fdfdfb5d53ec53f67ce01cd0b55ee1d7d9d874d52c9f70850397` |
+| Events unpause | `aaa3b32afdfdf5544bc9f575f042ac620580d32f4d89a14154175a87e1057a18` |
+
+The two uploads were signed by a funded CLI identity; every other step by the
+admin multisig. The rest of this section is the procedure as it was run.
+
+### 8.1 Where mainnet stood before the upgrade
 
 | | events | profile |
 |---|---|---|
@@ -406,8 +430,8 @@ wasm `c742cb96…` uploaded and proposed (`fc713ba2…`), applied (`d3f1e8c0…`
 10 `migrate_events` pages, then `migrate` stamped 2.1.0 (`d91f1ddc…`). Grants
 created on 2.0.0 read and pay as before.
 
-Mainnet takes 2.1.0 only after Section 8 has put it on 1.8.0, as a separate
-upgrade that waits the 17,280-ledger timelock. That upgrade also turns on
+Mainnet, on 1.8.0 since Section 8, takes 2.1.0 as a separate upgrade that
+waits the 17,280-ledger timelock. That upgrade also turns on
 grants and held-refund claims, which the backend allows from 2.0.0. The backend sends a split only
 to a contract that reports 2.1.0 or later, so nothing has to ship first.
 

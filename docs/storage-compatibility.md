@@ -2,7 +2,7 @@
 
 `contracts/compatibility` replays the next mainnet upgrade against real mainnet
 storage. It loads contract data captured from a mainnet ledger, runs the builds
-deployed on mainnet today, then proposes, applies and migrates the release build
+deployed on mainnet at that ledger, then proposes, applies and migrates the release build
 of this tree the way `docs/upgrade-runbook.md` does it on chain:
 
 1. Read every event, every winner record and the reputation of every winner
@@ -59,7 +59,7 @@ To check that the fixture still reproduces from the history archive (Stellar CLI
 
 ## Refreshing for the next upgrade
 
-Once mainnet runs 1.8.0 (tag `events-v1.8.0`), the replay should start from 1.8.0 instead:
+The fixtures still hold events 1.7.0 and profile 1.2.0. Mainnet has run events 1.8.0 (tag `events-v1.8.0`) and profile 1.2.1 since 17 October 2026, so before the next mainnet upgrade the replay should start from those builds:
 
 1. Fetch the deployed wasm for both contracts by hash into the fixtures
    directory and replace the two `mainnet-*.wasm` files.

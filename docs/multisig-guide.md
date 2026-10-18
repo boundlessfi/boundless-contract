@@ -577,7 +577,7 @@ On the events contract the admin **can:**
 - Change the default fee rate (`set_fee_bps`).
 - Change the fee account address (`set_fee_account`). This one needs all three signatures.
 - Pause the contract in an emergency (`pause`) and resume after a fix (`unpause`).
-- Propose a contract upgrade (`propose_upgrade`). On current mainnet builds the upgrade cannot apply until about a day (17,280 ledgers) after the proposal, so users can see it coming. The deployed events 1.7.0 and profile 1.2.0 builds have no such wait; the 1.8.0 upgrade restores it.
+- Propose a contract upgrade (`propose_upgrade`). On current mainnet builds the upgrade cannot apply until about a day (17,280 ledgers) after the proposal, so users can see it coming. Every mainnet build since the events 1.8.0 and profile 1.2.1 upgrade on 17 October 2026 has this wait; the 1.7.0 and 1.2.0 builds before it did not.
 - Apply a proposed upgrade after that wait (`apply_upgrade`), or cancel it (`cancel_pending_upgrade`).
 - Run the post-upgrade migration (`migrate_events`, then `migrate`).
 - Add or remove tokens from the whitelist (`register_supported_token`, `deregister_supported_token`).
