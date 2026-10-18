@@ -13,8 +13,8 @@ earnings.
 
 | Network | Contract | Address | Version |
 |---------|----------|---------|---------|
-| Mainnet | `boundless-events` | `CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ` | `1.7.0` |
-| Mainnet | `boundless-profile` | `CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC` | `1.2.0` |
+| Mainnet | `boundless-events` | `CCFVEGOQJEM47LRAJU2LHEK4KTL5VYN7AOGZ2HH2GNHAMXTILNMMJGQZ` | `1.8.0` |
+| Mainnet | `boundless-profile` | `CD3KH4OE7HDHHHUYFX3U4L7NLIILMXAY6HM5FEH2UH6UBOKX4HDNE3PC` | `1.2.1` |
 | Testnet | `boundless-events` | `CBEODVJGUYCIYTVXD7KI5UG3BJ2UE4T7AGI2TGY3T4Q5GQRFGTRYVTZP` | `2.1.0` |
 | Testnet | `boundless-profile` | `CCA3OAIBOZBUPHPRI5GI6N5PDTE7RTNLKAEID4JTC2YZIHIZNDX5Q6T3` | `1.2.1` |
 
