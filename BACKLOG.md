@@ -13,7 +13,7 @@ Legend: `[ ]` open, `[~]` in flight, `[x]` done.
 
 ## P1
 
-- [ ] **Events 2.1.0 (grant milestone splits) to mainnet**, as its own upgrade after 1.8.0, waiting the 17,280-ledger timelock. Before it goes: rerun Scout on the 2.1.0 code and add it to `docs/threat-model.md` Section 6 (the scan covers 2.0.0; the testnet grant run already passed on 2.1.0, `docs/audit/testnet-grant-run-2.1.0.md`). Refresh the storage replay from 1.8.0 once mainnet runs it (`docs/storage-compatibility.md`).
+- [ ] **Events 2.1.0 (grant milestone splits) to mainnet**, as its own upgrade after 1.8.0, waiting the 17,280-ledger timelock. Before it goes: rerun Scout on the 2.1.0 code and add it to `docs/threat-model.md` Section 6 (the scan covers 2.0.0; the testnet grant run already passed on 2.1.0, `docs/audit/testnet-grant-run-2.1.0.md`).
 - [ ] Per-event prize claim window: `PRIZE_CLAIM_WINDOW_SECS` (90 days) is a module constant because adding a field to `EventRecord` requires a storage migration. Move it onto `EventRecord` at the next real migration window, per the per-event-config rule in `CLAUDE.md`.
 - [ ] `Error` enum headroom: events uses 42 of the 50-case `contracterror` cap after 2.0.0, and retired codes are never reused. Plan a consolidation before the cap, not when the next variant fails to compile.
 - [ ] Grant committee multi-sig primitive (dedicated signer set + quorum at the contract level vs the current address-level multi-sig).
@@ -30,6 +30,7 @@ Legend: `[ ]` open, `[~]` in flight, `[x]` done.
 
 ## Done
 
+- [x] 2026-10-18: storage replay refreshed from mainnet events 1.8.0 and profile 1.2.1 (ledger 65,003,455). It now replays the events 2.1.0 upgrade, including the 17,280-ledger timelock the deployed build enforces (`docs/storage-compatibility.md`).
 - [x] 2026-10-02: measured batch headroom on the test host, which enforces mainnet limits (100 footprint entries, 50 writes): single-release selection 19 + 4 per award, grant selection 15 + 2 per award, refund crank 11 + 5 per refund, read page 3 + 1 per row. Caps are now 20 single-release awards per call, 40 per grant, 15 refunds per crank and 90-row pages, each tested at its maximum (`grant_scenarios::limits`).
 - [x] 2026-10-02: upgrade timelock restored in source (events 2.0.0, profile 1.2.1): 17,280 ledgers on mainnet builds, 0 with `--features testnet`; tests assert `UpgradeTimelockNotElapsed`.
 - [x] 2026-09-28: on-chain participation removed in events 2.0.0 (`apply`, `apply_to_bounty`, `remove_applicant`, `submit` and their registries); entries live in boundless-nestjs.
