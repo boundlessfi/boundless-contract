@@ -47,6 +47,22 @@ still go through. Neither blocks reads or any admin call, including every step
 in this runbook and `unpause`, so a contract can stay paused from apply through
 migration.
 
+New code starts with the network's minimum lifetime: about 120 days on
+mainnet, about 7 on testnet. The contracts renew their code only when a call
+lands in its last day, so the backend's daily `ContractTtlKeepaliveCron`
+(boundless-nestjs) extends the code each contract runs once it has under 60
+days left. Where that job is not running, extend the code by hand after
+`apply_upgrade`; testnet's events 2.1.0 code was archived in October 2026 for
+want of this. Any funded identity can pay:
+
+```sh
+stellar contract extend --wasm-hash <hash> --ledgers-to-extend 3110399 \
+  --network mainnet --source-account <identity>
+```
+
+On testnet pass `--ledgers-to-extend 1036800` (60 days): 180 days of rent for
+the events code does not fit in one transaction fee.
+
 ## 2. Before you propose
 
 1. Tag the release commit and build it the way mainnet will run it:
